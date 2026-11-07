@@ -1,0 +1,12 @@
+node_modules/
+dist/
+out/
+cache/
+broadcast/
+.env
+.env.*
+!.env.example
+ops/reports/
+ops/last-plan.json
+keeper/ops/
+web/screenshots/*-full.png

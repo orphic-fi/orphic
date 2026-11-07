@@ -1,0 +1,27 @@
+[profile.default]
+src = "src"
+out = "out"
+libs = ["lib"]
+solc = "0.8.28"
+evm_version = "cancun"
+optimizer = true
+optimizer_runs = 200
+via_ir = false
+fs_permissions = [{ access = "read", path = "./" }]
+ignored_error_codes = ["transient-storage"]
+ignored_warnings_from = ["lib"]
+code_size_limit = 131072
+gas_limit = 9223372036854775807
+block_gas_limit = 60000000
+disable_block_gas_limit = true
+
+[rpc_endpoints]
+hyperevm = "${HYPEREVM_RPC}"
+
+[fuzz]
+runs = 256
+
+[invariant]
+runs = 24
+depth = 24
+fail_on_revert = false

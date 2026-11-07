@@ -1,0 +1,29 @@
+{
+  "updatedAt": null,
+  "agents": [
+    {
+      "id": "rotator",
+      "name": "Rotator",
+      "status": "live",
+      "mandate": "Moves senior's USDC between whitelisted Morpho USDC markets and the idle sleeve, keeping at least 10% idle.",
+      "cap": "Senior assets, within per-market caps set by the curator",
+      "weeklyReturn": null
+    },
+    {
+      "id": "ranger",
+      "name": "Ranger",
+      "status": "week one",
+      "mandate": "Ranges junior's unstaked USDC on a single concentrated pool, rebalancing once a day at most.",
+      "cap": "Up to 50% of junior's unstaked assets",
+      "weeklyReturn": null
+    },
+    {
+      "id": "basis",
+      "name": "Basis",
+      "status": "not active, after review",
+      "mandate": "Delta-neutral basis on HyperCore. Not enabled; needs a review of the CoreWriter path first.",
+      "cap": "0 until enabled",
+      "weeklyReturn": null
+    }
+  ]
+}

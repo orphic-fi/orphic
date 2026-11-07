@@ -1,0 +1,5 @@
+{
+  "0xb88339CB7199b77E23DB6E890353E22632Ba630f": { "supplyAPR": 6.91, "supplyAPY": 7.15, "borrowAPR": 9.2, "borrowAPY": 9.63 },
+  "0x5555555555555555555555555555555555555555": { "supplyAPR": "1.2", "supplyAPY": "1.21", "borrowAPR": "3.0", "borrowAPY": "3.04" },
+  "notAnAddress": { "supplyAPR": 1 }
+}

@@ -1,0 +1,27 @@
+{
+  "name": "orphic-keeper",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Rotator keeper for the Orphic senior USDC vault on HyperEVM",
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "tick": "tsx src/index.ts",
+    "tick:dry": "tsx src/index.ts --dry-run --fixture test/fixtures/state.json",
+    "weekly": "tsx src/index.ts --weekly",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "viem": "2.21.55"
+  },
+  "devDependencies": {
+    "@types/node": "22.10.2",
+    "tsx": "4.19.2",
+    "typescript": "5.7.2",
+    "vitest": "2.1.8"
+  }
+}

@@ -1,0 +1,74 @@
+import { NavLink, Outlet, Link } from 'react-router-dom'
+import { useAccount, useConnect, useDisconnect } from 'wagmi'
+import { chainLabel } from '../chains'
+import { truncateAddress } from '../lib/format'
+import s from './Layout.module.css'
+
+function ConnectButton() {
+  const { address, isConnected, chainId } = useAccount()
+  const { connect, connectors, isPending } = useConnect()
+  const { disconnect } = useDisconnect()
+  const supported = chainId !== undefined && chainLabel(chainId) !== 'Unsupported chain'
+
+  if (isConnected && address) {
+    return (
+      <>
+        <span className={`${s.chain} ${supported ? s.chainLive : ''}`}>{chainLabel(chainId)}</span>
+        <button type="button" className={s.connect} onClick={() => disconnect()} title="Disconnect">
+          {truncateAddress(address)}
+        </button>
+      </>
+    )
+  }
+  const injected = connectors[0]
+  return (
+    <>
+      <span className={s.chain}>{chainLabel(undefined)}</span>
+      <button
+        type="button"
+        className={s.connect}
+        disabled={!injected || isPending}
+        onClick={() => injected && connect({ connector: injected })}
+      >
+        {isPending ? 'Connecting' : 'Connect'}
+      </button>
+    </>
+  )
+}
+
+export default function Layout() {
+  return (
+    <>
+      <header className="wrap">
+        <div className={s.top}>
+          <Link to="/" className={s.wordmark}>
+            orphic
+          </Link>
+          <nav className={s.nav} aria-label="Primary">
+            <NavLink to="/" end>
+              Vaults
+            </NavLink>
+            <NavLink to="/how-it-works">How it works</NavLink>
+            <NavLink to="/agents">Agents</NavLink>
+          </nav>
+          <div className={s.right}>
+            <ConnectButton />
+          </div>
+        </div>
+      </header>
+      <main className={`wrap ${s.main}`}>
+        <Outlet />
+      </main>
+      <footer className="wrap">
+        <div className={s.footer}>
+          <span>orphic.fi</span>
+          <Link to="/ops">status</Link>
+          <a href="https://hyperevmscan.io" target="_blank" rel="noreferrer">
+            HyperEVM explorer
+          </a>
+          <span>Unaudited</span>
+        </div>
+      </footer>
+    </>
+  )
+}

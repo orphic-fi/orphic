@@ -1,0 +1,5 @@
+@openzeppelin/contracts/=lib/openzeppelin-contracts/contracts/
+forge-std/=lib/forge-std/src/
+morpho-blue/=lib/morpho-blue/src/
+vault-v2/=lib/vault-v2/src/
+metamorpho-v1.1/=lib/metamorpho-v1.1/src/

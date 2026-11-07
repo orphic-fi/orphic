@@ -1,0 +1,64 @@
+{
+  "chainId": 999,
+  "rpcUrl": "https://rpc.hyperliquid.xyz/evm",
+  "usdc": "0xb88339CB7199b77E23DB6E890353E22632Ba630f",
+  "usdcDecimals": 6,
+  "morphoBlue": "0x68e37dE8d93d3496ae143F2E900490f6280C57cD",
+  "morphoApi": "https://api.morpho.org/graphql",
+  "hyperlendApi": "https://api.hyperlend.finance/data/markets/rates?chain=hyperEvm",
+
+  "vault": "0xTODO",
+  "junior": "0xTODO",
+  "adapters": {
+    "morphoMarketV1": "0xTODO",
+    "morphoVaultV1": "0xTODO"
+  },
+
+  "felix": {
+    "address": "0x8A862fD6c12f9ad34C9c2ff45AB2b6712e8CEa27",
+    "label": "Felix USDC v1.1"
+  },
+
+  "targets": [
+    { "key": "0xe7aa046832007a975d4619260d221229e99cc27da2e6ef162881202b4cd2349b", "label": "kHYPE/USDC 62.5%", "weight": 0.48 },
+    { "key": "0x96c47d3797394dd25e33f814216793a89d2e6edcc54d1dac3ab4c2b2d82a73b9", "label": "kHYPE/USDC 77%", "weight": 0.10 },
+    { "key": "0xd7d38220652d19c87099c3b23de9a70a1893620a050c635d1a94bd947c9c59a8", "label": "WHYPE/USDC 77%", "weight": 0.20 },
+    { "key": "0x45af9c72aa97978e143a646498c8922058b7c6f18b6f7b05d7316c8cf7ab942f", "label": "UBTC/USDC 77%", "weight": 0.05 },
+    { "key": "felix", "label": "Felix USDC v1.1", "weight": 0.15 },
+    { "key": "idle", "label": "Idle USDC", "weight": 0.02 }
+  ],
+
+  "excludedMarkets": [
+    "0x8eecdd03f1e12e03c04abefdb3f536067e071ad2c3f63e7b04c9a034889d0ba5"
+  ],
+
+  "constraints": {
+    "minIdle": 0.02,
+    "minFelix": 0.10,
+    "maxShareOfMarketSupply": 0.5,
+    "maxShareOfFelixAssets": 0.5,
+    "maxUtilization": 1.0,
+    "maxSupplyApy": 1.0,
+    "rateTilt": 0.5,
+    "maxTiltMultiplier": 1.5,
+    "minTiltMultiplier": 0.5,
+    "minDeltaFraction": 0.005,
+    "maxClipFraction": 0.25
+  },
+
+  "dryRunCaps": {
+    "0xe7aa046832007a975d4619260d221229e99cc27da2e6ef162881202b4cd2349b": { "absoluteCap": 5000000, "relativeCap": 0.5 },
+    "0x96c47d3797394dd25e33f814216793a89d2e6edcc54d1dac3ab4c2b2d82a73b9": { "absoluteCap": 2000000, "relativeCap": 0.25 },
+    "0xd7d38220652d19c87099c3b23de9a70a1893620a050c635d1a94bd947c9c59a8": { "absoluteCap": 3000000, "relativeCap": 0.4 },
+    "0x45af9c72aa97978e143a646498c8922058b7c6f18b6f7b05d7316c8cf7ab942f": { "absoluteCap": 3000000, "relativeCap": 0.4 },
+    "felix": { "absoluteCap": 10000000, "relativeCap": 1.0 }
+  },
+
+  "economics": {
+    "marginFactor": 3,
+    "slippagePenalty": 0.0002,
+    "gasPerAction": 400000,
+    "fallbackGasPriceGwei": 0.1,
+    "fallbackHypePriceUsd": 25
+  }
+}

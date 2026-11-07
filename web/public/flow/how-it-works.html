@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Orphic: where a dollar goes</title>
+<style>
+:root{--bg:#0b0c0e;--line:rgba(255,255,255,.08);--line2:rgba(255,255,255,.16);--txt:#e6e7e9;--mut:#8a8f98;--acc:#8fc8ff;--sen:#9ad7b5;--jun:#f0c27a;--warn:#ff7a7a}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--txt);font:14px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif}
+.mono{font-family:"SF Mono","JetBrains Mono","IBM Plex Mono",ui-monospace,Menlo,monospace}
+.wrap{max-width:960px;margin:0 auto;padding:24px 16px 56px}
+h1{font-size:18px;font-weight:500;margin:0 0 4px}
+h2{font-size:13px;font-weight:500;color:var(--mut);letter-spacing:.04em;text-transform:lowercase;margin:36px 0 10px}
+p{margin:6px 0}
+.sub{color:var(--mut);font-size:13px}
+.box{border:1px solid var(--line2);padding:14px 16px;background:rgba(255,255,255,.015)}
+.box.sen{border-color:rgba(154,215,181,.5)}.box.jun{border-color:rgba(240,194,122,.5)}
+.row{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+@media (max-width:720px){.row{grid-template-columns:1fr}}
+.k{display:flex;justify-content:space-between;gap:12px;border-top:1px solid var(--line);padding:7px 0}
+.k:first-of-type{border-top:0}
+.k span:last-child{text-align:right;white-space:nowrap}
+.big{font-size:22px;margin:2px 0 8px}
+.sen .big{color:var(--sen)}.jun .big{color:var(--jun)}
+.arrow{color:var(--mut);text-align:center;padding:8px 0;font-size:12px}
+.arrow:before{content:"";display:block;width:1px;height:16px;background:var(--line2);margin:0 auto 4px}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th,td{text-align:left;padding:7px 8px;border-top:1px solid var(--line)}
+th{color:var(--mut);font-weight:500}
+td.n,th.n{text-align:right}
+.est{color:var(--mut);font-size:12px}
+.warn{border:1px solid rgba(255,122,122,.45);padding:10px 14px;font-size:13px;margin-top:28px}
+.tag{display:inline-block;border:1px solid var(--line2);padding:1px 6px;font-size:11px;color:var(--mut);margin-left:6px;vertical-align:middle}
+</style></head><body><div class="wrap">
+
+<h1 class="mono">where a dollar goes</h1>
+<p class="sub">Orphic is a USDC vault on HyperEVM with a senior and a junior side, run by permissioned agents. This page follows a $500,000 launch stack: the maximum the contracts accept at launch. Every rate on it is a live reading from 7 Nov 2026 or marked as an estimate. Nothing here is a yield promise.</p>
+
+<div class="box mono" style="text-align:center;margin-top:18px">$500,000 USDC, launch cap</div>
+<div class="arrow">split by the depositor's choice</div>
+
+<div class="row">
+  <div class="box sen">
+    <div class="k"><span class="mono">senior</span><span class="mono">up to $425,000</span></div>
+    <p class="big mono">paid first</p>
+    <p>A Morpho Vault V2 that Orphic curates. Morpho's audited contract holds the money and prices the shares. We pick the markets and set the caps; we never hold senior's USDC.</p>
+    <div class="k"><span>Withdrawals</span><span>instant, to available liquidity</span></div>
+    <div class="k"><span>Give-up to junior</span><span>0.5% a year of senior's balance</span></div>
+    <div class="k"><span>Performance fee</span><span>0</span></div>
+    <div class="k"><span>Share of Orphic's fees</span><span>50%, paid into the vault</span></div>
+  </div>
+  <div class="box jun">
+    <div class="k"><span class="mono">junior</span><span class="mono">up to $75,000</span></div>
+    <p class="big mono">first loss</p>
+    <p>One custom contract. Takes every loss first. Its capital is run by agents that can only call a short list of venues and can only send money back to the contract.</p>
+    <div class="k"><span>Entry</span><span>stake 20% of the deposit in ORPH, returned on exit</span></div>
+    <div class="k"><span>Exit</span><span>7 days' notice, priced at the next weekly settle</span></div>
+    <div class="k"><span>Earns</span><span>senior's give-up, its agents' results, 25% of fees</span></div>
+    <div class="k"><span>Cover</span><span>pays senior's losses from its idle USDC at each settle</span></div>
+  </div>
+</div>
+
+<h2>senior: where $425,000 sits</h2>
+<p class="sub">Opening targets for the Rotator, re-priced hourly from Morpho's live rates. Caps are on-chain ceilings behind a 3-day timelock. Rates are the markets' supply APY on 7 Nov 2026 before our deposit; our size lowers them, so treat the blended figure as a ceiling, not a forecast.</p>
+<table>
+<tr><th>Venue</th><th>What it is</th><th class="n">Target</th><th class="n">Rate 7 Nov</th></tr>
+<tr><td>kHYPE / USDC, LLTV 62.5%</td><td>Morpho Blue market, $7.8M supplied</td><td class="n mono">48%</td><td class="n mono">5.74%</td></tr>
+<tr><td>WHYPE / USDC, LLTV 77%</td><td>Morpho Blue market, $8.8M supplied</td><td class="n mono">20%</td><td class="n mono">5.64%</td></tr>
+<tr><td>Felix USDC v1.1</td><td>Felix's Morpho vault; the liquidity leg, withdrawals come from here first</td><td class="n mono">15%</td><td class="n mono">5.0% net</td></tr>
+<tr><td>kHYPE / USDC, LLTV 77%</td><td>Morpho Blue market, $9.3M supplied</td><td class="n mono">10%</td><td class="n mono">5.55%</td></tr>
+<tr><td>UBTC / USDC, LLTV 77%</td><td>Morpho Blue market, $0.7M supplied, thin</td><td class="n mono">5%</td><td class="n mono">5.79%</td></tr>
+<tr><td>Idle USDC</td><td>in the vault</td><td class="n mono">2%</td><td class="n mono">0</td></tr>
+</table>
+<p class="est">Blended, before our size moves the markets: about 5.4% gross, about 4.9% to senior after the 0.5% give-up. Estimate. Holding Felix USDC directly pays about 5.0% net today; what senior buys with the difference is a first-loss buffer under it, four markets instead of one curator, and a fee stream paid into the vault.</p>
+
+<h2>junior: where $75,000 works</h2>
+<table>
+<tr><th>Agent</th><th>Mandate</th><th class="n">Cap</th><th>Status</th></tr>
+<tr><td class="mono">Rotator</td><td>Moves junior's USDC between the Morpho markets above and Felix when the projected weekly gain beats the cost of moving. Never more than half of any pool. Sells any emissions to USDC at the weekly close.</td><td class="n mono">100%</td><td>live Monday</td></tr>
+<tr><td class="mono">Ranger</td><td>Manages liquidity ranges on USDC/HYPE pools on Elysium (Nest, Aero).</td><td class="n mono">30%</td><td>week one</td></tr>
+<tr><td class="mono">Basis</td><td>Hedged perps funding capture through a trade-only API wallet on a contract-owned HyperCore account.</td><td class="n mono">0%</td><td>not active, after review</td></tr>
+</table>
+<p class="est">Junior's return is senior's give-up (0.5% of senior, about 2.8% on junior at this ratio), plus what the agents make, plus 25% of fees, minus every loss first. The agents' results are published weekly on the agents page from the first settle. No estimate is given for them before there is a number to show.</p>
+
+<h2>how a loss moves</h2>
+<div class="row">
+  <div class="box"><p class="mono">senior loses $1 in a market</p><p>Senior's share price drops at once. At the next weekly settle junior sends $1 of its idle USDC into the senior vault, and junior's share price takes the hit. Morpho's vault then recognises the payment at a capped pace (at most 0.55% of the vault a day): a 2% cover takes about four days to show fully in senior's price. Senior holders who stay are made whole; anyone who withdraws inside that window realises the part not yet recognised. The app shows "cover in progress" while this is happening. Week one brings an hourly cover call that removes the wait for the weekly settle.</p></div>
+  <div class="box"><p class="mono">junior is gone</p><p>Senior is impaired only after junior's whole $75,000 is gone: a 15% loss across the entire stack inside one week. Nothing in senior's venues has done that; the scenario that would is a stablecoin failure, which hits every USDC lender the same way, without a buffer.</p></div>
+</div>
+
+<h2>fees</h2>
+<p>Every fee Orphic earns lands in one router and is split <span class="mono">50% senior / 25% junior / 25% treasury</span>. Senior's share is paid into the vault, which raises its share price with no fee switch. Streams at launch: the ORPH pool's creator fee. Later: agent token fees, agent weekly fee streams, creation fees and tuition (those two are 50% burned, 50% treasury).</p>
+
+<h2>what is custom and what is not</h2>
+<div class="k"><span>Senior vault, adapters, caps, timelock</span><span>Morpho Vault V2, audited, deployed by Morpho's factory</span></div>
+<div class="k"><span>Junior contract and fee router</span><span class="mono">custom, unaudited, about 500 lines, fork-tested</span></div>
+<div class="k"><span>Agents</span><span>off-chain keepers; on-chain they can only call the listed venues with Orphic as the receiver</span></div>
+<div class="k"><span>Owner powers</span><span>pause junior deposits (never withdrawals), set caps behind a 3-day timelock, change the agent key, set the ORPH stake rate</span></div>
+
+<div class="warn">Unaudited. Capped at $500,000. Owner can pause deposits, never withdrawals or settles. The Basis agent is not active. Rates shown are live readings or estimates and are not promises.</div>
+
+<p class="est" style="margin-top:20px">Sources: Morpho API and HyperEVM state read on 7 Nov 2026; Morpho Vault V2 source tag 2026-10-12; Hyperliquid docs. Addresses and read-backs are on the status page.</p>
+</div></body></html>

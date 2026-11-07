@@ -1,0 +1,72 @@
+name: rotator
+
+on:
+  schedule:
+    # Hourly. The weekly close is detected inside the keeper (Sunday 00:xx UTC).
+    - cron: "7 * * * *"
+  workflow_dispatch:
+    inputs:
+      weekly:
+        description: "Force the weekly close step"
+        required: false
+        default: "false"
+
+# Never let two ticks overlap. A new tick waits for the running one, it is not cancelled,
+# because cancelling mid-plan could leave the vault half rotated.
+concurrency:
+  group: orphic-rotator
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  tick:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: keeper
+    env:
+      RPC_URL: ${{ secrets.RPC_URL }}
+      # Dry-run by default. Set the repository variable LIVE to "1" to allow broadcasting.
+      LIVE: ${{ vars.LIVE == '1' && '1' || '0' }}
+      # Only read while config/senior.json still has placeholder addresses.
+      STATE_FIXTURE: test/fixtures/state.json
+      OPS_DIR: ops
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: keeper/package-lock.json
+
+      - name: Install
+        run: npm ci
+
+      - name: Test
+        run: npm test
+
+      - name: Tick
+        env:
+          # Only injected when LIVE=1 so a dry-run job never even holds the key.
+          AGENT_PRIVATE_KEY: ${{ vars.LIVE == '1' && secrets.AGENT_PRIVATE_KEY || '' }}
+        run: |
+          if [ "${{ github.event.inputs.weekly }}" = "true" ]; then
+            npm run tick -- --weekly
+          else
+            npm run tick
+          fi
+
+      - name: Upload report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rotator-${{ github.run_id }}
+          path: |
+            keeper/ops/last-plan.json
+            keeper/ops/reports/*.json
+          retention-days: 90
+          if-no-files-found: ignore

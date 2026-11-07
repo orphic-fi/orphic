@@ -1,0 +1,71 @@
+{
+  "data": {
+    "markets": {
+      "items": [
+        {
+          "marketId": "0xe7aa046832007a975d4619260d221229e99cc27da2e6ef162881202b4cd2349b",
+          "lltv": "625000000000000000",
+          "irmAddress": "0xD4a426F010986dCad727e8dd6eed44cA4A9b7483",
+          "loanAsset": { "symbol": "USDC", "address": "0xb88339CB7199b77E23DB6E890353E22632Ba630f" },
+          "collateralAsset": { "symbol": "kHYPE", "address": "0xfD739d4e423301CE9385c1fb8850539D657C296D" },
+          "oracle": { "address": "0x1111111111111111111111111111111111111111" },
+          "state": { "supplyAssetsUsd": 18000000, "borrowAssetsUsd": 14400000, "liquidityAssetsUsd": 3600000, "supplyApy": 0.062, "utilization": 0.80, "fee": 0 }
+        },
+        {
+          "marketId": "0x96c47d3797394dd25e33f814216793a89d2e6edcc54d1dac3ab4c2b2d82a73b9",
+          "lltv": "770000000000000000",
+          "irmAddress": "0xD4a426F010986dCad727e8dd6eed44cA4A9b7483",
+          "loanAsset": { "symbol": "USDC", "address": "0xb88339CB7199b77E23DB6E890353E22632Ba630f" },
+          "collateralAsset": { "symbol": "kHYPE", "address": "0xfD739d4e423301CE9385c1fb8850539D657C296D" },
+          "oracle": { "address": "0x2222222222222222222222222222222222222222" },
+          "state": { "supplyAssetsUsd": 6000000, "borrowAssetsUsd": 5400000, "liquidityAssetsUsd": 600000, "supplyApy": 0.081, "utilization": 0.90, "fee": 0 }
+        },
+        {
+          "marketId": "0xd7d38220652d19c87099c3b23de9a70a1893620a050c635d1a94bd947c9c59a8",
+          "lltv": "770000000000000000",
+          "irmAddress": "0xD4a426F010986dCad727e8dd6eed44cA4A9b7483",
+          "loanAsset": { "symbol": "USDC", "address": "0xb88339CB7199b77E23DB6E890353E22632Ba630f" },
+          "collateralAsset": { "symbol": "WHYPE", "address": "0x5555555555555555555555555555555555555555" },
+          "oracle": { "address": "0x3333333333333333333333333333333333333333" },
+          "state": { "supplyAssetsUsd": 25000000, "borrowAssetsUsd": 21250000, "liquidityAssetsUsd": 3750000, "supplyApy": 0.071, "utilization": 0.85, "fee": 0 }
+        },
+        {
+          "marketId": "0x45af9c72aa97978e143a646498c8922058b7c6f18b6f7b05d7316c8cf7ab942f",
+          "lltv": "770000000000000000",
+          "irmAddress": "0xD4a426F010986dCad727e8dd6eed44cA4A9b7483",
+          "loanAsset": { "symbol": "USDC", "address": "0xb88339CB7199b77E23DB6E890353E22632Ba630f" },
+          "collateralAsset": { "symbol": "UBTC", "address": "0x9FDBdA0A5e284c32744D2f17Ee5c74B284993463" },
+          "oracle": { "address": "0x4444444444444444444444444444444444444444" },
+          "state": { "supplyAssetsUsd": 12000000, "borrowAssetsUsd": 8400000, "liquidityAssetsUsd": 3600000, "supplyApy": 0.048, "utilization": 0.70, "fee": 0 }
+        },
+        {
+          "marketId": "0x8eecdd03f1e12e03c04abefdb3f536067e071ad2c3f63e7b04c9a034889d0ba5",
+          "lltv": "860000000000000000",
+          "irmAddress": "0xD4a426F010986dCad727e8dd6eed44cA4A9b7483",
+          "loanAsset": { "symbol": "USDC", "address": "0xb88339CB7199b77E23DB6E890353E22632Ba630f" },
+          "collateralAsset": { "symbol": "XYZ", "address": "0x6666666666666666666666666666666666666666" },
+          "oracle": { "address": "0x7777777777777777777777777777777777777777" },
+          "state": { "supplyAssetsUsd": 900000, "borrowAssetsUsd": 850000, "liquidityAssetsUsd": 50000, "supplyApy": 0.15, "utilization": 0.944, "fee": 0 }
+        },
+        {
+          "marketId": "0xaaaa000000000000000000000000000000000000000000000000000000000001",
+          "lltv": "770000000000000000",
+          "irmAddress": "0xD4a426F010986dCad727e8dd6eed44cA4A9b7483",
+          "loanAsset": { "symbol": "USDC", "address": "0xb88339CB7199b77E23DB6E890353E22632Ba630f" },
+          "collateralAsset": { "symbol": "FULL", "address": "0x8888888888888888888888888888888888888888" },
+          "oracle": { "address": "0x9999999999999999999999999999999999999999" },
+          "state": { "supplyAssetsUsd": 500000, "borrowAssetsUsd": 500000, "liquidityAssetsUsd": 0, "supplyApy": 0.4, "utilization": 1.0, "fee": 0 }
+        },
+        {
+          "marketId": "0xaaaa000000000000000000000000000000000000000000000000000000000002",
+          "lltv": "770000000000000000",
+          "irmAddress": "0xD4a426F010986dCad727e8dd6eed44cA4A9b7483",
+          "loanAsset": { "symbol": "USDC", "address": "0xb88339CB7199b77E23DB6E890353E22632Ba630f" },
+          "collateralAsset": { "symbol": "WILD", "address": "0xabababababababababababababababababababab" },
+          "oracle": { "address": "0xcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd" },
+          "state": { "supplyAssetsUsd": 20000, "borrowAssetsUsd": 19000, "liquidityAssetsUsd": 1000, "supplyApy": 2.5, "utilization": 0.95, "fee": 0 }
+        }
+      ]
+    }
+  }
+}
