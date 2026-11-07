@@ -80,6 +80,18 @@ I run `forge test --match-contract DeployTest` against the live addresses (env `
 - Keeper: fill `keeper/config/senior.json` with SENIOR, MARKET_ADAPTER, FELIX_ADAPTER; repo variable `LIVE` unset (dry-run) until Monday; secrets `AGENT_PRIVATE_KEY`, `RPC_URL`.
 - Front end: `web/src/config/addresses.ts` with the addresses, `DEPLOYED = true`, deploy to the orphic.fi host. Write buttons stay disabled by `OPENS_LABEL` until Monday.
 
+## 5a. Monday: ORPH and the pool (step 4 and 5)
+
+Step 4, `04_DeployORPH.s.sol`: ORPH (1B, no owner), two OZ timelocks (treasury 15%, incentives 10%, 3-day delay, admin = TREASURY_ADMIN), TeamVesting (15%, 2 years, 6-month cliff, beneficiary TEAM), 60% to POOL_SEEDER (the Safe).
+```
+export DEPLOYER=0x... POOL_SEEDER=0xSafe TREASURY_ADMIN=0xSafe TEAM=0x...
+forge script script/04_DeployORPH.s.sol --rpc-url $HYPEREVM_RPC --broadcast --slow --sender $DEPLOYER --interactive -vvv
+```
+Read-back: `totalSupply() 1e27`, `balanceOf(POOL_SEEDER) 6e26`, `balanceOf(TREASURY) 1.5e26`, `balanceOf(VESTING) 1.5e26`, `balanceOf(INCENTIVES) 1e26`, `balanceOf(DEPLOYER) 0`, vesting `cliff()`, timelock `getMinDelay() 259200`.
+
+Step 5, pool (script `05_SeedPool.s.sol`, Sunday): Uniswap v4 on HyperEVM, pool HYPE (native, currency0) / ORPH, 1% static fee, initialised at the price that makes 1B ORPH worth about $5,000 (ORPH per HYPE computed from the live HYPE price at deploy time). One single-sided ORPH position from that price upward, minted through Uniswap's PositionManager from the Safe, which holds the position NFT. No hook, no HYPE seed. Read-back: `StateView.getSlot0(poolId)` sqrtPrice and tick, `PositionManager.ownerOf(tokenId) == Safe`, `getPositionLiquidity(tokenId) > 0`, ORPH `balanceOf(PoolManager) == 6e26`.
+Then on junior: `setStakeToken(ORPH, stakePerAsset)` where stakePerAsset = ORPH wei per 1 USDC at the opening price times 20% (at $0.000005 per ORPH: 20% of 1 USDC = 40,000 ORPH, so `stakePerAsset = 40000e18`). Read back `stakeToken()`, `stakePerAsset()`.
+
 ## 6. Monday morning checklist (before anything opens)
 1. Elysium mainnet: chain id, public RPC, explorer, from `https://elysium.kinetiq.xyz/docs/connecting-to-elysium`. Read `eth_chainId`.
 2. Canonical USDC on Elysium: `cast call $L2_ROUTER "calculateL2TokenAddress(address)(address)" 0xb88339CB7199b77E23DB6E890353E22632Ba630f --rpc-url $ELYSIUM_RPC`. Confirm `symbol()`, `decimals() 6`, and that the L2 gateway router is the one listed on `https://elysium.kinetiq.xyz/docs/contract-addresses` (mainnet section). Reject anything else named USDC.
@@ -89,8 +101,14 @@ I run `forge test --match-contract DeployTest` against the live addresses (env `
 6. Senior and junior read-backs from sections 1 to 3 repeated against mainnet state.
 7. Keeper dry-run against live addresses prints a sane plan; then set `LIVE=1`.
 8. ORPH deployed and hook (or o1) pool live; `setStakeToken(ORPH, rate)` on junior with the rate from the launch price; read back `stakeToken()`.
-9. `setDepositsPaused(false)` on junior. Senior accepts deposits from step 1 onward; the front end gates it until this point.
-10. Publish. Banners on: "Unaudited, capped, owner-pausable", "Basis agent not active".
+9. `setDepositsPaused(false)` on junior.
+10. **Live test, you, from treasury, before anyone else (first step after the deploys):**
+    a. Senior: `approve(SENIOR, 1000e6)` then `deposit(1000e6, you)` on the senior vault. Confirm: `senior.balanceOf(you) > 0`, `senior.totalAssets()` about 1,000e6, `USDC.balanceOf(SENIOR)` about 0 (it went to Felix), `IERC4626(FELIX).balanceOf(FELIX_ADAPTER) > 0`, `senior.convertToAssets(senior.balanceOf(you))` about 1,000e6 minus rounding.
+    b. Junior: `ORPH.approve(JUNIOR, stake)` and `USDC.approve(JUNIOR, amount)` where stake = amount x stakePerAsset / 1e6 (amount in USDC units, under the $10k wallet cap), then `deposit(amount, you)`. Confirm: `junior.balanceOf(you) == amount x 1e12` (price is 1.0 at launch), `junior.stakeOf(you) == stake`, `junior.stakedShares(you) == amount x 1e12`, `junior.totalAssets() == amount + 1e6` (the seed), `junior.pricePerShare() == 1e18`, `junior.seniorSupplyBase() == senior.totalSupply()` (your deposit synced the baseline), `junior.coverInProgress() == 0`.
+    c. Exit path, small: `requestExit(1e18)` (one share). Confirm `exitOf(you)` shows shares 1e18, `readyAt` a UTC midnight at least 7 days out, `pendingExitShares() == 1e18`, `junior.balanceOf(JUNIOR) == 1e18`. Leave it in; it is the first real settle's test next Sunday.
+    d. Agent: one Rotator dry-run against live addresses, then `LIVE=1` and one tick: confirm an `AgentCall` event on junior (or "hold" in the report) and `junior.totalAssets()` unchanged within rounding.
+    e. Router: send 10 USDC to the router, keeper `distribute()`. Confirm `USDC.balanceOf(SENIOR)` up by 5e6, junior idle up by 2.5e6, treasury up by 2.5e6; after an hour `senior.convertToAssets` up.
+11. Publish. Banners on: "Unaudited, capped, owner-pausable", "Basis agent not active". Junior per-wallet cap $10k is on for week one (`walletCap()`), off with `setWalletCap(0)` next Monday.
 
 ## 6a. Hourly (keeper)
 `junior.syncSenior()` every tick so new senior deposits are covered; report `coverInProgress()`. If the keeper is down, anyone can call it.

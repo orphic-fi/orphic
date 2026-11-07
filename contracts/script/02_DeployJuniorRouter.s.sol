@@ -28,6 +28,7 @@ contract DeployJuniorRouter is Script, Addresses {
         IERC20(USDC).approve(address(junior), junior.SEED_ASSETS());
         junior.seed();
         junior.setDepositsPaused(true); // opened on Monday by hand, after the checklist
+        junior.setWalletCap(vm.envOr("WALLET_CAP", uint256(10_000e6))); // week one only
         junior.setAgent(agent);
 
         // valuation universe = agent venues
@@ -59,7 +60,7 @@ contract DeployJuniorRouter is Script, Addresses {
         console2.log("JUNIOR ", address(junior));
         console2.log("ROUTER ", address(router));
 
-        require(junior.seeded() && junior.depositsPaused(), "junior state");
+        require(junior.seeded() && junior.depositsPaused() && junior.walletCap() == vm.envOr("WALLET_CAP", uint256(10_000e6)), "junior state");
         require(junior.agent() == agent && junior.owner() == deployer, "junior roles");
         require(junior.marketsLength() == 4 && junior.vaultsLength() == 2, "junior universe");
         require(address(junior.senior()) == address(senior), "junior senior");

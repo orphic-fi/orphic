@@ -51,6 +51,7 @@ contract JuniorVault is ERC20, Ownable2Step, ReentrancyGuard {
     uint256 public pricePerShare = WAD; // assets per share, 18 decimals of precision, frozen between settles
     uint256 public lastSettle;
     uint256 public depositCap;
+    uint256 public walletCap; // max assets per wallet at the frozen price, 0 = no limit (week one: $10k)
     bool public depositsPaused;
     bool public seeded;
     address public agent;
@@ -113,6 +114,7 @@ contract JuniorVault is ERC20, Ownable2Step, ReentrancyGuard {
     event StakeTokenSet(address token, uint256 stakePerAsset);
     event StakePerAssetSet(uint256 stakePerAsset);
     event DepositCapSet(uint256 cap);
+    event WalletCapSet(uint256 cap);
     event DepositsPaused(bool paused);
     event AgentSet(address agent);
 
@@ -167,6 +169,10 @@ contract JuniorVault is ERC20, Ownable2Step, ReentrancyGuard {
         (uint256 nav, bool complete) = _navComplete();
         if (!complete) revert VenueBroken();
         if (nav + assets > depositCap) revert CapExceeded();
+        if (walletCap != 0) {
+            uint256 held = balanceOf(receiver) + exitOf[receiver].shares;
+            if (held * pricePerShare / WAD / assetScale + assets > walletCap) revert CapExceeded();
+        }
         _syncSenior(); // every junior deposit also refreshes what senior exposure we stand behind
         shares = _toShares(assets);
         uint256 stake;
@@ -530,6 +536,11 @@ contract JuniorVault is ERC20, Ownable2Step, ReentrancyGuard {
     function setDepositCap(uint256 cap) external onlyOwner {
         depositCap = cap;
         emit DepositCapSet(cap);
+    }
+
+    function setWalletCap(uint256 cap) external onlyOwner {
+        walletCap = cap;
+        emit WalletCapSet(cap);
     }
 
     function setDepositsPaused(bool paused) external onlyOwner {

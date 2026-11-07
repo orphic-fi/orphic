@@ -41,6 +41,28 @@ contract JuniorVaultTest is Base {
         vm.stopPrank();
     }
 
+    /* 3b */
+    function test_walletCapPerReceiver() public {
+        vm.prank(owner);
+        junior.setWalletCap(10_000e6);
+        _juniorDeposit(alice, 9_000e6);
+        vm.startPrank(alice);
+        USDC.approve(address(junior), 2_000e6);
+        vm.expectRevert(JuniorVault.CapExceeded.selector);
+        junior.deposit(1_500e6, alice);
+        junior.deposit(1_000e6, alice); // exactly at the cap is fine
+        // shares parked in an exit request still count
+        junior.requestExit(5_000e18);
+        USDC.approve(address(junior), 1e6);
+        vm.expectRevert(JuniorVault.CapExceeded.selector);
+        junior.deposit(1e6, alice);
+        vm.stopPrank();
+        _juniorDeposit(bob, 10_000e6); // other wallets unaffected
+        vm.prank(owner);
+        junior.setWalletCap(0); // week two: off
+        _juniorDeposit(alice, 5_000e6);
+    }
+
     /* 4 */
     function test_pauseBlocksDepositsOnly() public {
         _juniorDeposit(alice, 1_000e6);
