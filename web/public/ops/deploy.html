@@ -81,7 +81,7 @@ function render(){
 }
 async function verifyAll(){
   if(!plan.verify||!plan.verify.length)return;log('final verify: reading state back from HyperEVM');let bad=0;
-  for(const v of plan.verify){try{const out=await rpc('eth_call',[{to:v.to,data:v.data},'latest']);const ok=out.toLowerCase()===v.expect.toLowerCase();if(!ok)bad++;log(`  ${v.label}: ${ok?'ok':'MISMATCH got '+out}`,ok?'ok':'bad');}catch(e){bad++;log(`  ${v.label}: error ${e.message}`,'bad');}}
+  for(const v of plan.verify){try{const out=await rpc('eth_call',[{to:v.to,data:v.data},'latest']);const ok=v.expect?out.toLowerCase()===v.expect.toLowerCase():(out.length>2&&/[^0]/.test(out.slice(2)));if(!ok)bad++;log(`  ${v.label}: ${ok?'ok':'MISMATCH got '+out}`,ok?'ok':'bad');}catch(e){bad++;log(`  ${v.label}: error ${e.message}`,'bad');}}
   log(bad?`verify finished with ${bad} mismatch(es), stop and tell Claude`:'verify: all read-backs match, this step is live',bad?'bad':'ok');
 }
 function nextIndex(){for(let i=0;i<plan.steps.length;i++){if(!results[i]||!results[i].ok)return i;}return -1;}
@@ -101,7 +101,7 @@ async function run(i){
     for(const rb of (st.readbacks||[])){
       const to=rb.to==='$created'?rec.contractAddress:rb.to;
       const out=await rpc('eth_call',[{to,data:rb.data},'latest']);
-      const pass=rb.expect?out.toLowerCase()===rb.expect.toLowerCase():out!=='0x';
+      const pass=rb.expect?out.toLowerCase()===rb.expect.toLowerCase():(out.length>2&&/[^0]/.test(out.slice(2)));
       msg+=`\n  readback ${rb.label}: ${pass?'ok':'MISMATCH'} ${out.slice(0,66)}`;
       if(!pass)throw new Error(msg);
     }

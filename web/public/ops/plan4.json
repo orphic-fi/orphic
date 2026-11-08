@@ -1,0 +1,123 @@
+{
+  "name": "step 4: live test with own capital",
+  "deployer": "0x2DBE1Ba83084dAF698Acea79CBAfe0493f42FecC",
+  "chainId": 999,
+  "steps": [
+    {
+      "title": "junior.setDepositsPaused(false)",
+      "what": "Open junior deposits for the live test (owner only).",
+      "to": "0x20d5f4f78858d257ea047eb5f47773e361697f2e",
+      "data": "0x1c481e2d0000000000000000000000000000000000000000000000000000000000000000",
+      "value": "0x0",
+      "gas": "0x13880",
+      "readbacks": [
+        {
+          "label": "depositsPaused == false",
+          "to": "0x20d5f4f78858d257ea047eb5f47773e361697f2e",
+          "data": "0x60da3e83",
+          "expect": "0x0000000000000000000000000000000000000000000000000000000000000000"
+        }
+      ]
+    },
+    {
+      "title": "USDC.approve(senior, 1000)",
+      "what": "Allow senior to pull the deposit.",
+      "to": "0xb88339CB7199b77E23DB6E890353E22632Ba630f",
+      "data": "0x095ea7b30000000000000000000000003f7382bd8bfc6c548caa2d7b4dfce628b12a9759000000000000000000000000000000000000000000000000000000003b9aca00",
+      "value": "0x0",
+      "gas": "0x13880",
+      "readbacks": [
+        {
+          "label": "allowance",
+          "to": "0xb88339CB7199b77E23DB6E890353E22632Ba630f",
+          "data": "0xdd62ed3e0000000000000000000000002dbe1ba83084daf698acea79cbafe0493f42fecc0000000000000000000000003f7382bd8bfc6c548caa2d7b4dfce628b12a9759",
+          "expect": "0x000000000000000000000000000000000000000000000000000000003b9aca00"
+        }
+      ]
+    },
+    {
+      "title": "senior.deposit(1000 USDC)",
+      "what": "First senior deposit. Lands in Felix via the liquidity adapter.",
+      "to": "0x3F7382bd8BFC6C548CAa2D7B4dfCe628B12A9759",
+      "data": "0x6e553f65000000000000000000000000000000000000000000000000000000003b9aca000000000000000000000000002dbe1ba83084daf698acea79cbafe0493f42fecc",
+      "value": "0x0",
+      "gas": "0x16e360",
+      "readbacks": [
+        {
+          "label": "senior.totalAssets >= deposit (lower bound check is done by Claude)",
+          "to": "0x3F7382bd8BFC6C548CAa2D7B4dfCe628B12A9759",
+          "data": "0x01e1d114",
+          "expect": null
+        }
+      ]
+    },
+    {
+      "title": "USDC.approve(junior, 1000)",
+      "what": "Allow junior to pull the deposit.",
+      "to": "0xb88339CB7199b77E23DB6E890353E22632Ba630f",
+      "data": "0x095ea7b300000000000000000000000020d5f4f78858d257ea047eb5f47773e361697f2e000000000000000000000000000000000000000000000000000000003b9aca00",
+      "value": "0x0",
+      "gas": "0x13880",
+      "readbacks": [
+        {
+          "label": "allowance",
+          "to": "0xb88339CB7199b77E23DB6E890353E22632Ba630f",
+          "data": "0xdd62ed3e0000000000000000000000002dbe1ba83084daf698acea79cbafe0493f42fecc00000000000000000000000020d5f4f78858d257ea047eb5f47773e361697f2e",
+          "expect": "0x000000000000000000000000000000000000000000000000000000003b9aca00"
+        }
+      ]
+    },
+    {
+      "title": "junior.deposit(1000 USDC)",
+      "what": "First junior deposit. No ORPH stake needed yet (stake token not set).",
+      "to": "0x20d5f4f78858d257ea047eb5f47773e361697f2e",
+      "data": "0x6e553f65000000000000000000000000000000000000000000000000000000003b9aca000000000000000000000000002dbe1ba83084daf698acea79cbafe0493f42fecc",
+      "value": "0x0",
+      "gas": "0x16e360",
+      "readbacks": [
+        {
+          "label": "junior shares > 0",
+          "to": "0x20d5f4f78858d257ea047eb5f47773e361697f2e",
+          "data": "0x70a082310000000000000000000000002dbe1ba83084daf698acea79cbafe0493f42fecc",
+          "expect": null
+        }
+      ]
+    },
+    {
+      "title": "junior.requestExit(1000000 share units)",
+      "what": "Queue a dust exit so the exit path is exercised; it matures at the next settle.",
+      "to": "0x20d5f4f78858d257ea047eb5f47773e361697f2e",
+      "data": "0x721c651300000000000000000000000000000000000000000000000000000000000f4240",
+      "value": "0x0",
+      "gas": "0x61a80",
+      "readbacks": [
+        {
+          "label": "exit queued",
+          "to": "0x20d5f4f78858d257ea047eb5f47773e361697f2e",
+          "data": "0x0acafefe0000000000000000000000002dbe1ba83084daf698acea79cbafe0493f42fecc",
+          "expect": null
+        }
+      ]
+    }
+  ],
+  "verify": [
+    {
+      "label": "senior shares held by deployer (non-zero)",
+      "to": "0x3F7382bd8BFC6C548CAa2D7B4dfCe628B12A9759",
+      "data": "0x70a082310000000000000000000000002dbe1ba83084daf698acea79cbafe0493f42fecc",
+      "expect": null
+    },
+    {
+      "label": "junior shares held by deployer (non-zero)",
+      "to": "0x20d5f4f78858d257ea047eb5f47773e361697f2e",
+      "data": "0x70a082310000000000000000000000002dbe1ba83084daf698acea79cbafe0493f42fecc",
+      "expect": null
+    },
+    {
+      "label": "senior.liquidityAdapter unchanged",
+      "to": "0x3F7382bd8BFC6C548CAa2D7B4dfCe628B12A9759",
+      "data": "0xad468d11",
+      "expect": "0x0000000000000000000000000cdfdbc51744ba1ed88bb8752098105fb43f37ac"
+    }
+  ]
+}

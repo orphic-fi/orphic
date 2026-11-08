@@ -34,8 +34,13 @@ for i, s in enumerate(plan["steps"]):
         created.append(out["contractAddress"])
     if not ok:
         sys.exit("step failed")
+    for rb in s.get("readbacks", []):
+        got = cast("call", rb["to"], rb["data"])
+        okk = (got.lower() == rb["expect"].lower()) if rb.get("expect") else (len(got) > 2 and int(got, 16) != 0)
+        print(f"    readback {rb['label']}: {'ok' if okk else 'MISMATCH '+got} {got[:66]}")
 for v in plan.get("verify", []):
     got = cast("call", v["to"], v["data"])
-    status = "ok" if got.lower() == v["expect"].lower() else f"MISMATCH got {got}"
+    ok = (got.lower() == v["expect"].lower()) if v.get("expect") else (len(got) > 2 and int(got, 16) != 0)
+    status = "ok" if ok else f"MISMATCH got {got}"
     print(f"verify {v['label']}: {status}")
 print("replay complete")
