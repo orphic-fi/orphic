@@ -28,21 +28,14 @@ async function shot(browser, url, name, { width = 1280, height = 800, prepare } 
 }
 
 async function main() {
-  const prod = await preview({ root, preview: { port: 4173, strictPort: true } })
-  const prodUrl = prod.resolvedUrls.local[0].replace(/\/$/, '')
-
+  // Dev server first: vite preview sets NODE_ENV=production for the process, which would make
+  // the dev server a "production" build and trip the demo guard in main.tsx.
   process.env.VITE_DEMO = '1'
-  const dev = await createServer({ root, server: { port: 5199, strictPort: true }, logLevel: 'silent' })
+  const dev = await createServer({ root, mode: 'development', server: { port: 5199, strictPort: true }, logLevel: 'silent' })
   await dev.listen()
   const devUrl = `http://localhost:5199`
 
   const browser = await chromium.launch()
-
-  // Production build, no wallet.
-  await shot(browser, `${prodUrl}/`, 'vaults-disconnected')
-  await shot(browser, `${prodUrl}/`, 'vaults-disconnected-375', { width: 375, height: 812 })
-  await shot(browser, `${prodUrl}/agents`, 'agents')
-  await shot(browser, `${prodUrl}/how-it-works`, 'how-it-works')
 
   // Demo fixtures.
   await shot(browser, `${devUrl}/`, 'vaults-connected-demo')
@@ -51,22 +44,34 @@ async function main() {
     prepare: async (page) => {
       await page.locator('section[data-kind="senior"] button', { hasText: 'Withdraw' }).first().click()
       await page.locator('section[data-kind="senior"] input').fill('2500')
+      await page.locator('section[data-kind="senior"] button[type="submit"]').scrollIntoViewIfNeeded()
     },
   })
   await shot(browser, `${devUrl}/`, 'junior-deposit-summary-demo', {
     prepare: async (page) => {
       await page.locator('section[data-kind="junior"] input').fill('1000')
+      await page.locator('section[data-kind="junior"] button[type="submit"]').scrollIntoViewIfNeeded()
     },
   })
   await shot(browser, `${devUrl}/`, 'junior-exit-timeline-demo', {
     prepare: async (page) => {
       await page.locator('section[data-kind="junior"] button', { hasText: 'Request exit' }).first().click()
+      await page.locator('section[data-kind="junior"] button[type="submit"]').scrollIntoViewIfNeeded()
     },
   })
   await shot(browser, `${devUrl}/?scenario=cover`, 'senior-cover-demo')
+  await dev.close()
+
+  // Production build, no wallet.
+  delete process.env.VITE_DEMO
+  const prod = await preview({ root, preview: { port: 4173, strictPort: true } })
+  const prodUrl = prod.resolvedUrls.local[0].replace(/\/$/, '')
+  await shot(browser, `${prodUrl}/`, 'vaults-disconnected')
+  await shot(browser, `${prodUrl}/`, 'vaults-disconnected-375', { width: 375, height: 812 })
+  await shot(browser, `${prodUrl}/agents`, 'agents')
+  await shot(browser, `${prodUrl}/how-it-works`, 'how-it-works')
 
   await browser.close()
-  await dev.close()
   await prod.close()
 }
 

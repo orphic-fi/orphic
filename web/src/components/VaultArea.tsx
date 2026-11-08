@@ -216,7 +216,7 @@ export default function VaultArea({ kind }: { kind: VaultKind }) {
     primaryLabel = 'Withdraw'
     primaryDisabled = amount === null || blocked
   } else if (open) {
-    primaryLabel = 'Claim'
+    primaryLabel = claimable ? 'Claim' : `Claim after ${fmtDateUtc(settleAt)}`
     primaryDisabled = !claimable
   } else {
     primaryLabel = 'Request exit'
@@ -281,7 +281,7 @@ export default function VaultArea({ kind }: { kind: VaultKind }) {
         {kind === 'senior' && !LIVE && <div className={s.caption}>{addresses.hyperEvm.referenceLabel}</div>}
         {kind === 'senior' && v.apyError && <div className={s.caption}>Morpho API unreachable. Retrying.</div>}
         {kind === 'senior' && LIVE && v.cover && (
-          <div className={s.caption}>
+          <div className={s.cover}>
             Cover in progress: {fmtUsd(v.cover.usd, 2)} being recognised, about {Number.isFinite(v.cover.hours) ? fmtNum(v.cover.hours, 0) : NA} hours to
             full. Withdrawing before then realises the gap.
           </div>
@@ -291,7 +291,7 @@ export default function VaultArea({ kind }: { kind: VaultKind }) {
       <dl className={s.rows}>
         <div className={s.row}>
           <dt>TVL</dt>
-          <dd className={v.tvl !== null ? s.live : ''} title={readTitle(v.chainReadAt)}>
+          <dd title={readTitle(v.chainReadAt)}>
             {fmtUsd(v.tvl)}
           </dd>
         </div>
@@ -371,10 +371,14 @@ export default function VaultArea({ kind }: { kind: VaultKind }) {
                     <>Required ORPH: n/a until Monday</>
                   ) : v.stake.token === ZERO ? (
                     <>No stake required yet</>
-                  ) : stakeRequired ? (
+                  ) : stakeRequired && amount !== null ? (
                     <>
                       Requires <span className={s.hintStrong}>{fmtUnits(orphNeeded, ORPH_DECIMALS)} ORPH</span> ({v.stakeBps / 100}% of deposit at the
                       current rate)
+                    </>
+                  ) : stakeRequired ? (
+                    <>
+                      Stake rate: {fmtUnits(v.stake.perAsset, ORPH_DECIMALS, 0)} ORPH per USDC ({v.stakeBps / 100}% of deposit)
                     </>
                   ) : (
                     <>Required ORPH: loading</>
@@ -418,7 +422,7 @@ export default function VaultArea({ kind }: { kind: VaultKind }) {
             ) : (
               <>Withdraws from available liquidity on HyperEVM</>
             )
-          ) : (
+          ) : open ? null : (
             <>Priced at the first weekly settle after your 7-day notice ends. Claim after that settle</>
           )}
         </div>

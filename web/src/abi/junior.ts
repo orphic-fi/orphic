@@ -27,5 +27,5 @@ export const juniorAbi = [
   { type: 'function', name: 'walletCap', stateMutability: 'view', inputs: [], outputs: [{ type: 'uint256' }] },
   { type: 'function', name: 'applyStakePerAsset', stateMutability: 'nonpayable', inputs: [], outputs: [] },
   // Open exit request for an account: shares locked and the unix time the 7-day notice ends.
-  { type: 'function', name: 'exitOf', stateMutability: 'view', inputs: [{ name: 'account', type: 'address' }], outputs: [{ name: 'shares', type: 'uint256' }, { name: 'readyAt', type: 'uint256' }] },
+  { type: 'function', name: 'exitOf', stateMutability: 'view', inputs: [{ name: 'account', type: 'address' }], outputs: [{ name: 'shares', type: 'uint128' }, { name: 'readyAt', type: 'uint64' }, { name: 'settleHint', type: 'uint32' }] },
 ] as const
