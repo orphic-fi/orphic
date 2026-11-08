@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>orphic deploy</title>
+<script src="/ops/keccak.js"></script>
+<style>
+:root{--bg:#0b0c0e;--line:rgba(255,255,255,.1);--txt:#e4e6ea;--mut:#8a8f98;--acc:#8fc8ff;--ok:#9ad7b5;--warn:#f0c27a;--bad:#ff7a7a}
+body{margin:0;background:var(--bg);color:var(--txt);font:13px/1.5 "Commit Mono","SF Mono",Menlo,monospace}
+.wrap{max-width:900px;margin:0 auto;padding:24px 16px 80px}
+h1{font-size:15px;font-weight:500;margin:0 0 4px}
+.m{color:var(--mut)}.ok{color:var(--ok)}.warn{color:var(--warn)}.bad{color:var(--bad)}.acc{color:var(--acc)}
+.box{border:1px solid var(--line);padding:12px 14px;margin:12px 0;background:rgba(255,255,255,.02)}
+button{font:inherit;background:transparent;color:var(--txt);border:1px solid var(--line);padding:8px 14px;cursor:pointer}
+button.primary{border-color:var(--acc);color:var(--acc)}button:disabled{opacity:.4;cursor:default}
+pre{white-space:pre-wrap;word-break:break-all;margin:6px 0;color:var(--mut);font-size:11.5px}
+.step{display:grid;grid-template-columns:28px 1fr;gap:10px;padding:8px 0;border-top:1px solid var(--line)}
+.step:first-child{border-top:0}
+.sq{width:10px;height:10px;border:1px solid var(--mut);margin-top:5px}
+.sq.done{background:var(--ok);border-color:var(--ok)}.sq.now{border-color:var(--acc)}.sq.fail{background:var(--bad);border-color:var(--bad)}
+input{font:inherit;background:transparent;color:var(--txt);border:1px solid var(--line);padding:6px 8px;width:100%}
+</style></head><body><div class="wrap">
+<h1>orphic deploy signer</h1>
+<div class="m">Your wallet signs each transaction in order. This page never sees a key. Each step runs its read-back against HyperEVM before the next one unlocks.</div>
+
+<div class="box">
+  <div>plan: <span id="planName" class="acc">loading</span> · chain 999 · deployer <span id="deployer" class="m">n/a</span></div>
+  <div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap">
+    <button id="connect" class="primary">connect wallet</button>
+    <button id="bigblocks">sign big blocks on</button>
+    <button id="bigblocksOff">big blocks off</button>
+    <span id="acct" class="m"></span>
+  </div>
+  <div id="bbStatus" class="m" style="margin-top:6px"></div>
+</div>
+
+<div class="box"><div class="m">plan url (change only if Cashout is told to)</div><input id="planUrl" value="/ops/plan1.json"><div style="margin-top:8px"><button id="reload">reload plan</button> <button id="verify">run verify read-backs</button></div></div>
+
+<div class="box" id="steps"></div>
+<div class="box"><div class="m">log</div><pre id="log"></pre></div>
+</div>
+<script>
+const $=id=>document.getElementById(id);
+const log=(m,c)=>{const p=$('log');p.innerHTML+=(c?`<span class="${c}">`:'')+m+(c?'</span>':'')+'\n';p.scrollTop=p.scrollHeight;};
+const RPC='https://rpc.hyperliquid.xyz/evm';
+let plan=null, account=null, results={};
+async function rpc(method,params){const r=await fetch(RPC,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({jsonrpc:'2.0',id:1,method,params})});const j=await r.json();if(j.error)throw new Error(j.error.message);return j.result;}
+async function connect(){
+  if(!window.ethereum){log('no wallet found','bad');return;}
+  const accs=await window.ethereum.request({method:'eth_requestAccounts'});account=accs[0];$('acct').textContent=account;
+  try{await window.ethereum.request({method:'wallet_switchEthereumChain',params:[{chainId:'0x3e7'}]});}
+  catch(e){if(e.code===4902){await window.ethereum.request({method:'wallet_addEthereumChain',params:[{chainId:'0x3e7',chainName:'HyperEVM',nativeCurrency:{name:'HYPE',symbol:'HYPE',decimals:18},rpcUrls:[RPC],blockExplorerUrls:['https://hyperevmscan.io']}]});}else throw e;}
+  if(plan&&plan.deployer&&plan.deployer.toLowerCase()!==account.toLowerCase()){log(`connected ${account} but the plan expects ${plan.deployer}; switch accounts`,'bad');}
+  else log(`connected ${account}`,'ok');
+}
+// Hyperliquid L1 action: evmUserModify, signed as the phantom agent (same bytes as the official SDK's sign_l1_action)
+function msgpackEvmUserModify(enable){const enc=new TextEncoder();const b=[0x82,0xa4,...enc.encode('type'),0xad,...enc.encode('evmUserModify'),0xae,...enc.encode('usingBigBlocks'),enable?0xc3:0xc2];return new Uint8Array(b);}
+function hex(u8){return Array.from(u8).map(x=>x.toString(16).padStart(2,'0')).join('');}
+async function bigBlocks(enable){
+  if(!account){log('connect first','bad');return;}
+  const nonce=Date.now();const body=msgpackEvmUserModify(enable);
+  const nb=new Uint8Array(8);let n=BigInt(nonce);for(let i=7;i>=0;i--){nb[i]=Number(n&255n);n>>=8n;}
+  const data=new Uint8Array(body.length+9);data.set(body,0);data.set(nb,body.length);data[body.length+8]=0;
+  const connectionId='0x'+keccak256(data);
+  const typed={domain:{chainId:1337,name:'Exchange',verifyingContract:'0x0000000000000000000000000000000000000000',version:'1'},types:{EIP712Domain:[{name:'name',type:'string'},{name:'version',type:'string'},{name:'chainId',type:'uint256'},{name:'verifyingContract',type:'address'}],Agent:[{name:'source',type:'string'},{name:'connectionId',type:'bytes32'}]},primaryType:'Agent',message:{source:'a',connectionId}};
+  const sig=await window.ethereum.request({method:'eth_signTypedData_v4',params:[account,JSON.stringify(typed)]});
+  const r=sig.slice(0,66),s='0x'+sig.slice(66,130);let v=parseInt(sig.slice(130,132),16);if(v<27)v+=27;
+  const res=await fetch('https://api.hyperliquid.xyz/exchange',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({action:{type:'evmUserModify',usingBigBlocks:enable},nonce,signature:{r,s,v},vaultAddress:null})});
+  const j=await res.json();$('bbStatus').textContent=JSON.stringify(j);log(`evmUserModify usingBigBlocks=${enable}: ${JSON.stringify(j)}`,j.status==='ok'?'ok':'bad');
+}
+async function loadPlan(){
+  try{const r=await fetch($('planUrl').value+'?t='+Date.now());plan=await r.json();}catch(e){log('plan load failed: '+e.message,'bad');return;}
+  $('planName').textContent=plan.name;$('deployer').textContent=plan.deployer;results={};render();log(`plan loaded: ${plan.name}, ${plan.steps.length} steps`);
+}
+function render(){
+  const el=$('steps');el.innerHTML='';
+  plan.steps.forEach((st,i)=>{
+    const r=results[i];const cls=r?(r.ok?'done':'fail'):(i===nextIndex()?'now':'');
+    const d=document.createElement('div');d.className='step';
+    d.innerHTML=`<div class="sq ${cls}"></div><div><div>${i+1}. ${st.title}</div><div class="m">${st.what}</div>${parseInt(st.gas,16)>1900000?'<div class="warn">needs big blocks on (over 2M gas)</div>':''}${st.predictedAddress?`<div class="m">will create ${st.predictedAddress}</div>`:''}${st.calls?`<pre>${st.calls.map(c=>c.replace(/^call\s+/,'')).join('\n')}</pre>`:''}${st.to?`<pre>to ${st.to}${st.value&&st.value!=='0x0'?' · value '+st.value:''}\ndata ${st.data.slice(0,74)}${st.data.length>74?'… ('+((st.data.length-2)/2)+' bytes)':''}</pre>`:'<pre>contract creation</pre>'}<div id="r${i}" class="m">${r?(r.ok?'<span class=ok>'+r.msg+'</span>':'<span class=bad>'+r.msg+'</span>'):''}</div>${i===nextIndex()?`<button class="primary" onclick="run(${i})">sign step ${i+1}</button>`:''}</div>`;
+    el.appendChild(d);
+  });
+}
+async function verifyAll(){
+  if(!plan.verify||!plan.verify.length)return;log('final verify: reading state back from HyperEVM');let bad=0;
+  for(const v of plan.verify){try{const out=await rpc('eth_call',[{to:v.to,data:v.data},'latest']);const ok=out.toLowerCase()===v.expect.toLowerCase();if(!ok)bad++;log(`  ${v.label}: ${ok?'ok':'MISMATCH got '+out}`,ok?'ok':'bad');}catch(e){bad++;log(`  ${v.label}: error ${e.message}`,'bad');}}
+  log(bad?`verify finished with ${bad} mismatch(es), stop and tell Claude`:'verify: all read-backs match, this step is live',bad?'bad':'ok');
+}
+function nextIndex(){for(let i=0;i<plan.steps.length;i++){if(!results[i]||!results[i].ok)return i;}return -1;}
+async function run(i){
+  const st=plan.steps[i];if(!account){log('connect first','bad');return;}
+  try{
+    const tx={from:account,data:st.data,value:st.value||'0x0',gas:st.gas||undefined};if(st.to)tx.to=st.to;
+    log(`step ${i+1}: requesting signature`);
+    const hash=await window.ethereum.request({method:'eth_sendTransaction',params:[tx]});
+    log(`step ${i+1}: sent ${hash}`);
+    let rec=null;for(let k=0;k<120&&!rec;k++){await new Promise(r=>setTimeout(r,2000));rec=await rpc('eth_getTransactionReceipt',[hash]);}
+    if(!rec)throw new Error('no receipt after 4 minutes');
+    if(rec.status!=='0x1')throw new Error('reverted, see hyperevmscan.io/tx/'+hash);
+    let msg=`confirmed in block ${parseInt(rec.blockNumber,16)}, gas ${parseInt(rec.gasUsed,16)}`;
+    if(rec.contractAddress){msg+=` · deployed ${rec.contractAddress}`;}
+    // read-backs
+    for(const rb of (st.readbacks||[])){
+      const to=rb.to==='$created'?rec.contractAddress:rb.to;
+      const out=await rpc('eth_call',[{to,data:rb.data},'latest']);
+      const pass=rb.expect?out.toLowerCase()===rb.expect.toLowerCase():out!=='0x';
+      msg+=`\n  readback ${rb.label}: ${pass?'ok':'MISMATCH'} ${out.slice(0,66)}`;
+      if(!pass)throw new Error(msg);
+    }
+    if(st.predictedAddress){const code=await rpc('eth_getCode',[st.predictedAddress,'latest']);if(code==='0x')throw new Error('expected contract at '+st.predictedAddress+' but no code there');msg+=`\n  code present at ${st.predictedAddress}`;}
+    results[i]={ok:true,msg,hash,contractAddress:rec.contractAddress};log(`step ${i+1}: ${msg}`,'ok');
+    if(nextIndex()===-1||plan.steps.slice(i+1).every((_,k)=>results[i+1+k]&&results[i+1+k].ok))await verifyAll();
+  }catch(e){results[i]={ok:false,msg:e.message};log(`step ${i+1} failed: ${e.message}`,'bad');}
+  render();
+}
+$('connect').onclick=connect;$('bigblocks').onclick=()=>bigBlocks(true);$('bigblocksOff').onclick=()=>bigBlocks(false);$('reload').onclick=loadPlan;$('verify').onclick=verifyAll;
+loadPlan();
+</script></body></html>

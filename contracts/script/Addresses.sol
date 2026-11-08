@@ -32,5 +32,5 @@ abstract contract Addresses {
 
     // Orphic roles (Cashout, 8 Nov 01:34)
     address constant JUNIOR_OWNER = 0x2DBE1Ba83084dAF698Acea79CBAfe0493f42FecC; // hardware wallet: junior and router owner
-    address constant SENIOR_SAFE = 0x9EDfDc92A46adbfa7b6189295376bEF4599c5F29; // Safe: senior owner and curator after setup
+    address constant SENIOR_SAFE = 0x9EDfDc92A46adbfa7b6189295376bEF4599c5F29; // senior owner and curator after setup (MetaMask account today, Safe later)
 }

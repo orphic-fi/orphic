@@ -8,14 +8,16 @@ import {Addresses} from "./Addresses.sol";
 /// Step 3 of 3. Points senior's management fee at junior, sets maxRate, sets Felix as the liquidity adapter,
 /// then raises the timelock on everything that changes risk. After this, cap and adapter changes wait 3 days.
 ///
-/// Env: DEPLOYER, SENIOR, JUNIOR, FELIX_ADAPTER. Ends by handing senior owner and curator to SENIOR_SAFE (must exist on 999).
+/// Env: DEPLOYER, SENIOR, JUNIOR, FELIX_ADAPTER. Ends by handing senior owner and curator to SENIOR_SAFE (EOA or Safe).
 contract WireSenior is Script, Addresses {
     function run() external {
         IVaultV2 senior = IVaultV2(vm.envAddress("SENIOR"));
         address junior = vm.envAddress("JUNIOR");
         address felixAdapter = vm.envAddress("FELIX_ADAPTER");
         address deployer = vm.envAddress("DEPLOYER");
-        require(SENIOR_SAFE.code.length > 0, "Safe is not deployed on HyperEVM yet; deploy it at this address first");
+        // SENIOR_SAFE may be an EOA at launch (MetaMask account); the 3-day timelock is what protects senior. Move it to a
+        // Safe later with setCurator and setOwner from that account.
+        require(SENIOR_SAFE != address(0) && SENIOR_SAFE != deployer, "senior admin must be a distinct account");
 
         vm.startBroadcast(deployer);
         _exec(senior, abi.encodeCall(IVaultV2.setManagementFeeRecipient, (junior)));

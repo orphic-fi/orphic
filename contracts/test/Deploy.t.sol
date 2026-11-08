@@ -21,7 +21,6 @@ contract DeployTest is Test, Addresses {
         vm.createSelectFork(vm.envOr("HYPEREVM_RPC", string("https://rpc.hyperliquid.xyz/evm")), vm.envOr("FORK_BLOCK", uint256(50666000)));
         deal(address(USDC), deployer, 10e6);
         vm.deal(deployer, 10 ether);
-        vm.etch(SENIOR_SAFE, hex"00"); // the Safe exists on the fork for the handover check
         vm.setEnv("DEPLOYER", vm.toString(deployer));
         vm.setEnv("AGENT", vm.toString(agent));
         vm.setEnv("TREASURY", vm.toString(treasury));
