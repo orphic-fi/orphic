@@ -33,6 +33,7 @@ Read-back: `curl -s https://api.hyperliquid.xyz/info -d '{"type":"userDetails","
 0.4 Create the Elysium RPC key (Alchemy or Conduit). Give me only the URL to put in `VITE_ELYSIUM_RPC` and the keeper config.
 
 0.5 Authorise the GitHub org push (Orphic org, repo `orphic`). I push the monorepo: `contracts/`, `keeper/`, `web/`, `ops/`.
+0.6 Hosting. orphic.fi is registered at Hostinger, domain only (no hosting plan; do not buy one). Create a Vercel account linked to the GitHub org, import `orphic`, root directory `web`, framework Vite (`web/vercel.json` is already there), env `VITE_ELYSIUM_RPC`. Then in Hostinger, Domains, orphic.fi, DNS: `A @ 76.76.21.21` and `CNAME www cname.vercel-dns.com`; add `orphic.fi` and `www.orphic.fi` as domains in the Vercel project. Read-back: `dig +short orphic.fi` returns 76.76.21.21 and https://orphic.fi serves the vaults page with a valid certificate. Until then the Vercel preview URL is the test site.
 
 ## 1. Sunday: deploy senior (step 1 of 3)
 
@@ -116,7 +117,7 @@ Then on junior: `setStakeToken(ORPH, stakePerAsset)` where stakePerAsset = ORPH 
     c. Exit path, small: `requestExit(1e18)` (one share). Confirm `exitOf(you)` shows shares 1e18, `readyAt` a UTC midnight at least 7 days out, `pendingExitShares() == 1e18`, `junior.balanceOf(JUNIOR) == 1e18`. Leave it in; it is the first real settle's test next Sunday.
     d. Agent: one Rotator dry-run against live addresses, then `LIVE=1` and one tick: confirm an `AgentCall` event on junior (or "hold" in the report) and `junior.totalAssets()` unchanged within rounding.
     e. Router: send 10 USDC to the router, keeper `distribute()`. Confirm `USDC.balanceOf(SENIOR)` up by 5e6, junior idle up by 2.5e6, treasury up by 2.5e6; after an hour `senior.convertToAssets` up.
-11. Publish. Banners on: "Unaudited, capped, owner-pausable", "Basis agent not active". Junior per-wallet cap $10k is on for week one (`walletCap()`), off with `setWalletCap(0)` next Monday.
+11. Publish: merge to `main` (Vercel deploys), confirm https://orphic.fi loads the new build (check the block number in the readout changes). Banners on: "Unaudited, capped, owner-pausable", "Basis agent not active". Junior per-wallet cap $10k is on for week one (`walletCap()`), off with `setWalletCap(0)` next Monday.
 
 ## 6b. Weekly: stake rate re-set (owner, Sundays after settle)
 The gate is 20% of the deposit in ORPH. `stakePerAsset` is ORPH wei per 1 USDC and changes only through a 3-day timelock: `proposeStakePerAsset(x)` (owner) then `applyStakePerAsset()` (anyone) three days later. Existing stakes are never re-quoted.
