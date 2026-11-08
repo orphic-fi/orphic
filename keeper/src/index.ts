@@ -7,6 +7,7 @@ import { decide, proposeAllocation } from "./engine/allocate.js";
 import { buildPlan, validatePlan } from "./exec/plan.js";
 import { executePlan, weeklyClose, type ExecContext } from "./exec/send.js";
 import { juniorWeekly, readJuniorStatus, syncSenior, type JuniorCtx } from "./exec/junior.js";
+import { sampleOrphPrice } from "./data/orph.js";
 import { bookApy, humanSummary, writeReport, type RunReport } from "./report.js";
 import type { ExecutionResult, HyperlendRate, VaultState } from "./types.js";
 
@@ -122,6 +123,17 @@ export async function run(opts: RunOptions, cfg: SeniorConfig = loadConfig(opts.
     warnings.push(juniorStatus.note);
   }
 
+  // ORPH price record (Uniswap v4 has no on-chain TWAP). Never sends anything.
+  let orphPrice: RunReport["orphPrice"];
+  try {
+    const res = await sampleOrphPrice({ cfg, opsDir: opts.opsDir, client, hypeUsd: morpho.hypePriceUsd, nowTs: Math.floor(opts.now.getTime() / 1000), log });
+    orphPrice = res.result;
+    warnings.push(...res.warnings);
+  } catch (err) {
+    orphPrice = { enabled: true, sampleCount: 0, note: `ORPH price sample failed: ${(err as Error).message}` };
+    warnings.push(orphPrice.note);
+  }
+
   // Rule 7.
   let weekly: RunReport["weeklyClose"];
   let juniorWeeklyResult: RunReport["juniorWeekly"];
@@ -167,6 +179,7 @@ export async function run(opts: RunOptions, cfg: SeniorConfig = loadConfig(opts.
     juniorSync,
     juniorStatus,
     juniorWeekly: juniorWeeklyResult,
+    orphPrice,
     bookApy: bookApy(proposal),
     error,
   };

@@ -12,8 +12,9 @@ Everything is a dry-run until a repository variable `LIVE=1` is set and the vaul
 4. Builds an ordered plan (rule 5) and prices it (rule 4).
 5. Executes the plan in dry-run (table plus `ops/last-plan.json`) or live (sequential transactions with post-state checks).
 6. Calls `JuniorVault.syncSenior()` (permissionless, refreshes the senior baseline so newly deposited senior shares become covered) and reads `coverInProgress()` on junior plus `maxRate()` on senior for the report. Skipped entirely while `junior` in the config is `0xTODO`; dry-run only logs.
-7. On Sunday 00:xx UTC, or with `--weekly`, runs the junior maturity check and settle, then the weekly close (rule 7).
-8. Writes `ops/reports/<timestamp>.json` plus `ops/reports/latest.json` and prints a short summary (rule 8).
+7. Samples the ORPH/HYPE Uniswap v4 pool and appends to `ops/price-samples.jsonl` (see ORPH price record). Skipped while `orph` is `0xTODO`.
+8. On Sunday 00:xx UTC, or with `--weekly`, runs the junior maturity check and settle, then the weekly close (rule 7), and prints the stake rate proposal line.
+9. Writes `ops/reports/<timestamp>.json` plus `ops/reports/latest.json` and prints a short summary (rule 8).
 
 HyperLend rates are fetched and included in the report for the dashboard. They never enter the allocation decision because there is no HyperLend adapter yet.
 
@@ -121,6 +122,19 @@ Weekly, before the senior close logic:
 
 Both steps are skipped while `junior` is `0xTODO`.
 
+### ORPH price record (`src/data/orph.ts`, `src/engine/twap.ts`)
+
+Uniswap v4 has no on-chain TWAP, so the keeper is the price record for the ORPH stake rate.
+
+- Every tick reads `getSlot0(poolId)` on the v4 StateView `0x1656326235cb9E34Cb58CaDe53AE30789AB32A1A`. `poolId = keccak256(abi.encode(PoolKey{currency0: native HYPE (zero address), currency1: ORPH, fee 10000, tickSpacing 200, hooks: zero}))`. If `poolId` in the config is a placeholder it is derived from the PoolKey; if it is set and differs from the derived value the config value is used and a warning is recorded.
+- `orphPerHype = (sqrtPriceX96 / 2^96)^2` (both 18 decimals, so no decimal shift; `2^96` means exactly 1). `orphUsd = hypeUsd / orphPerHype` with `hypeUsd` from the Morpho API `assets` query for WHYPE `0x5555...5555` (config fallback when unavailable).
+- The sample `{timestamp, sqrtPriceX96, tick, orphPerHype, hypeUsd, orphUsd}` is appended to `ops/price-samples.jsonl`; samples older than 30 days are pruned.
+- `twap7d` is the time-weighted average of `orphUsd` over the last 7 days: each sample holds its price until the next one, the last holds until now, and a sample taken before the window is clipped to the window start.
+- `proposedStakePerAsset = floor(0.20 / twap7d * 1e18)` (ORPH wei per 1 USDC). `twap7d`, `sampleCount` and `proposedStakePerAsset` go into every report.
+- On the weekly run the summary prints `stake rate proposal: proposeStakePerAsset(<value>)  (7d TWAP $<orphUsd>, <n> samples)` for the owner to paste. The keeper never sends that transaction; it is owner-only.
+
+Note: in the GitHub Action the runner's filesystem is fresh each run, so `ops/price-samples.jsonl` must be persisted between ticks (restore it from the previous run's artifact or a cache, or run the keeper on a host with a persistent `OPS_DIR`). Without that, each run sees only its own sample and the TWAP collapses to the spot price.
+
 ### Rule 8: report
 
 `src/report.ts`. Every run writes `ops/reports/<ISO timestamp>.json` with inputs (markets, Felix, HyperLend, prices, gas, vault state, warnings), the proposal with per-line reasons, the plan, the decision and its reason, execution results, weekly close output and the book APY before and after. `latest.json` is a copy of the most recent report. The GitHub Action also uploads them as workflow artifacts.
@@ -169,6 +183,7 @@ Because the key only ever holds allocator rights, a compromised key can at worst
 - Take any market above 50% of its supply or Felix above 50% of its assets, drop idle below 2% or Felix below 10% in a proposal, or send a single transfer above the max clip.
 - Exceed the vault's own `absoluteCap` and `relativeCap`; the vault enforces these on-chain regardless of what the keeper proposes.
 - Continue a plan after a failed post-state check.
+- Send `proposeStakePerAsset` or any other owner-only call. It only prints the proposal.
 - Print or persist the private key. It is read from the environment only and the dry-run path never touches it.
 
 ## Layout
@@ -181,6 +196,8 @@ src/abi/                Vault V2, adapter, Morpho Blue, IRM and ERC20 fragments
 src/data/morpho.ts      Morpho API with on-chain fallback
 src/data/hyperlend.ts   HyperLend rates (data only)
 src/data/state.ts       vault state reads, cap ids, MarketParams encoding
+src/data/orph.ts        Uniswap v4 pool sampling and the price-samples.jsonl store
+src/engine/twap.ts      sqrtPriceX96 conversion, time-weighted average, stake rate math
 src/engine/irm.ts       Adaptive Curve IRM approximation
 src/engine/allocate.ts  proposal and move decision
 src/exec/plan.ts        plan sequencing and validation
@@ -189,5 +206,5 @@ src/exec/junior.ts      junior syncSenior, cover status, maturity check and sett
 src/report.ts           report writer and summary
 src/index.ts            tick entry point
 test/                   vitest suites and fixtures
-ops/                    last-plan.json and reports (git-ignored)
+ops/                    last-plan.json, price-samples.jsonl and reports (git-ignored)
 ```

@@ -5,9 +5,9 @@ import { erc20Abi } from '../abi/erc20'
 import { juniorAbi } from '../abi/junior'
 import { vaultV2Abi } from '../abi/vaultV2'
 import { asSupported, hyperEvm } from '../chains'
-import { DEPLOYED, OPENS_LABEL, addresses } from '../config/addresses'
-import { ORPH_PRICE_USD, USDC_DECIMALS, useVault, type VaultKind } from '../hooks/useVault'
-import { NA, fmtNum, fmtPct, fmtUnits, fmtUsd } from '../lib/format'
+import { DEPLOYED, OPENS_LABEL, ZERO, addresses } from '../config/addresses'
+import { ORPH_DECIMALS, USDC_DECIMALS, requiredStake, useVault, type VaultKind } from '../hooks/useVault'
+import { NA, fmtNum, fmtPct, fmtTime, fmtUnits, fmtUsd } from '../lib/format'
 import s from './VaultArea.module.css'
 
 const COPY = {
@@ -52,7 +52,6 @@ export default function VaultArea({ kind }: { kind: VaultKind }) {
   // Junior exits are denominated in shares (18 decimals, matching pricePerShare). Everything else is USDC.
   const inputDecimals = kind === 'junior' && mode === 'exit' ? 18 : USDC_DECIMALS
   const amount = useMemo(() => parseAmount(raw, inputDecimals), [raw, inputDecimals])
-  const amountNum = amount !== null ? Number(amount) / 10 ** inputDecimals : 0
 
   const { writeContract, data: txHash, isPending: signing, error: writeError, reset } = useWriteContract()
   const receipt = useWaitForTransactionReceipt({ hash: txHash })
@@ -72,10 +71,36 @@ export default function VaultArea({ kind }: { kind: VaultKind }) {
   const unsupportedChain = isConnected && !v.onElysium && !v.onHyperEvm
   const needsApproval =
     mode === 'deposit' && amount !== null && v.allowance !== undefined && v.allowance < amount
+
+  // Junior stake: ORPH required for the entered amount, from the contract's stakePerAsset.
+  const stakeRequired = v.stake.token !== undefined && v.stake.token !== ZERO && v.stake.perAsset !== undefined && v.stake.perAsset > 0n
+  const orphNeeded = kind === 'junior' && mode === 'deposit' && amount !== null && stakeRequired ? requiredStake(amount, v.stake.perAsset!) : 0n
+  const orphShort = orphNeeded > 0n && v.stake.orphBalance !== undefined && orphNeeded > v.stake.orphBalance
+  const needsOrphApproval = orphNeeded > 0n && v.stake.orphAllowance !== undefined && orphNeeded > v.stake.orphAllowance
+
+  // Junior week-one wallet cap: current balance at pricePerShare plus the new amount must stay within it.
+  const walletCap = kind === 'junior' && v.stake.walletCap !== undefined && v.stake.walletCap > 0n ? v.stake.walletCap : null
+  const walletRoom = walletCap !== null ? (walletCap > (v.balanceAssets ?? 0n) ? walletCap - (v.balanceAssets ?? 0n) : 0n) : null
+  const overWalletCap = mode === 'deposit' && amount !== null && walletRoom !== null && amount > walletRoom
+
   const insufficient =
     mode === 'deposit'
       ? amount !== null && v.usdcBalance !== undefined && amount > v.usdcBalance
       : amount !== null && v.maxWithdraw !== undefined && amount > v.maxWithdraw
+  const blocked = insufficient || orphShort || overWalletCap
+
+  // Clock for the stake ETA comparison, refreshed each minute.
+  const [nowSec, setNowSec] = useState(() => Math.floor(Date.now() / 1000))
+  useEffect(() => {
+    const id = window.setInterval(() => setNowSec(Math.floor(Date.now() / 1000)), 60_000)
+    return () => window.clearInterval(id)
+  }, [])
+  const stakeEtaLine =
+    kind === 'junior' && v.stake.eta !== undefined && v.stake.eta > 0
+      ? v.stake.eta <= nowSec
+        ? 'Pending rate ready to apply'
+        : `Stake rate changes to ${fmtUnits(v.stake.pendingPerAsset, ORPH_DECIMALS)} ORPH per USDC on ${fmtTime(v.stake.eta)}`
+      : null
 
   const routing = !isConnected
     ? 'Connect a wallet on HyperEVM or Elysium'
@@ -85,11 +110,17 @@ export default function VaultArea({ kind }: { kind: VaultKind }) {
         ? 'Deposits from Elysium bridge to HyperEVM first (about a minute)'
         : 'Unsupported chain. Switch to HyperEVM or Elysium'
 
-  const stakeOrph = kind === 'junior' ? (amountNum * v.stakeBps) / 10_000 / ORPH_PRICE_USD : 0
-
   function setMax() {
     if (mode === 'deposit') {
-      if (v.usdcBalance !== undefined) setRaw(formatUnits(v.usdcBalance, USDC_DECIMALS))
+      if (v.usdcBalance === undefined) return
+      let max = v.usdcBalance
+      // Junior: also bounded by the ORPH in the wallet at the current rate, and by the wallet cap.
+      if (kind === 'junior' && stakeRequired && v.stake.orphBalance !== undefined) {
+        const byOrph = (v.stake.orphBalance * 10n ** BigInt(USDC_DECIMALS)) / v.stake.perAsset!
+        if (byOrph < max) max = byOrph
+      }
+      if (walletRoom !== null && walletRoom < max) max = walletRoom
+      setRaw(formatUnits(max, USDC_DECIMALS))
     } else if (v.maxWithdraw !== undefined) {
       setRaw(formatUnits(v.maxWithdraw, inputDecimals))
     }
@@ -102,6 +133,11 @@ export default function VaultArea({ kind }: { kind: VaultKind }) {
       if (needsApproval) {
         setLastAction('Approve USDC')
         writeContract({ address: v.usdc, abi: erc20Abi, functionName: 'approve', args: [v.target, amount], chainId: asSupported(chainId) })
+        return
+      }
+      if (needsOrphApproval) {
+        setLastAction('Approve ORPH')
+        writeContract({ address: v.stake.address, abi: erc20Abi, functionName: 'approve', args: [addresses.hyperEvm.junior, orphNeeded], chainId: hyperEvm.id })
         return
       }
       setLastAction('Deposit')
@@ -146,8 +182,8 @@ export default function VaultArea({ kind }: { kind: VaultKind }) {
     primaryLabel = signing ? 'Confirm in wallet' : 'Pending'
     primaryDisabled = true
   } else if (mode === 'deposit') {
-    primaryLabel = needsApproval ? 'Approve USDC' : 'Deposit'
-    primaryDisabled = amount === null || insufficient
+    primaryLabel = needsApproval ? 'Approve USDC' : needsOrphApproval ? 'Approve ORPH' : 'Deposit'
+    primaryDisabled = amount === null || blocked
   } else {
     primaryLabel = copy.secondaryVerb
     primaryDisabled = amount === null || insufficient
@@ -247,13 +283,48 @@ export default function VaultArea({ kind }: { kind: VaultKind }) {
               {kind === 'junior' && (
                 <>
                   <br />
-                  Requires {v.stakeBps / 100}% in ORPH: <span className={s.hintStrong}>{fmtNum(stakeOrph)} ORPH</span>
+                  {!DEPLOYED ? (
+                    <>Required ORPH: n/a until Monday</>
+                  ) : v.stake.token === ZERO ? (
+                    <>No stake required yet</>
+                  ) : stakeRequired ? (
+                    <>
+                      Requires <span className={s.hintStrong}>{fmtUnits(orphNeeded, ORPH_DECIMALS)} ORPH</span> ({v.stakeBps / 100}% of deposit at the
+                      current rate)
+                    </>
+                  ) : (
+                    <>Required ORPH: loading</>
+                  )}
+                  {stakeEtaLine && (
+                    <>
+                      <br />
+                      {stakeEtaLine}
+                    </>
+                  )}
+                  {walletCap !== null && (
+                    <>
+                      <br />
+                      Week-one limit: {fmtUsd(Number(walletCap) / 10 ** USDC_DECIMALS)} per wallet
+                    </>
+                  )}
                 </>
               )}
               {insufficient && (
                 <>
                   <br />
                   Amount exceeds wallet balance
+                </>
+              )}
+              {orphShort && (
+                <>
+                  <br />
+                  Not enough ORPH in wallet: {fmtUnits(v.stake.orphBalance, ORPH_DECIMALS)} ORPH available
+                </>
+              )}
+              {overWalletCap && (
+                <>
+                  <br />
+                  Exceeds week-one limit by {fmtUnits(amount! - walletRoom!, USDC_DECIMALS)} USDC
                 </>
               )}
             </>

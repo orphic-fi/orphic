@@ -5,15 +5,19 @@ import { erc20Abi } from '../abi/erc20'
 import { juniorAbi } from '../abi/junior'
 import { vaultV2Abi } from '../abi/vaultV2'
 import { ELYSIUM_IDS, asSupported, hyperEvm } from '../chains'
-import { DEPLOYED, addresses, ops } from '../config/addresses'
+import { DEPLOYED, ZERO, addresses, ops } from '../config/addresses'
 import { useMorphoVaultV2 } from '../lib/morpho'
 
 export type VaultKind = 'senior' | 'junior'
 
 export const USDC_DECIMALS = 6
 
-// Placeholder until an ORPH price source exists: 1 ORPH priced at 1 USDC for the stake line.
-export const ORPH_PRICE_USD = 1
+export const ORPH_DECIMALS = 18
+
+/** Required ORPH (wei) for a USDC deposit amount (6 decimals): amount * stakePerAsset / 1e6. */
+export function requiredStake(amount: bigint, stakePerAsset: bigint): bigint {
+  return (amount * stakePerAsset) / 10n ** BigInt(USDC_DECIMALS)
+}
 
 export interface VaultState {
   kind: VaultKind
@@ -36,6 +40,22 @@ export interface VaultState {
   maxWithdraw: bigint | undefined
   stakeBps: number
   paused: boolean
+  /** Junior only. All undefined before deployment or while loading. */
+  stake: {
+    /** stakeToken(); zero address means no stake is required yet. */
+    token: Address | undefined
+    /** Address used for ORPH balance, allowance and approve: stakeToken() when set, else config. */
+    address: Address
+    /** ORPH wei per 1e6 USDC units. */
+    perAsset: bigint | undefined
+    pendingPerAsset: bigint | undefined
+    /** Unix seconds; 0 = nothing pending. */
+    eta: number | undefined
+    /** USDC 6 decimals; 0 = none. */
+    walletCap: bigint | undefined
+    orphBalance: bigint | undefined
+    orphAllowance: bigint | undefined
+  }
   /** Senior only. Junior cover being recognised into senior's price, in USDC units; null when none or unknown. */
   cover: { usd: number; hours: number } | null
   /** Target contract the deposit is sent to on the connected chain. */
@@ -89,8 +109,24 @@ export function useVault(kind: VaultKind): VaultState {
       { address: vaultAddress, abi: juniorAbi, functionName: 'pricePerShare', chainId: hyperEvm.id },
       { address: vaultAddress, abi: juniorAbi, functionName: 'stakeBps', chainId: hyperEvm.id },
       { address: vaultAddress, abi: juniorAbi, functionName: 'paused', chainId: hyperEvm.id },
+      { address: vaultAddress, abi: juniorAbi, functionName: 'stakeToken', chainId: hyperEvm.id },
+      { address: vaultAddress, abi: juniorAbi, functionName: 'stakePerAsset', chainId: hyperEvm.id },
+      { address: vaultAddress, abi: juniorAbi, functionName: 'pendingStakePerAsset', chainId: hyperEvm.id },
+      { address: vaultAddress, abi: juniorAbi, functionName: 'stakeEta', chainId: hyperEvm.id },
+      { address: vaultAddress, abi: juniorAbi, functionName: 'walletCap', chainId: hyperEvm.id },
     ],
     query: { enabled: DEPLOYED && kind === 'junior', refetchInterval: 30_000 },
+  })
+
+  // ORPH token: the contract's stakeToken() wins, config is the fallback until it is read.
+  const stakeTokenRead = juniorReads.data?.[6]?.result as Address | undefined
+  const orphToken: Address = stakeTokenRead && stakeTokenRead !== ZERO ? stakeTokenRead : addresses.hyperEvm.orph
+  const orphReads = useReadContracts({
+    contracts: [
+      { address: orphToken, abi: erc20Abi, functionName: 'balanceOf', args: [account ?? addresses.hyperEvm.referenceVault], chainId: hyperEvm.id },
+      { address: orphToken, abi: erc20Abi, functionName: 'allowance', args: [account ?? addresses.hyperEvm.referenceVault, addresses.hyperEvm.junior], chainId: hyperEvm.id },
+    ],
+    query: { enabled: DEPLOYED && kind === 'junior' && !!account && orphToken !== ZERO, refetchInterval: 20_000 },
   })
 
   const walletReads = useReadContracts({
@@ -107,13 +143,15 @@ export function useVault(kind: VaultKind): VaultState {
   const refetchJunior = juniorReads.refetch
   const refetchWallet = walletReads.refetch
   const refetchMorpho = morpho.refetch
+  const refetchOrph = orphReads.refetch
   const refetch = useCallback(() => {
     void refetchSenior()
     void refetchSeniorAssets()
     void refetchJunior()
     void refetchWallet()
     void refetchMorpho()
-  }, [refetchSenior, refetchSeniorAssets, refetchJunior, refetchWallet, refetchMorpho])
+    void refetchOrph()
+  }, [refetchSenior, refetchSeniorAssets, refetchJunior, refetchWallet, refetchMorpho, refetchOrph])
 
   return useMemo<VaultState>(() => {
 
@@ -145,6 +183,7 @@ export function useVault(kind: VaultKind): VaultState {
         maxWithdraw: seniorReads.data?.[2]?.result as bigint | undefined,
         stakeBps: 0,
         paused: ops.paused,
+        stake: { token: undefined, address: addresses.hyperEvm.orph, perAsset: undefined, pendingPerAsset: undefined, eta: undefined, walletCap: undefined, orphBalance: undefined, orphAllowance: undefined },
         cover,
         target,
         usdc,
@@ -178,6 +217,16 @@ export function useVault(kind: VaultKind): VaultState {
       maxWithdraw: shares,
       stakeBps: stakeBps !== undefined ? Number(stakeBps) : 2000,
       paused: paused ?? ops.paused,
+      stake: {
+        token: stakeTokenRead,
+        address: orphToken,
+        perAsset: juniorReads.data?.[7]?.result as bigint | undefined,
+        pendingPerAsset: juniorReads.data?.[8]?.result as bigint | undefined,
+        eta: juniorReads.data?.[9]?.result !== undefined ? Number(juniorReads.data[9].result as bigint) : undefined,
+        walletCap: juniorReads.data?.[10]?.result as bigint | undefined,
+        orphBalance: orphReads.data?.[0]?.result as bigint | undefined,
+        orphAllowance: orphReads.data?.[1]?.result as bigint | undefined,
+      },
       cover: null,
       target,
       usdc,
@@ -185,5 +234,5 @@ export function useVault(kind: VaultKind): VaultState {
       onHyperEvm,
       refetch,
     }
-  }, [kind, morpho, seniorReads, seniorAssets, seniorShares, juniorReads, walletReads, target, usdc, onElysium, onHyperEvm, refetch])
+  }, [kind, morpho, seniorReads, seniorAssets, seniorShares, juniorReads, walletReads, orphReads, stakeTokenRead, orphToken, target, usdc, onElysium, onHyperEvm, refetch])
 }

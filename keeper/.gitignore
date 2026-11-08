@@ -1,5 +1,6 @@
 node_modules/
 .env
 ops/last-plan.json
+ops/price-samples.jsonl
 ops/reports/*.json
 !ops/reports/.gitkeep

@@ -1,6 +1,7 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import type { JuniorStatus, JuniorWeeklyResult, SyncResult } from "./exec/junior.js";
+import type { OrphPriceResult } from "./data/orph.js";
 import type { Decision, ExecutionResult, MarketInputs, PlanStep, Proposal, VaultState } from "./types.js";
 
 export interface RunReport {
@@ -28,6 +29,7 @@ export interface RunReport {
   juniorSync?: SyncResult;
   juniorStatus?: JuniorStatus;
   juniorWeekly?: JuniorWeeklyResult;
+  orphPrice?: OrphPriceResult;
   /** Annualised rate of the current book, for the agents page to turn into realised return. */
   bookApy: { current: number; proposed: number };
   summary: string[];
@@ -78,6 +80,11 @@ export function humanSummary(report: Omit<RunReport, "summary">): string[] {
   if (report.juniorWeekly?.warning) out.push(report.juniorWeekly.warning);
   if (report.juniorWeekly) out.push(`junior weekly: ${report.juniorWeekly.note}`);
   if (report.weeklyClose) out.push(`weekly close: ${report.weeklyClose.note}`);
+  if (report.orphPrice) {
+    out.push(`orph price: ${report.orphPrice.note}`);
+    if (report.weekly && report.orphPrice.proposalLine) out.push(report.orphPrice.proposalLine);
+    else if (report.weekly && report.orphPrice.enabled) out.push("stake rate proposal: no ORPH samples in the 7 day window");
+  }
   for (const w of report.inputs.warnings) out.push(`warning: ${w}`);
   return out;
 }

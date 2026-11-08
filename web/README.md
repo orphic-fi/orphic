@@ -33,7 +33,7 @@ Environment: copy `.env.example` to `.env` and set `VITE_ELYSIUM_RPC` to an Alch
 - Senior APY and TVL come from the Morpho GraphQL API for the reference vault Felix USDC V2 (`0x51254785367d73A10a2Ea7d44B8e97b749BfbE8b`, chain 999), captioned "reference: Felix USDC V2". Once `DEPLOYED` is true and `addresses.hyperEvm.senior` is set, the same query runs against our vault and the caption goes away. `netApy` is shown, falling back to `apy`.
 - Caps come from `ops.caps` in config (senior $250,000, junior $50,000). After deployment the junior cap is read from `depositCap()`; the senior cap stays in config because Vault V2 has per-market caps rather than one deposit cap.
 - `ops.lastSettle` and `ops.paused` are config values. Junior `paused()` is read on-chain once deployed.
-- The junior stake line prices ORPH at 1 USDC (`ORPH_PRICE_USD` in `src/hooks/useVault.ts`) until a price source exists.
+- The junior stake line reads `stakePerAsset()` from the junior contract (ORPH wei per 1e6 USDC). Before deployment it shows "Required ORPH: n/a until Monday". `stakeEta()` and `walletCap()` drive the pending-rate and week-one-limit lines; both are hidden when zero.
 - Elysium mainnet chain id 99901 is unverified; see the comment in `src/chains.ts`. Testnet 99801 is included for local testing.
 - The Elysium deposit path assumes a bridge entry contract exposing `deposit(uint256 assets, address receiver)`, the same signature as the vaults. Adjust `src/abi/` and `useVault.ts` if the real contract differs.
 - Senior withdraws and junior exit requests always target HyperEVM; the UI prompts a chain switch if the wallet is elsewhere.

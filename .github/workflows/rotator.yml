@@ -46,6 +46,16 @@ jobs:
       - name: Install
         run: npm ci
 
+      # The price record (7-day TWAP for the ORPH stake rate) must survive between hourly runs on a fresh runner.
+      # Keys are unique per run so the save step always writes; restore-keys picks the newest previous one.
+      - name: Restore price samples
+        uses: actions/cache/restore@v4
+        with:
+          path: keeper/ops/price-samples.jsonl
+          key: orph-price-samples-${{ github.run_id }}
+          restore-keys: |
+            orph-price-samples-
+
       - name: Test
         run: npm test
 
@@ -59,6 +69,13 @@ jobs:
           else
             npm run tick
           fi
+
+      - name: Save price samples
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: keeper/ops/price-samples.jsonl
+          key: orph-price-samples-${{ github.run_id }}
 
       - name: Upload report
         if: always()
