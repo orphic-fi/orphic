@@ -142,3 +142,11 @@ Anyone can call `settle()`; the keeper's `--weekly` run does it after `accrueInt
 - Senior deposits: V2 has no pause; set `decreaseAbsoluteCap` on the Felix id to the current allocation (instant) and deposits revert.
 - Rotator: set repo variable `LIVE` to empty; the next run is dry-run only.
 - If the agent key leaks: the above, then rotate the GitHub secret. The key could only have moved funds between allowlisted venues and the contract.
+
+## Signer page (how Cashout deploys without Foundry)
+
+https://orphic.fi/ops/deploy.html loads `/ops/planN.json`, one plan per step. Claude generates each plan by dry-running the step's forge script on a fresh HyperEVM fork with the real addresses (`ops/make_plan.py`), batches consecutive VaultV2 calls into `multicall` chunks under 1.5M gas, replays the exact calldata on the fork (`ops/replay_plan.py`), and only then commits it. The page signs each transaction with MetaMask in order, waits for the receipt, checks that created contracts have code at the predicted address, and runs the plan's read-backs at the end. Plans for steps 2 and 3 are generated only after the previous step is live, because junior and router addresses depend on the deployer nonce.
+
+Big blocks: `createVaultV2` (about 4.5M gas) and `createMorphoMarketV1AdapterV2` (about 2.5M) exceed the 2M small-block limit. The page's "sign big blocks on" button signs the `evmUserModify` L1 action with the wallet (EIP-712, phantom agent, verified against the exchange API: the API recovers the signer address from the page's payload). The signer must exist on Hyperliquid L1 (`userRole` not `missing`): receive HYPE on the Hyperliquid app first, then Transfer to EVM. Turn big blocks off after step 1.
+
+Step 1 plan (plan1.json, 7 signatures): createVaultV2 -> senior 0x3F7382bd8BFC6C548CAa2D7B4dfCe628B12A9759; multicall(setCurator,setName,setSymbol); market adapter -> 0x7B00b45E77aFE7E07a2c9910FF9C5Ce538386fB1; Felix adapter -> 0x0CDFdBC51744ba1Ed88Bb8752098105Fb43F37Ac; three multicalls (allocators, adapters, caps). Addresses are CREATE2 and do not depend on nonce. Replayed on fork 8 Nov: all 7 succeed, 6 read-backs match.
