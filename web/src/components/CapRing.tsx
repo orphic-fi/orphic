@@ -50,7 +50,7 @@ export default function CapRing({ senior, junior }: { senior: number | null; jun
         <path d={track} className={s.track} />
         <path d={seniorPath} className={s.senior} style={{ strokeDasharray: dash(sen, seniorLen) }} />
         <path d={juniorPath} className={s.junior} style={{ strokeDasharray: dash(jun, juniorLen) }} />
-        <circle cx={bx} cy={by} r={3} className={s.dot} />
+        <circle cx={bx} cy={by} r={4} className={s.dot} />
       </svg>
       <figcaption className={s.caption}>
         <span>senior {senior === null ? 'n/a' : fmtPct(sen)}</span>

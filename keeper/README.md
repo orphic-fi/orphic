@@ -152,7 +152,7 @@ npm run tick -- --weekly        # force the weekly close step
 
 Flags: `--dry-run` (always wins over `LIVE=1`), `--weekly`, `--fixture <path>`, `--config <path>`, `--ops-dir <path>`. Environment: `RPC_URL`, `AGENT_PRIVATE_KEY`, `LIVE`, `OPS_DIR`, `STATE_FIXTURE`. A `.env` file in the keeper directory is read if present and never printed.
 
-Exit code is non-zero if any transaction failed or the run errored, so the Action goes red.
+Exit code is 1 if any transaction failed or the run errored and 2 on senior config drift, so the Action goes red in both cases.
 
 ### GitHub Action
 
@@ -173,18 +173,30 @@ Exit code is non-zero if any transaction failed or the run errored, so the Actio
 4. Wait for one successful live tick from the new key, then have the curator call `setIsAllocator(oldAgent, false)`.
 5. Sweep leftover HYPE from the old EOA.
 
-Because the key only ever holds allocator rights, a compromised key can at worst move funds between the vault's own approved adapters within the curator's caps. It cannot withdraw.
+Because the key only ever holds allocator rights, a compromised key can at worst move funds between the vault's own approved adapters within the curator's caps, or change `maxRate` and the liquidity adapter (see the drift check). It cannot withdraw. Revoke it from the Safe with `setIsAllocator(agent, false)`, which takes effect instantly.
 
-## What the keeper can never do
+## Senior config drift check (`src/exec/drift.ts`)
 
-- Move assets anywhere except between the vault's idle balance and its registered adapters through `allocate` and `deallocate`. It never calls `withdraw`, `redeem`, `transfer` or any curator or owner function. On junior it only calls the permissionless `syncSenior()` and `settle()`.
-- Change caps, fees, adapters, timelocks or the liquidity adapter. Those are curator actions behind the vault timelock.
+Every tick, dry-run included, whenever the vault address is real: read `senior.maxRate()` and `senior.liquidityAdapter()` and compare against `expectedMaxRate` (`63419583967`, per-second WAD) and the expected liquidity adapter (`felixAdapter` when set, otherwise `adapters.morphoVaultV1`). On a mismatch the keeper prints `WARNING: senior config drift: maxRate X (expected Y)` or `WARNING: senior config drift: liquidityAdapter X (expected Y)`, puts the lines in the report's top-level `alerts` array, and exits with code 2 so the GitHub Action step shows red even when everything else succeeded. The keeper never tries to fix drift: the only key it holds is the allocator key, which is exactly the key that could have been used to cause it. The response is a human one, revoke the allocator from the Safe and investigate.
+
+## What the keeper can never do, and what it chooses never to do
+
+Hard limits enforced by the vault and the code:
+
+- Withdraw or transfer assets out of the vault. An allocator can only move assets between the vault's idle balance and its registered adapters through `allocate` and `deallocate`. It cannot call `withdraw`, `redeem`, `transfer`, or any owner or curator function (caps, fees, adding or removing adapters, timelocks).
+- Exceed the vault's `absoluteCap` and `relativeCap`; the vault enforces these on-chain regardless of what the keeper proposes.
+- Send `proposeStakePerAsset` or any other owner-only call. It only prints the proposal.
 - Broadcast while any config address is `0xTODO`, while `LIVE` is not `1`, or without a well-formed `AGENT_PRIVATE_KEY`.
 - Take any market above 50% of its supply or Felix above 50% of its assets, drop idle below 2% or Felix below 10% in a proposal, or send a single transfer above the max clip.
-- Exceed the vault's own `absoluteCap` and `relativeCap`; the vault enforces these on-chain regardless of what the keeper proposes.
 - Continue a plan after a failed post-state check.
-- Send `proposeStakePerAsset` or any other owner-only call. It only prints the proposal.
 - Print or persist the private key. It is read from the environment only and the dry-run path never touches it.
+
+What an allocator technically can do, and the keeper never does:
+
+- On Vault V2 an allocator CAN call `setMaxRate` and `setLiquidityAdapterAndData` instantly, with no timelock. The keeper has no code path that calls either; its ABI fragments do not even include them. It only reads them for the drift check above.
+- Because of this, a leaked allocator key could change the rate cap or the liquidity adapter, or churn allocations within caps. That is the blast radius. It cannot take funds out of the vault.
+- Mitigation by design: `setIsAllocator` is not timelocked, so the Safe (curator) revokes a compromised allocator instantly. The drift check exists to make that call quickly.
+- On junior it only calls the permissionless `syncSenior()` and `settle()`.
 
 ## Layout
 
@@ -203,6 +215,7 @@ src/engine/allocate.ts  proposal and move decision
 src/exec/plan.ts        plan sequencing and validation
 src/exec/send.ts        dry-run and live execution, weekly close
 src/exec/junior.ts      junior syncSenior, cover status, maturity check and settle
+src/exec/drift.ts       senior maxRate and liquidityAdapter drift check (report only)
 src/report.ts           report writer and summary
 src/index.ts            tick entry point
 test/                   vitest suites and fixtures

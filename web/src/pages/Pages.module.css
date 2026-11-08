@@ -1,9 +1,28 @@
+.head {
+  display: flex;
+  flex-direction: column;
+  margin-bottom: 28px;
+}
+
+.headText {
+  min-width: 0;
+}
+
 .notice {
   font-family: var(--mono);
   font-size: 11.5px;
   color: var(--muted);
   padding: 10px 0 0;
   margin: 0 0 10px;
+}
+
+@media (min-width: 721px) {
+  .head {
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    gap: 32px;
+  }
 }
 
 .square {
@@ -23,20 +42,7 @@
   background: var(--jun);
 }
 
-.stage {
-  position: relative;
-  padding-bottom: 72px;
-}
-
-@media (max-width: 859px) {
-  .stage {
-    padding-bottom: 0;
-  }
-}
-
 .grid {
-  position: relative;
-  z-index: 1;
   display: grid;
   grid-template-columns: 1fr;
   gap: 16px;

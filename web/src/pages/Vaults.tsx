@@ -9,14 +9,16 @@ export default function Vaults() {
   const junior = useVault('junior')
   return (
     <>
-      <p className={s.notice}>Unaudited. Capped. Owner can pause deposits, never withdrawals. Basis agent not active.</p>
-      <Readout />
-      <div className={s.stage}>
-        <CapRing senior={senior.capUsed} junior={junior.capUsed} />
-        <div className={s.grid}>
-          <VaultArea kind="senior" state={senior} />
-          <VaultArea kind="junior" state={junior} />
+      <div className={s.head}>
+        <div className={s.headText}>
+          <p className={s.notice}>Unaudited. Capped. Owner can pause deposits, never withdrawals. Basis agent not active.</p>
+          <Readout />
         </div>
+        <CapRing senior={senior.capUsed} junior={junior.capUsed} />
+      </div>
+      <div className={s.grid}>
+        <VaultArea kind="senior" state={senior} />
+        <VaultArea kind="junior" state={junior} />
       </div>
     </>
   )
