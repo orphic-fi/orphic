@@ -298,6 +298,7 @@ export default function VaultArea({ kind, state: v }: { kind: VaultKind; state: 
         <div className={s.apyLabel}>{copy.apyLabel}</div>
         {kind === 'senior' && !LIVE && <div className={s.caption}>{addresses.hyperEvm.referenceLabel}</div>}
         {kind === 'senior' && v.apyError && <div className={s.caption}>Morpho API unreachable. Retrying.</div>}
+        {kind === 'senior' && !v.apyError && v.apy === null && v.apyUnlisted && <div className={s.caption}>APY shows once Morpho indexes the vault. Senior assets currently sit in Felix USDC; see the Felix rate for a reference.</div>}
         {kind === 'senior' && LIVE && v.cover && (
           <div className={s.cover}>
             Cover in progress: {fmtUsd(v.cover.usd, 2)} being recognised, about {Number.isFinite(v.cover.hours) ? fmtNum(v.cover.hours, 0) : NA} hours to

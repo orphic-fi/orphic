@@ -8,6 +8,8 @@ export interface VaultV2Stats {
   netApy: number | null
   apy: number | null
   totalAssetsUsd: number | null
+  /** true when the API answered but does not index this vault yet (new vaults appear after Morpho lists them) */
+  unlisted: boolean
 }
 
 interface GqlResponse {
@@ -24,13 +26,16 @@ async function fetchVaultV2(address: Address): Promise<VaultV2Stats> {
   })
   if (!res.ok) throw new Error(`Morpho API ${res.status}`)
   const json = (await res.json()) as GqlResponse
+  const notFound = json.errors?.some((e) => /not supported|No results|NOT_FOUND/i.test(e.message))
+  if (notFound) return { netApy: null, apy: null, totalAssetsUsd: null, unlisted: true }
   if (json.errors?.length) throw new Error(json.errors[0].message)
   const v = json.data?.vaultV2ByAddress
-  if (!v) throw new Error('Vault not found on Morpho API')
+  if (!v) return { netApy: null, apy: null, totalAssetsUsd: null, unlisted: true }
   return {
     netApy: v.netApy ?? null,
     apy: v.apy ?? null,
     totalAssetsUsd: v.totalAssetsUsd ?? null,
+    unlisted: false,
   }
 }
 

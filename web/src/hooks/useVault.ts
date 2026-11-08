@@ -29,6 +29,7 @@ export interface VaultState {
   apy: number | null
   apyLoading: boolean
   apyError: boolean
+  apyUnlisted?: boolean
   /** Unix ms of the last successful APY read. */
   apyReadAt: number | undefined
   /** Unix ms of the last successful chain read. */
@@ -175,6 +176,7 @@ export function useVault(kind: VaultKind): VaultState {
       apy: morpho.data?.netApy ?? morpho.data?.apy ?? null,
       apyLoading: morpho.isLoading,
       apyError: morpho.isError,
+      apyUnlisted: morpho.data?.unlisted ?? false,
       apyReadAt: morpho.dataUpdatedAt || undefined,
       target,
       usdc,
