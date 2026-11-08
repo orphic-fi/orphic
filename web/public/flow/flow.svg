@@ -1,0 +1,129 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1400" height="980" viewBox="0 0 1400 980" font-family="'Commit Mono','SF Mono',Menlo,monospace" font-size="14" fill="#e4e6ea">
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0 1L9 5L0 9" fill="none" stroke="#8a8f98" stroke-width="1.2"/></marker>
+    <marker id="am" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0 1L9 5L0 9" fill="none" stroke="#9ad7b5" stroke-width="1.2"/></marker>
+    <marker id="aj" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0 1L9 5L0 9" fill="none" stroke="#f0c27a" stroke-width="1.2"/></marker>
+    <marker id="ab" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0 1L9 5L0 9" fill="none" stroke="#8fc8ff" stroke-width="1.2"/></marker>
+    <style>
+      .box{fill:rgba(255,255,255,0.03);stroke:rgba(255,255,255,0.16);stroke-width:1}
+      .sen{stroke:#9ad7b5}.jun{stroke:#f0c27a}.acc{stroke:#8fc8ff}
+      .t{fill:#e4e6ea}.m{fill:#8a8f98;font-size:12px}.s{fill:#9ad7b5}.j{fill:#f0c27a}.b{fill:#8fc8ff}
+      .l{fill:none;stroke:#8a8f98;stroke-width:1}
+      .ls{fill:none;stroke:#9ad7b5;stroke-width:1.2}
+      .lj{fill:none;stroke:#f0c27a;stroke-width:1.2}
+      .lb{fill:none;stroke:#8fc8ff;stroke-width:1.2}
+      .dash{stroke-dasharray:4 4}
+      .h{font-size:16px;font-weight:500}
+    </style>
+  </defs>
+  <rect width="1400" height="980" fill="#0b0c0e"/>
+  <g stroke="#ffffff" stroke-opacity="0.025"><path d="M0 48H1400M0 96H1400M0 144H1400M0 192H1400M0 240H1400M0 288H1400M0 336H1400M0 384H1400M0 432H1400M0 480H1400M0 528H1400M0 576H1400M0 624H1400M0 672H1400M0 720H1400M0 768H1400M0 816H1400M0 864H1400M0 912H1400M0 960H1400"/><path d="M48 0V980M96 0V980M144 0V980M192 0V980M240 0V980M288 0V980M336 0V980M384 0V980M432 0V980M480 0V980M528 0V980M576 0V980M624 0V980M672 0V980M720 0V980M768 0V980M816 0V980M864 0V980M912 0V980M960 0V980M1008 0V980M1056 0V980M1104 0V980M1152 0V980M1200 0V980M1248 0V980M1296 0V980M1344 0V980M1392 0V980"/></g>
+
+  <text x="40" y="44" class="h">orphic: where a dollar goes</text>
+  <text x="40" y="66" class="m">Launch stack $500,000. Senior $425,000, junior $75,000. Rates are 7 Nov 2026 readings or estimates, never promises.</text>
+
+  <!-- deposit -->
+  <rect x="520" y="96" width="360" height="56" class="box acc"/>
+  <text x="700" y="120" text-anchor="middle" class="t">USDC deposit</text>
+  <text x="700" y="140" text-anchor="middle" class="m">from HyperEVM, or bridged from Elysium</text>
+
+  <!-- split -->
+  <path d="M640 152V184H340V212" class="ls" marker-end="url(#am)"/>
+  <path d="M760 152V184H1060V212" class="lj" marker-end="url(#aj)"/>
+  <text x="470" y="178" text-anchor="middle" class="s">senior, up to $425,000</text>
+  <text x="930" y="178" text-anchor="middle" class="j">junior, up to $75,000</text>
+
+  <!-- senior block -->
+  <rect x="80" y="214" width="520" height="92" class="box sen"/>
+  <text x="100" y="240" class="s h">senior: Morpho Vault V2 we curate</text>
+  <text x="100" y="262" class="m">Morpho's audited contract holds the money.</text>
+  <text x="100" y="280" class="m">Paid first. Withdraw any time to liquidity.</text>
+  <text x="100" y="298" class="m">Caps behind a 3-day timelock, curator = Safe.</text>
+
+  <!-- junior block -->
+  <rect x="800" y="214" width="520" height="92" class="box jun"/>
+  <text x="820" y="240" class="j h">junior: the custom contract</text>
+  <text x="820" y="262" class="m">Stake 20% in ORPH, returned on exit. First loss.</text>
+  <text x="820" y="280" class="m">Exit after 7 days' notice, priced at next settle.</text>
+  <text x="820" y="298" class="m">Week one: $10,000 per wallet. Pause never blocks exits.</text>
+
+  <!-- give-up and cover between blocks -->
+  <path d="M600 246H800" class="ls" marker-end="url(#am)"/>
+  <text x="700" y="240" text-anchor="middle" class="m">0.5%/yr management fee</text>
+  <path d="M800 282H600" class="lj" marker-end="url(#aj)"/>
+  <text x="700" y="300" text-anchor="middle" class="m">covers senior losses</text>
+
+  <!-- senior venues -->
+  <path d="M340 306V344" class="ls" marker-end="url(#am)"/>
+  <text x="340" y="366" text-anchor="middle" class="m">Rotator targets, re-priced hourly</text>
+  <g>
+    <rect x="80" y="380" width="160" height="70" class="box"/><text x="160" y="404" text-anchor="middle" class="t">kHYPE / USDC</text><text x="160" y="422" text-anchor="middle" class="m">LLTV 62.5%</text><text x="160" y="440" text-anchor="middle" class="s">48%</text>
+    <rect x="260" y="380" width="160" height="70" class="box"/><text x="340" y="404" text-anchor="middle" class="t">WHYPE / USDC</text><text x="340" y="422" text-anchor="middle" class="m">LLTV 77%</text><text x="340" y="440" text-anchor="middle" class="s">20%</text>
+    <rect x="440" y="380" width="160" height="70" class="box"/><text x="520" y="404" text-anchor="middle" class="t">Felix USDC</text><text x="520" y="422" text-anchor="middle" class="m">liquidity leg</text><text x="520" y="440" text-anchor="middle" class="s">15%</text>
+    <rect x="80" y="466" width="160" height="70" class="box"/><text x="160" y="490" text-anchor="middle" class="t">kHYPE / USDC</text><text x="160" y="508" text-anchor="middle" class="m">LLTV 77%</text><text x="160" y="526" text-anchor="middle" class="s">10%</text>
+    <rect x="260" y="466" width="160" height="70" class="box"/><text x="340" y="490" text-anchor="middle" class="t">UBTC / USDC</text><text x="340" y="508" text-anchor="middle" class="m">LLTV 77%, thin</text><text x="340" y="526" text-anchor="middle" class="s">5%</text>
+    <rect x="440" y="466" width="160" height="70" class="box"/><text x="520" y="490" text-anchor="middle" class="t">idle USDC</text><text x="520" y="508" text-anchor="middle" class="m">in the vault</text><text x="520" y="526" text-anchor="middle" class="s">2%</text>
+  </g>
+  <text x="80" y="562" class="m">Morpho Blue markets on HyperEVM. About 5.4% gross at 7 Nov rates (estimate).</text>
+
+  <!-- junior agents -->
+  <path d="M1060 306V344" class="lj" marker-end="url(#aj)"/>
+  <text x="1060" y="366" text-anchor="middle" class="m">agents: allowlisted venues, money only comes back</text>
+  <g>
+    <rect x="800" y="380" width="160" height="156" class="box"/>
+    <text x="880" y="404" text-anchor="middle" class="t">Rotator</text>
+    <text x="880" y="424" text-anchor="middle" class="m">same markets and</text>
+    <text x="880" y="440" text-anchor="middle" class="m">Felix as senior</text>
+    <text x="880" y="464" text-anchor="middle" class="m">moves when gain</text>
+    <text x="880" y="480" text-anchor="middle" class="m">beats the cost</text>
+    <text x="880" y="512" text-anchor="middle" class="s">live Monday</text>
+
+    <rect x="980" y="380" width="160" height="156" class="box"/>
+    <text x="1060" y="404" text-anchor="middle" class="t">Ranger</text>
+    <text x="1060" y="424" text-anchor="middle" class="m">USDC/HYPE range,</text>
+    <text x="1060" y="440" text-anchor="middle" class="m">Uniswap v4</text>
+    <text x="1060" y="464" text-anchor="middle" class="m">cap 20% of junior</text>
+    <text x="1060" y="480" text-anchor="middle" class="m">30% after 2 settles</text>
+    <text x="1060" y="512" text-anchor="middle" class="j">week one</text>
+
+    <rect x="1160" y="380" width="160" height="156" class="box"/>
+    <text x="1240" y="404" text-anchor="middle" class="t">Basis</text>
+    <text x="1240" y="424" text-anchor="middle" class="m">hedged funding</text>
+    <text x="1240" y="440" text-anchor="middle" class="m">trade-only key</text>
+    <text x="1240" y="464" text-anchor="middle" class="m">kill switches</text>
+    <text x="1240" y="512" text-anchor="middle" class="m">not active</text>
+  </g>
+  <text x="800" y="562" class="m">Junior earns the fee, its agents' results, 25% of fees.</text>
+
+  <!-- fee router -->
+  <rect x="440" y="620" width="520" height="56" class="box acc"/>
+  <text x="700" y="644" text-anchor="middle" class="t">fee router</text>
+  <text x="700" y="664" text-anchor="middle" class="m">every fee lands here, swapped to USDC at an oracle floor</text>
+
+  <rect x="1000" y="606" width="320" height="84" class="box"/>
+  <text x="1020" y="630" class="m">streams</text>
+  <text x="1020" y="650" class="t">ORPH/HYPE pool fee, 1%</text>
+  <text x="1020" y="668" class="m">later: agent token and weekly</text>
+  <text x="1020" y="684" class="m">agent fees, creation, tuition</text>
+  <path d="M1000 648H960" class="lb" marker-end="url(#ab)"/>
+
+  <path d="M520 676V730" class="ls" marker-end="url(#am)"/>
+  <path d="M700 676V730" class="lj" marker-end="url(#aj)"/>
+  <path d="M880 676V730" class="l" marker-end="url(#a)"/>
+  <rect x="440" y="732" width="160" height="56" class="box sen"/><text x="520" y="756" text-anchor="middle" class="s">50% senior</text><text x="520" y="774" text-anchor="middle" class="m">paid into the vault</text>
+  <rect x="620" y="732" width="160" height="56" class="box jun"/><text x="700" y="756" text-anchor="middle" class="j">25% junior</text><text x="700" y="774" text-anchor="middle" class="m">transfer</text>
+  <rect x="800" y="732" width="160" height="56" class="box"/><text x="880" y="756" text-anchor="middle" class="t">25% treasury</text><text x="880" y="774" text-anchor="middle" class="m">3-day timelock</text>
+
+  <!-- exits -->
+  <path d="M160 536V840" class="ls dash" marker-end="url(#am)"/>
+  <rect x="80" y="842" width="400" height="56" class="box sen"/>
+  <text x="280" y="866" text-anchor="middle" class="s">senior exit</text>
+  <text x="280" y="884" text-anchor="middle" class="m">any time, to available liquidity</text>
+
+  <path d="M1240 536V840" class="lj dash" marker-end="url(#aj)"/>
+  <rect x="920" y="842" width="400" height="56" class="box jun"/>
+  <text x="1120" y="866" text-anchor="middle" class="j">junior exit</text>
+  <text x="1120" y="884" text-anchor="middle" class="m">request, 7 days, priced at next settle, claim</text>
+
+  <text x="40" y="950" class="m">Custom and unaudited: junior contract and fee router (two review passes, every finding fixed). Not ours: Morpho, Uniswap v4, OpenZeppelin.</text>
+</svg>
