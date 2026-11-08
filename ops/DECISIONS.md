@@ -84,3 +84,12 @@ HyperEVM Uniswap v4 USDC/HYPE, ERC-4626 strategy vault funded through junior's a
 
 ## D23. Allocator blast radius (Claude, 8 Nov 02:55, raised by the docs pass)
 Vault V2 lets any allocator call `setMaxRate` and `setLiquidityAdapterAndData` instantly; the Rotator key is an allocator. Step 3 no longer timelocks `setIsAllocator`, so the Safe can revoke a leaked key at once; everything else that adds risk stays behind 3 days. The keeper reads `maxRate` and `liquidityAdapter` every tick and alerts on change. Worst case from a leaked Rotator key is a paused yield recognition or broken deposits until the Safe revokes, never a loss of funds. Documented in RUNBOOK section 8 and the public docs.
+
+## D24. Batched setup through multicall (Claude, 8 Nov 15:40)
+VaultV2 has multicall; JuniorVault inherits OpenZeppelin Multicall (verbatim, v5) so the owner setup is 7 signatures instead of 23. The plan generator recomputes CREATE addresses after batching because the deployer nonce sequence changes; every plan is replayed on a fork before it is published.
+
+## D25. Big blocks via a wallet-approved agent key (Claude, 8 Nov 16:15)
+MetaMask refuses EIP-712 payloads whose domain chainId (1337 for Hyperliquid L1 actions) differs from the active chain. The signer page therefore has the wallet approve a throwaway API agent (user-signed action, chainId 999 accepted by the exchange API) and the agent signs evmUserModify. Same mechanism as the Hyperliquid app. The agent lives in the tab's sessionStorage and is removed by Cashout after use.
+
+## D26. Live test split (Cashout, 8 Nov 16:47)
+Own-capital test follows the tranche shape: 316 USDC senior, 80 USDC junior, not junior-heavy.

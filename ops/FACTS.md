@@ -2,6 +2,26 @@
 
 Verified Saturday 7 November 2026, about 17:30 ET, by reading state directly from the chains with `cast` (Foundry 1.5.1) and from the Morpho and HyperLend APIs. Every address below was read back on-chain unless marked **unverified**. HyperEVM RPC used: `https://rpc.hyperliquid.xyz/evm` (chain id 999, latest block 50,663,139 at time of reading). Where a bytecode hash is quoted, it is `keccak256` of the runtime code and was compared against the same contract on Ethereum (publicnode) or Base.
 
+## 0. Live deployment (HyperEVM, 8 Nov 2026, read back on-chain)
+
+All signed by Cashout from 0x2DBE through the signer page, 23 transactions in total, about 0.001 HYPE of gas.
+
+| Contract | Address | Block |
+|---|---|---|
+| Senior, Morpho Vault V2 "Orphic Senior USDC" (osUSDC) | 0x3F7382bd8BFC6C548CAa2D7B4dfCe628B12A9759 | 50747831 |
+| MorphoMarketV1AdapterV2 (senior to Morpho markets) | 0x7b00b45e77afe7e07a2C9910FF9c5CE538386fb1 | 50747953 |
+| MorphoVaultV1Adapter (senior to Felix USDC v1.1, liquidity adapter) | 0x0cdfdbC51744Ba1ed88bB8752098105fb43f37AC | 50748014 |
+| Junior, JuniorVault (ojUSDC) | 0x20D5F4f78858D257eA047EB5F47773E361697F2E | 50748319 |
+| FeeRouter | 0xC2d2C5e56798Bfd0EEc67EEC12ddC2b521b1aA37 | 50748502 (approx) |
+
+Roles: senior owner and curator 0x9EDfDc92A46adbfa7b6189295376bEF4599c5F29 (MetaMask account, Safe later); allocators 0x2DBE and the Rotator key 0xC772F0ea992236dA71Fa30b8899D71B680866956; junior and router owner 0x2DBE1Ba83084dAF698Acea79CBAfe0493f42FecC; junior agent and router keeper 0xC772; treasury 0xba08A51bb1BB49E9840Eb55511E8880F95306A40.
+
+Senior state: management fee 158548959/s (0.5% a year) to junior, maxRate 63419583967/s, liquidity adapter Felix, absolute caps 425k on both adapters, relative caps 100%, 12 curator functions at timelock 259200 (3 days), setIsAllocator at 0.
+Junior state: seeded (1 USDC dead shares), depositCap 75k, walletCap 10k, 4 markets, 2 vaults (Felix, senior), deposits open since the live test.
+Live test (same day): 316 USDC into senior (all in Felix), 80 USDC into junior, 0.000001 ojUSDC exit queued for 16 Nov 00:00 UTC. seniorSupplyBase synced at 316 shares, cover 0.
+Hyperliquid L1: 0x2DBE has an approved API agent "orphic-deploy" 0x23354F1bcd8dD322778628696C3E9912588b6203 (valid 180 days) used to toggle big blocks; to be removed by Cashout. Big blocks are off.
+Gas: our transactions paid 0.1 gwei; at 22:00 UTC the base fee was 56 gwei, so the Rotator's gas-aware HOLD is working as intended.
+
 ## 1. HyperEVM (chain 999): Morpho
 
 | Contract | Address | How verified |
