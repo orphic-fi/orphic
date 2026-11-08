@@ -19,6 +19,9 @@
     "morphoVaultV1": "0xTODO"
   },
 
+  "expectedMaxRate": "63419583967",
+  "felixAdapter": "0xTODO",
+
   "felix": {
     "address": "0x8A862fD6c12f9ad34C9c2ff45AB2b6712e8CEa27",
     "label": "Felix USDC v1.1"
@@ -56,7 +59,10 @@
     "0x96c47d3797394dd25e33f814216793a89d2e6edcc54d1dac3ab4c2b2d82a73b9": { "absoluteCap": 2000000, "relativeCap": 0.25 },
     "0xd7d38220652d19c87099c3b23de9a70a1893620a050c635d1a94bd947c9c59a8": { "absoluteCap": 3000000, "relativeCap": 0.4 },
     "0x45af9c72aa97978e143a646498c8922058b7c6f18b6f7b05d7316c8cf7ab942f": { "absoluteCap": 3000000, "relativeCap": 0.4 },
-    "felix": { "absoluteCap": 10000000, "relativeCap": 1.0 }
+    "expectedMaxRate": "63419583967",
+  "felixAdapter": "0xTODO",
+
+  "felix": { "absoluteCap": 10000000, "relativeCap": 1.0 }
   },
 
   "economics": {

@@ -67,6 +67,10 @@ export interface SeniorConfig {
     morphoMarketV1: Address | "0xTODO";
     morphoVaultV1: Address | "0xTODO";
   };
+  /** Expected senior maxRate (per-second WAD). Drift raises an alert and fails the run. */
+  expectedMaxRate: string;
+  /** Expected liquidity adapter. Falls back to adapters.morphoVaultV1 while a placeholder. */
+  felixAdapter?: Address | "0xTODO";
   felix: { address: Address; label: string };
   targets: TargetEntry[];
   excludedMarkets: Hex[];

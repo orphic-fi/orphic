@@ -2,6 +2,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import type { JuniorStatus, JuniorWeeklyResult, SyncResult } from "./exec/junior.js";
 import type { OrphPriceResult } from "./data/orph.js";
+import type { DriftResult } from "./exec/drift.js";
 import type { Decision, ExecutionResult, MarketInputs, PlanStep, Proposal, VaultState } from "./types.js";
 
 export interface RunReport {
@@ -30,6 +31,9 @@ export interface RunReport {
   juniorStatus?: JuniorStatus;
   juniorWeekly?: JuniorWeeklyResult;
   orphPrice?: OrphPriceResult;
+  drift?: DriftResult;
+  /** Top-level alerts. Non-empty makes the tick exit non-zero. */
+  alerts: string[];
   /** Annualised rate of the current book, for the agents page to turn into realised return. */
   bookApy: { current: number; proposed: number };
   summary: string[];
@@ -62,6 +66,7 @@ export function humanSummary(report: Omit<RunReport, "summary">): string[] {
   const pct = (x: number) => `${(x * 100).toFixed(2)}%`;
   const usd = (x: number) => `$${x.toLocaleString("en-US", { maximumFractionDigits: 0 })}`;
   const out: string[] = [];
+  for (const a of report.alerts) out.push(`WARNING: ${a}`);
   out.push(`[${report.mode}] vault ${usd(report.inputs.state.totalAssets)} (${report.inputs.state.source}), idle ${pct(report.inputs.state.idle / (report.inputs.state.totalAssets || 1))}`);
   out.push(`book APY now ${pct(report.bookApy.current)}, proposed ${pct(report.bookApy.proposed)}`);
   for (const l of report.proposal.lines) {

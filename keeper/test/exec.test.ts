@@ -138,6 +138,8 @@ describe("rule 8: report", () => {
     expect(report.proposal.excluded.length).toBe(3);
     expect(report.weeklyClose?.emissionsSold).toBe(0);
     expect(report.summary.some((l) => l.startsWith("decision: HOLD"))).toBe(true);
+    expect(report.alerts).toEqual([]);
+    expect(report.drift?.checked).toBe(false);
 
     const files = readdirSync(join(ops, "reports")).filter((f) => f.endsWith(".json") && f !== "latest.json");
     expect(files.length).toBe(1);

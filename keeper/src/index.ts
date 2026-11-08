@@ -8,6 +8,7 @@ import { buildPlan, validatePlan } from "./exec/plan.js";
 import { executePlan, weeklyClose, type ExecContext } from "./exec/send.js";
 import { juniorWeekly, readJuniorStatus, syncSenior, type JuniorCtx } from "./exec/junior.js";
 import { sampleOrphPrice } from "./data/orph.js";
+import { checkSeniorDrift } from "./exec/drift.js";
 import { bookApy, humanSummary, writeReport, type RunReport } from "./report.js";
 import type { ExecutionResult, HyperlendRate, VaultState } from "./types.js";
 
@@ -74,6 +75,15 @@ export async function run(opts: RunOptions, cfg: SeniorConfig = loadConfig(opts.
     state = loadStateFixture(opts.fixturePath, cfg);
   } else {
     throw new Error("vault not deployed (placeholder addresses) and no --fixture given; cannot compute current allocation");
+  }
+
+  // Senior config drift: report only, never fix.
+  let drift: RunReport["drift"];
+  try {
+    drift = await checkSeniorDrift(cfg, client, log);
+  } catch (err) {
+    drift = { checked: false, alerts: [], note: `drift check failed: ${(err as Error).message}` };
+    warnings.push(drift.note);
   }
 
   // Rules 3 to 5.
@@ -180,6 +190,8 @@ export async function run(opts: RunOptions, cfg: SeniorConfig = loadConfig(opts.
     juniorStatus,
     juniorWeekly: juniorWeeklyResult,
     orphPrice,
+    drift,
+    alerts: drift?.alerts ?? [],
     bookApy: bookApy(proposal),
     error,
   };
@@ -197,7 +209,11 @@ if (isMain) {
   loadDotEnv();
   const opts = parseArgs(process.argv.slice(2));
   run(opts)
-    .then((r) => process.exit(r.error || r.execution.some((e) => e.status === "failed") ? 1 : 0))
+    .then((r) => {
+      // Exit 2 on config drift so the Action shows red even when everything else succeeded.
+      if (r.alerts.length) process.exit(2);
+      process.exit(r.error || r.execution.some((e) => e.status === "failed") ? 1 : 0);
+    })
     .catch((err) => {
       console.error(`keeper failed: ${(err as Error).message}`);
       process.exit(1);
