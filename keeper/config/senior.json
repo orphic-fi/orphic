@@ -7,20 +7,21 @@
   "morphoApi": "https://api.morpho.org/graphql",
   "hyperlendApi": "https://api.hyperlend.finance/data/markets/rates?chain=hyperEvm",
 
-  "vault": "0xTODO",
-  "junior": "0xTODO",
+  "vault": "0x3F7382bd8BFC6C548CAa2D7B4dfCe628B12A9759",
+  "feeRouter": "0xC2d2C5e56798Bfd0EEc67EEC12ddC2b521b1aA37",
+  "junior": "0x20D5F4f78858D257eA047EB5F47773E361697F2E",
   "orph": "0xTODO",
   "poolId": "0xTODO",
   "uniswapStateView": "0x1656326235cb9E34Cb58CaDe53AE30789AB32A1A",
   "orphPool": { "fee": 10000, "tickSpacing": 200, "hooks": "0x0000000000000000000000000000000000000000" },
   "stakeRate": { "usdPerAsset": 0.20, "twapWindowDays": 7, "sampleRetentionDays": 30 },
   "adapters": {
-    "morphoMarketV1": "0xTODO",
-    "morphoVaultV1": "0xTODO"
+    "morphoMarketV1": "0x7B00b45E77aFE7E07a2c9910FF9C5Ce538386fB1",
+    "morphoVaultV1": "0x0CDFdBC51744ba1Ed88Bb8752098105Fb43F37Ac"
   },
 
   "expectedMaxRate": "63419583967",
-  "felixAdapter": "0xTODO",
+  "felixAdapter": "0x0CDFdBC51744ba1Ed88Bb8752098105Fb43F37Ac",
 
   "felix": {
     "address": "0x8A862fD6c12f9ad34C9c2ff45AB2b6712e8CEa27",
@@ -59,10 +60,7 @@
     "0x96c47d3797394dd25e33f814216793a89d2e6edcc54d1dac3ab4c2b2d82a73b9": { "absoluteCap": 2000000, "relativeCap": 0.25 },
     "0xd7d38220652d19c87099c3b23de9a70a1893620a050c635d1a94bd947c9c59a8": { "absoluteCap": 3000000, "relativeCap": 0.4 },
     "0x45af9c72aa97978e143a646498c8922058b7c6f18b6f7b05d7316c8cf7ab942f": { "absoluteCap": 3000000, "relativeCap": 0.4 },
-    "expectedMaxRate": "63419583967",
-  "felixAdapter": "0xTODO",
-
-  "felix": { "absoluteCap": 10000000, "relativeCap": 1.0 }
+    "felix": { "absoluteCap": 10000000, "relativeCap": 1.0 }
   },
 
   "economics": {

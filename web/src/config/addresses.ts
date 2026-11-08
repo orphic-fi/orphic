@@ -2,7 +2,7 @@ import type { Address } from 'viem'
 
 // Flip to true once the Monday deploy batch has landed and the addresses below are filled in.
 // While false: figures come from the Morpho API only and write buttons are disabled.
-export const DEPLOYED = false
+export const DEPLOYED = true
 
 export const OPENS_LABEL = 'Opens Monday 9 Nov'
 
@@ -16,10 +16,12 @@ export const addresses = {
   hyperEvm: {
     // HyperEVM USDC, 6 decimals. Verified on-chain (asset() of Felix USDC).
     usdc: '0xb88339CB7199b77E23DB6E890353E22632Ba630f' as Address,
-    // Orphic senior: a Morpho Vault V2. Placeholder until deployment.
-    senior: ZERO,
-    // Orphic junior: custom contract. Placeholder until deployment.
-    junior: ZERO,
+    // Orphic senior: Morpho Vault V2, deployed 8 Nov 2026 (block 50747831).
+    senior: '0x3F7382bd8BFC6C548CAa2D7B4dfCe628B12A9759' as Address,
+    // Orphic junior: JuniorVault, deployed 8 Nov 2026 (block 50748319).
+    junior: '0x20D5F4f78858D257eA047EB5F47773E361697F2E' as Address,
+    // FeeRouter, deployed 8 Nov 2026.
+    feeRouter: '0xC2d2C5e56798Bfd0EEc67EEC12ddC2b521b1aA37' as Address,
     // ORPH stake token. Placeholder until deployment.
     orph: ZERO,
     // Reference vault used for APY and TVL while our vault does not exist.

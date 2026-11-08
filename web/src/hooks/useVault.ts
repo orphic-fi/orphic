@@ -124,8 +124,8 @@ export function useVault(kind: VaultKind): VaultState {
       { address: vaultAddress, abi: juniorAbi, functionName: 'depositCap', chainId: hyperEvm.id },
       { address: vaultAddress, abi: juniorAbi, functionName: 'balanceOf', args: [probe], chainId: hyperEvm.id },
       { address: vaultAddress, abi: juniorAbi, functionName: 'pricePerShare', chainId: hyperEvm.id },
-      { address: vaultAddress, abi: juniorAbi, functionName: 'stakeBps', chainId: hyperEvm.id },
-      { address: vaultAddress, abi: juniorAbi, functionName: 'paused', chainId: hyperEvm.id },
+      { address: vaultAddress, abi: juniorAbi, functionName: 'seeded', chainId: hyperEvm.id },
+      { address: vaultAddress, abi: juniorAbi, functionName: 'depositsPaused', chainId: hyperEvm.id },
       { address: vaultAddress, abi: juniorAbi, functionName: 'stakeToken', chainId: hyperEvm.id },
       { address: vaultAddress, abi: juniorAbi, functionName: 'stakePerAsset', chainId: hyperEvm.id },
       { address: vaultAddress, abi: juniorAbi, functionName: 'pendingStakePerAsset', chainId: hyperEvm.id },
@@ -291,7 +291,7 @@ export function useVault(kind: VaultKind): VaultState {
     const depositCap = juniorReads.data?.[1]?.result as bigint | undefined
     const shares = juniorReads.data?.[2]?.result as bigint | undefined
     const pps = juniorReads.data?.[3]?.result as bigint | undefined
-    const stakeBps = juniorReads.data?.[4]?.result as bigint | undefined
+    const seeded = juniorReads.data?.[4]?.result as boolean | undefined
     const paused = juniorReads.data?.[5]?.result as boolean | undefined
     const lastSettle = juniorReads.data?.[11]?.result as bigint | undefined
     const exitRaw = juniorReads.data?.[12]?.result as readonly [bigint, bigint, number] | undefined
@@ -318,8 +318,8 @@ export function useVault(kind: VaultKind): VaultState {
       pricePerShare: pps,
       lastSettle: lastSettle !== undefined ? Number(lastSettle) : undefined,
       exit: exitRaw && exitRaw[0] > 0n ? { shares: exitRaw[0], readyAt: Number(exitRaw[1]) } : null,
-      stakeBps: stakeBps !== undefined ? Number(stakeBps) : 2000,
-      paused: paused ?? ops.paused,
+      stakeBps: 2000, // design target: stakePerAsset is set from the 7-day TWAP so the stake is about 20% of the deposit
+      paused: (paused ?? true) || seeded === false, // unknown state reads as paused, never as open
       stake: {
         token: stakeTokenRead,
         address: orphToken,
