@@ -12,7 +12,7 @@ import {Addresses} from "../script/Addresses.sol";
 
 /// Runs Sunday's three deploy scripts exactly as written against a HyperEVM fork, then exercises the result.
 contract DeployTest is Test, Addresses {
-    address deployer = 0x1804c8AB1F12E6bbf3894d4083f33e07309d1f38; // forge default broadcaster in tests
+    address deployer = 0x2DBE1Ba83084dAF698Acea79CBAfe0493f42FecC; // JUNIOR_OWNER, the hardware wallet
     address agent = makeAddr("agent");
     address treasury = makeAddr("treasury");
     address alice = makeAddr("alice");
@@ -21,6 +21,7 @@ contract DeployTest is Test, Addresses {
         vm.createSelectFork(vm.envOr("HYPEREVM_RPC", string("https://rpc.hyperliquid.xyz/evm")), vm.envOr("FORK_BLOCK", uint256(50666000)));
         deal(address(USDC), deployer, 10e6);
         vm.deal(deployer, 10 ether);
+        vm.etch(SENIOR_SAFE, hex"00"); // the Safe exists on the fork for the handover check
         vm.setEnv("DEPLOYER", vm.toString(deployer));
         vm.setEnv("AGENT", vm.toString(agent));
         vm.setEnv("TREASURY", vm.toString(treasury));
@@ -46,6 +47,9 @@ contract DeployTest is Test, Addresses {
         WireSenior s3 = new WireSenior();
         s3.run();
 
+        assertEq(IVaultV2(senior).owner(), SENIOR_SAFE);
+        assertEq(IVaultV2(senior).curator(), SENIOR_SAFE);
+        assertEq(JuniorVault(junior).owner(), deployer);
         // the result works: a deposit lands in Felix, a timelocked change now waits 3 days
         deal(address(USDC), alice, 1_000e6);
         vm.startPrank(alice);
@@ -53,7 +57,7 @@ contract DeployTest is Test, Addresses {
         IVaultV2(senior).deposit(1_000e6, alice);
         vm.stopPrank();
         assertApproxEqAbs(IVaultV2(senior).totalAssets(), 1_000e6, 2);
-        vm.prank(deployer);
+        vm.prank(SENIOR_SAFE);
         IVaultV2(senior).submit(abi.encodeCall(IVaultV2.increaseAbsoluteCap, (abi.encode("this", felixAdapter), 1e12)));
         vm.expectRevert();
         IVaultV2(senior).increaseAbsoluteCap(abi.encode("this", felixAdapter), 1e12);

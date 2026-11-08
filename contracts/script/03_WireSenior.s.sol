@@ -8,15 +8,16 @@ import {Addresses} from "./Addresses.sol";
 /// Step 3 of 3. Points senior's management fee at junior, sets maxRate, sets Felix as the liquidity adapter,
 /// then raises the timelock on everything that changes risk. After this, cap and adapter changes wait 3 days.
 ///
-/// Env: SENIOR, JUNIOR, FELIX_ADAPTER, OWNER_FINAL (optional: Safe to hand owner and curator to at the end).
+/// Env: DEPLOYER, SENIOR, JUNIOR, FELIX_ADAPTER. Ends by handing senior owner and curator to SENIOR_SAFE (must exist on 999).
 contract WireSenior is Script, Addresses {
     function run() external {
         IVaultV2 senior = IVaultV2(vm.envAddress("SENIOR"));
         address junior = vm.envAddress("JUNIOR");
         address felixAdapter = vm.envAddress("FELIX_ADAPTER");
-        address ownerFinal = vm.envOr("OWNER_FINAL", address(0));
+        address deployer = vm.envAddress("DEPLOYER");
+        require(SENIOR_SAFE.code.length > 0, "Safe is not deployed on HyperEVM yet; deploy it at this address first");
 
-        vm.startBroadcast();
+        vm.startBroadcast(deployer);
         _exec(senior, abi.encodeCall(IVaultV2.setManagementFeeRecipient, (junior)));
         _exec(senior, abi.encodeCall(IVaultV2.setManagementFee, (MGMT_FEE_PER_SEC)));
         _exec(senior, abi.encodeCall(IVaultV2.setMaxRate, (MAX_RATE_PER_SEC)));
@@ -37,10 +38,9 @@ contract WireSenior is Script, Addresses {
         _exec(senior, abi.encodeCall(IVaultV2.increaseTimelock, (IVaultV2.setSendAssetsGate.selector, TIMELOCK)));
         _exec(senior, abi.encodeCall(IVaultV2.increaseTimelock, (IVaultV2.setAdapterRegistry.selector, TIMELOCK)));
 
-        if (ownerFinal != address(0)) {
-            senior.setCurator(ownerFinal);
-            senior.setOwner(ownerFinal);
-        }
+        // Hand senior to the Safe: curator (caps, adapters, fees behind the timelock) and owner (can change curator).
+        senior.setCurator(SENIOR_SAFE);
+        senior.setOwner(SENIOR_SAFE);
         vm.stopBroadcast();
 
         require(senior.managementFeeRecipient() == junior, "fee recipient");
@@ -48,6 +48,7 @@ contract WireSenior is Script, Addresses {
         require(senior.maxRate() == MAX_RATE_PER_SEC, "maxRate");
         require(senior.liquidityAdapter() == felixAdapter, "liquidity adapter");
         require(senior.timelock(IVaultV2.addAdapter.selector) == TIMELOCK, "timelock");
+        require(senior.owner() == SENIOR_SAFE && senior.curator() == SENIOR_SAFE, "senior handed to Safe");
         console2.log("verify: ok");
     }
 

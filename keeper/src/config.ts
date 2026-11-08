@@ -56,6 +56,13 @@ export interface SeniorConfig {
   vault: Address | "0xTODO";
   /** JuniorVault. Skipped entirely while a placeholder. */
   junior: Address | "0xTODO";
+  /** ORPH token. Price sampling is skipped while a placeholder. */
+  orph: Address | "0xTODO";
+  /** Uniswap v4 pool id (bytes32). Computed from the PoolKey when a placeholder. */
+  poolId: Hex | "0xTODO";
+  uniswapStateView: Address;
+  orphPool: { fee: number; tickSpacing: number; hooks: Address };
+  stakeRate: { usdPerAsset: number; twapWindowDays: number; sampleRetentionDays: number };
   adapters: {
     morphoMarketV1: Address | "0xTODO";
     morphoVaultV1: Address | "0xTODO";

@@ -29,4 +29,8 @@ abstract contract Addresses {
     uint256 constant MGMT_FEE_PER_SEC = uint256(0.005e18) / uint256(365 days); // 0.5% a year, to junior
     uint256 constant MAX_RATE_PER_SEC = uint256(2e18) / uint256(365 days); // 200% a year ceiling, as Felix
     uint256 constant TIMELOCK = 3 days;
+
+    // Orphic roles (Cashout, 8 Nov 01:34)
+    address constant JUNIOR_OWNER = 0x2DBE1Ba83084dAF698Acea79CBAfe0493f42FecC; // hardware wallet: junior and router owner
+    address constant SENIOR_SAFE = 0x9EDfDc92A46adbfa7b6189295376bEF4599c5F29; // Safe: senior owner and curator after setup
 }

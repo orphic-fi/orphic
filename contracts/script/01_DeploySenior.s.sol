@@ -29,7 +29,7 @@ contract DeploySenior is Script, Addresses {
         MarketParams memory whype77 = morpho.idToMarketParams(MKT_WHYPE_77);
         MarketParams memory ubtc77 = morpho.idToMarketParams(MKT_UBTC_77);
 
-        vm.startBroadcast();
+        vm.startBroadcast(deployer);
         IVaultV2 senior = IVaultV2(IVaultV2Factory(V2_FACTORY).createVaultV2(deployer, USDC, salt));
         senior.setCurator(deployer);
         senior.setName("Orphic Senior USDC");

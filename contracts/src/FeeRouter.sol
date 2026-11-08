@@ -32,6 +32,7 @@ contract FeeRouter is Ownable2Step, ReentrancyGuard {
     uint16 public juniorBps = 2500; // treasury gets the rest
 
     address public keeper;
+    uint256 public maxSweepUsdc = 25_000e6; // oracle value of one sweep may not exceed this
     mapping(address => bool) public isRouter;
 
     struct Floor {
@@ -54,6 +55,7 @@ contract FeeRouter is Ownable2Step, ReentrancyGuard {
     event RecipientsSet(address senior, address junior, address treasury);
     event SplitSet(uint16 seniorBps, uint16 juniorBps);
     event KeeperSet(address keeper);
+    event MaxSweepSet(uint256 max);
 
     error NotKeeper();
     error RouterNotAllowed();
@@ -62,6 +64,7 @@ contract FeeRouter is Ownable2Step, ReentrancyGuard {
     error NothingToDo();
     error BadSplit();
     error BadToken();
+    error SweepTooLarge(uint256 value, uint256 max);
 
     constructor(IERC20 usdc_, address owner_, address senior_, address junior_, address treasury_) Ownable(owner_) {
         usdc = usdc_;
@@ -78,29 +81,37 @@ contract FeeRouter is Ownable2Step, ReentrancyGuard {
 
     /* SWEEPS */
 
-    /// @notice Swap the whole balance of `token` to USDC through `router` with `swapData`, then split everything.
+    /// @notice Swap `amountIn` of `token` to USDC through `router` with `swapData`, then split everything.
     /// @dev Deltas are measured, never trusted from the router. The floor is computed from the oracle, so a bad
-    ///      `swapData` can only fail, not leak.
-    function sweep(address token, address router, bytes calldata swapData) external onlyKeeper nonReentrant {
+    ///      `swapData` can only fail, not leak. One sweep is capped at `maxSweepUsdc` of oracle value, so a keeper
+    ///      with a stale oracle can lose at most maxSlippageBps of that per call.
+    function sweep(address token, address router, bytes calldata swapData, uint256 amountIn)
+        external
+        onlyKeeper
+        nonReentrant
+    {
         if (!isRouter[router]) revert RouterNotAllowed();
         if (token == address(usdc) || burnBps[token] != 0) revert BadToken();
         Floor memory f = floors[token];
         if (address(f.oracle) == address(0)) revert NoFloor();
         IERC20 t = IERC20(token);
-        uint256 amountIn = t.balanceOf(address(this));
-        if (amountIn == 0) revert NothingToDo();
+        if (amountIn == 0 || amountIn > t.balanceOf(address(this))) revert NothingToDo();
 
-        uint256 floor = amountIn * f.oracle.price() / ORACLE_SCALE; // USDC units for amountIn token units
-        floor = floor * (BPS - f.maxSlippageBps) / BPS;
+        uint256 value = amountIn * f.oracle.price() / ORACLE_SCALE; // USDC units for amountIn token units
+        if (value > maxSweepUsdc) revert SweepTooLarge(value, maxSweepUsdc);
+        uint256 floor = value * (BPS - f.maxSlippageBps) / BPS;
 
         uint256 before = usdc.balanceOf(address(this));
+        uint256 tokenBefore = t.balanceOf(address(this));
         t.forceApprove(router, amountIn);
         Address.functionCall(router, swapData);
         t.forceApprove(router, 0);
         uint256 got = usdc.balanceOf(address(this)) - before;
         if (got < floor) revert BelowFloor(got, floor);
+        uint256 spent = tokenBefore - t.balanceOf(address(this)); // measured, never trusted from the router
+        if (spent > amountIn) revert BadToken(); // the approval bounds it; belt and braces
         // Anything left of `token` (partial fill) simply waits for the next sweep.
-        emit Swept(token, amountIn - t.balanceOf(address(this)), got, floor);
+        emit Swept(token, spent, got, floor);
         _split();
     }
 
@@ -188,6 +199,11 @@ contract FeeRouter is Ownable2Step, ReentrancyGuard {
         seniorBps = seniorBps_;
         juniorBps = juniorBps_;
         emit SplitSet(seniorBps_, juniorBps_);
+    }
+
+    function setMaxSweepUsdc(uint256 max) external onlyOwner {
+        maxSweepUsdc = max;
+        emit MaxSweepSet(max);
     }
 
     function setKeeper(address keeper_) external onlyOwner {

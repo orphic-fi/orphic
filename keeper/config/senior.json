@@ -9,6 +9,11 @@
 
   "vault": "0xTODO",
   "junior": "0xTODO",
+  "orph": "0xTODO",
+  "poolId": "0xTODO",
+  "uniswapStateView": "0x1656326235cb9E34Cb58CaDe53AE30789AB32A1A",
+  "orphPool": { "fee": 10000, "tickSpacing": 200, "hooks": "0x0000000000000000000000000000000000000000" },
+  "stakeRate": { "usdPerAsset": 0.20, "twapWindowDays": 7, "sampleRetentionDays": 30 },
   "adapters": {
     "morphoMarketV1": "0xTODO",
     "morphoVaultV1": "0xTODO"

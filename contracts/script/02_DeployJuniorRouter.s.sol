@@ -12,18 +12,19 @@ import {Addresses} from "./Addresses.sol";
 /// Step 2 of 3. Deploys JuniorVault and FeeRouter against the senior from step 1, seeds junior with 1 USDC,
 /// wires the agent allowlist. Deposits stay paused until step 3 has run and the Monday checklist is green.
 ///
-/// Env: SENIOR, DEPLOYER, AGENT, TREASURY, JUNIOR_CAP (default 75_000e6).
+/// Env: SENIOR, DEPLOYER (= JUNIOR_OWNER, the hardware wallet), AGENT, TREASURY, JUNIOR_CAP (default 75_000e6).
 /// The deployer must hold at least 1 USDC for the seed.
 contract DeployJuniorRouter is Script, Addresses {
     function run() external {
         IVaultV2 senior = IVaultV2(vm.envAddress("SENIOR"));
         address deployer = vm.envAddress("DEPLOYER");
+        require(deployer == JUNIOR_OWNER, "step 2 must be broadcast by the junior owner (hardware wallet)");
         address agent = vm.envAddress("AGENT");
         address treasury = vm.envAddress("TREASURY");
         uint256 juniorCap = vm.envOr("JUNIOR_CAP", uint256(75_000e6));
         IMorpho morpho = IMorpho(MORPHO);
 
-        vm.startBroadcast();
+        vm.startBroadcast(deployer);
         JuniorVault junior = new JuniorVault(IERC20(USDC), senior, morpho, deployer, juniorCap);
         IERC20(USDC).approve(address(junior), junior.SEED_ASSETS());
         junior.seed();
@@ -61,7 +62,7 @@ contract DeployJuniorRouter is Script, Addresses {
         console2.log("ROUTER ", address(router));
 
         require(junior.seeded() && junior.depositsPaused() && junior.walletCap() == vm.envOr("WALLET_CAP", uint256(10_000e6)), "junior state");
-        require(junior.agent() == agent && junior.owner() == deployer, "junior roles");
+        require(junior.agent() == agent && junior.owner() == JUNIOR_OWNER && router.owner() == JUNIOR_OWNER, "roles");
         require(junior.marketsLength() == 4 && junior.vaultsLength() == 2, "junior universe");
         require(address(junior.senior()) == address(senior), "junior senior");
         require(router.senior() == address(senior) && router.junior() == address(junior), "router recipients");

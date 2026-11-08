@@ -75,3 +75,6 @@ S-1 (High) the agent could supply junior's USDC to any Morpho USDC market, inclu
 
 ## D20. Launch parameters (Cashout, 18:46)
 Stake gate on from day one at 20%. Junior per-wallet cap $10,000 for week one only (`walletCap`, owner-settable, 0 = off). No hook, no HYPE seed: one Uniswap v4 pool on HyperEVM, HYPE/ORPH at the 1% tier, single-sided ORPH position minted through Uniswap's PositionManager at about $5k FDV, position NFT held by the Safe. Cashout makes the first deposits from treasury as the live test (about $1,000 senior, the rest junior with its ORPH stake); runbook section 6 step 10 has the read-backs.
+
+## D21. Roles, stake rate, sweep cap (Cashout, 8 Nov 01:34)
+Junior and router owner = hardware wallet `0x2DBE…FecC`; senior owner and curator = Safe `0x9EDf…5F29` after step 3, 3-day timelock on caps. Both baked into `script/Addresses.sol`; scripts broadcast as DEPLOYER explicitly and step 3 refuses until the Safe has code on HyperEVM (it does not yet). `stakePerAsset` changes go through `proposeStakePerAsset` + 3-day `applyStakePerAsset`; weekly procedure from the keeper's 7-day pool TWAP (Uniswap v4 has no on-chain TWAP, so the keeper samples hourly). Router `sweep` takes an explicit `amountIn` and is capped at `maxSweepUsdc` (25k) of oracle value per call; oracle staleness check is week one. 37/37 tests.

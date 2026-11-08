@@ -109,6 +109,25 @@ contract JuniorVaultTest is Base {
         assertEq(junior.stakeOf(bob), 0);
     }
 
+    /* 5b */
+    function test_stakeRateChangesWaitThreeDays() public {
+        vm.prank(owner);
+        junior.setStakeToken(IERC20(address(orph)), 0.2e18);
+        vm.prank(owner);
+        junior.proposeStakePerAsset(0.4e18);
+        vm.expectRevert(JuniorVault.TooSoon.selector);
+        junior.applyStakePerAsset();
+        assertEq(junior.stakePerAsset(), 0.2e18); // deposits still at the old rate
+        _juniorDeposit(alice, 1_000e6);
+        assertEq(junior.stakeOf(alice), 200e18);
+        vm.warp(block.timestamp + 3 days);
+        junior.applyStakePerAsset(); // anyone
+        assertEq(junior.stakePerAsset(), 0.4e18);
+        _juniorDeposit(bob, 1_000e6);
+        assertEq(junior.stakeOf(bob), 400e18);
+        assertEq(junior.stakeOf(alice), 200e18); // never re-quoted
+    }
+
     /* 6 */
     function test_exitNoticeThenPricedAtFirstSettleAfterReady() public {
         _juniorDeposit(alice, 10_000e6);
@@ -273,7 +292,18 @@ contract JuniorVaultTest is Base {
         bytes memory bad = abi.encodeCall(MockRouter.swap, (address(tok), 1_000e18, 1_900e6));
         vm.prank(owner);
         vm.expectRevert(abi.encodeWithSelector(FeeRouter.BelowFloor.selector, 1_900e6, 1_980e6));
-        router.sweep(address(tok), address(dex), bad);
+        router.sweep(address(tok), address(dex), bad, 1_000e18);
+        // per-call cap: 20,000 USDC of oracle value is above a 15,000 cap
+        vm.prank(owner);
+        router.setMaxSweepUsdc(15_000e6);
+        bytes memory good = abi.encodeCall(MockRouter.swap, (address(tok), 1_000e18, 1_990e6));
+        tok.mint(address(router), 14_000e18); // router now holds 15,000 tokens worth 30,000 USDC
+        vm.prank(owner);
+        vm.expectRevert(abi.encodeWithSelector(FeeRouter.SweepTooLarge.selector, 30_000e6, 15_000e6));
+        router.sweep(address(tok), address(dex), good, 15_000e18);
+        vm.prank(owner);
+        router.sweep(address(tok), address(dex), good, 1_000e18); // 2,000 of value, under the cap, fills at 1,990
+        assertEq(USDC.balanceOf(address(senior)), 995e6);
         // a failing recipient does not block the sweep: swap junior for a contract that rejects USDC
         RejectingRecipient rr = new RejectingRecipient();
         vm.prank(owner);

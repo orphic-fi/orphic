@@ -2,7 +2,9 @@
 
 Everything you sign, in order, with what each step does and how we read it back. Only Cashout signs. Claude prepares and verifies. Nothing is "live" until its read-back passes.
 
-Roles at launch
+Roles at launch (baked into the scripts, `script/Addresses.sol`)
+- JUNIOR_OWNER `0x2DBE1Ba83084dAF698Acea79CBAfe0493f42FecC` (hardware wallet): owner of JuniorVault and FeeRouter. Broadcasts step 2. Today holds 0 HYPE and 0 USDC: fund it (step 0.2).
+- SENIOR_SAFE `0x9EDfDc92A46adbfa7b6189295376bEF4599c5F29`: senior owner and curator after step 3, behind the 3-day timelock on caps, adapters, fees, allocators and gates. **Has no code on HyperEVM as of Sat night**: deploy the Safe on chain 999 at this address (same owners and salt nonce in the Safe app with HyperEVM selected) or give me the HyperEVM Safe address to bake instead. Step 3 refuses to run until it exists.
 - Trust note (review M-5): the senior curator can route senior funds to a venue that loses, and junior pays. Keep the curator on a Safe distinct from the junior owner before caps are raised beyond launch, and keep the 3-day timelock on adapters and caps.
 - DEPLOYER: your EOA. Owner and curator of senior, owner of junior and router, until handed to a Safe (optional step 3 env `OWNER_FINAL`).
 - AGENT: the Rotator key (hot, in GitHub Actions secrets). Allocator on senior, agent on junior, keeper on router. Can move money between allowlisted venues and back. Cannot withdraw to anyone.
@@ -23,7 +25,8 @@ print(ex.use_big_blocks(True))
 ```
 Read-back: `curl -s https://api.hyperliquid.xyz/info -d '{"type":"userDetails","user":"<DEPLOYER>"}'` is not the field; instead send a trivial transaction and confirm its block's gasLimit is 30,000,000: `cast receipt <tx> blockNumber --rpc-url https://rpc.hyperliquid.xyz/evm` then `cast block <n> gasLimit`. Switch back to small blocks after the deploy (cheaper, faster): `ex.use_big_blocks(False)`.
 
-0.2 Fund DEPLOYER with about 1 HYPE and at least 2 USDC (1 USDC seeds junior).
+0.2 Fund the hardware wallet (DEPLOYER for all steps) with about 2 HYPE and at least 2 USDC (1 USDC seeds junior), plus the treasury USDC and ORPH you will use for the live test.
+0.2a Deploy the Safe on HyperEVM at `0x9EDf…5F29` (see roles above) and confirm `cast code` is non-empty.
 
 0.3 Create the AGENT key (fresh EOA), fund it with 0.5 HYPE, put the private key only in the GitHub Actions secret `AGENT_PRIVATE_KEY`. Give me only the address.
 
@@ -110,11 +113,21 @@ Then on junior: `setStakeToken(ORPH, stakePerAsset)` where stakePerAsset = ORPH 
     e. Router: send 10 USDC to the router, keeper `distribute()`. Confirm `USDC.balanceOf(SENIOR)` up by 5e6, junior idle up by 2.5e6, treasury up by 2.5e6; after an hour `senior.convertToAssets` up.
 11. Publish. Banners on: "Unaudited, capped, owner-pausable", "Basis agent not active". Junior per-wallet cap $10k is on for week one (`walletCap()`), off with `setWalletCap(0)` next Monday.
 
+## 6b. Weekly: stake rate re-set (owner, Sundays after settle)
+The gate is 20% of the deposit in ORPH. `stakePerAsset` is ORPH wei per 1 USDC and changes only through a 3-day timelock: `proposeStakePerAsset(x)` (owner) then `applyStakePerAsset()` (anyone) three days later. Existing stakes are never re-quoted.
+1. The keeper samples the pool price hourly and prints on the weekly run: `stake rate proposal: proposeStakePerAsset(<value>) (7d TWAP $<orphUsd>, <n> samples)`. The value is `0.20 / orphUsdTwap * 1e18`. Sanity check: at $0.000005 per ORPH it is `40000e18`.
+2. If the 7-day TWAP moved the implied gate outside 15 to 25% of deposit value, you send `cast send $JUNIOR "proposeStakePerAsset(uint256)" <value>` from the hardware wallet. If it is inside the band, skip the week.
+3. Wednesday: anyone (the keeper does it) calls `applyStakePerAsset()`. Read back `stakePerAsset()`; the app shows the pending change and date from `pendingStakePerAsset()` and `stakeEta()`.
+4. Emergency (price collapse or spike): `proposeStakePerAsset` still waits 3 days by design; use `setDepositsPaused(true)` if the gate becomes meaningless in the meantime.
+
 ## 6a. Hourly (keeper)
 `junior.syncSenior()` every tick so new senior deposits are covered; report `coverInProgress()`. If the keeper is down, anyone can call it.
 
 ## 7. Weekly settle (Sundays, 00:00 UTC window)
 Anyone can call `settle()`; the keeper's `--weekly` run does it after `accrueInterest()` on senior. Before it: Rotator ensures junior idle USDC covers `pendingExitShares * pricePerShare` for exits maturing that day. After it: read `pricePerShare()`, `reservedAssets()`, `pricedExitShares()`, `Settled` event, and the `Cover` event if any. Post the numbers on the agents page.
+
+## 7a. Router sweeps
+`sweep(token, router, swapData, amountIn)` is capped at `maxSweepUsdc` of oracle value per call (25,000 USDC at launch, owner-settable). Floor = oracle value minus `maxSlippageBps` (set 100 to 300). Oracle staleness check ships in week one together with the permissionless `cover()`; until then the keeper sweeps only when the Morpho oracle for the token has been updated within the hour (keeper check, not contract).
 
 ## 8. Kill switch
 - Pause junior deposits: `cast send $JUNIOR "setDepositsPaused(bool)" true`. Exits, claims and settle keep working by construction.

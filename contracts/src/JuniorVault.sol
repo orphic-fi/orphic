@@ -58,6 +58,9 @@ contract JuniorVault is ERC20, Ownable2Step, ReentrancyGuard {
 
     IERC20 public stakeToken; // ORPH, zero until setStakeToken (one-way)
     uint256 public stakePerAsset; // ORPH wei required per 1 unit (1e6) of USDC deposited
+    uint256 public pendingStakePerAsset; // proposed rate, applies after STAKE_TIMELOCK
+    uint256 public stakeEta; // when the pending rate may be applied, 0 = none pending
+    uint256 public constant STAKE_TIMELOCK = 3 days;
     mapping(address => uint256) public stakeOf; // ORPH held for each depositor
     mapping(address => uint256) public stakedShares; // shares minted to each depositor while staking, drives release
 
@@ -113,6 +116,7 @@ contract JuniorVault is ERC20, Ownable2Step, ReentrancyGuard {
     event VaultRemoved(address indexed vault);
     event StakeTokenSet(address token, uint256 stakePerAsset);
     event StakePerAssetSet(uint256 stakePerAsset);
+    event StakePerAssetProposed(uint256 stakePerAsset, uint256 eta);
     event DepositCapSet(uint256 cap);
     event WalletCapSet(uint256 cap);
     event DepositsPaused(bool paused);
@@ -528,9 +532,25 @@ contract JuniorVault is ERC20, Ownable2Step, ReentrancyGuard {
         emit StakeTokenSet(address(token), stakePerAsset_);
     }
 
-    function setStakePerAsset(uint256 stakePerAsset_) external onlyOwner {
-        stakePerAsset = stakePerAsset_;
-        emit StakePerAssetSet(stakePerAsset_);
+    /// @notice Propose a new stake rate (weekly, from the pool's 7-day average price). Applies after 3 days.
+    function proposeStakePerAsset(uint256 stakePerAsset_) external onlyOwner {
+        pendingStakePerAsset = stakePerAsset_;
+        stakeEta = block.timestamp + STAKE_TIMELOCK;
+        emit StakePerAssetProposed(stakePerAsset_, stakeEta);
+    }
+
+    /// @notice Anyone may apply a matured proposal. Existing stakes are never re-quoted.
+    function applyStakePerAsset() external {
+        if (stakeEta == 0 || block.timestamp < stakeEta) revert TooSoon();
+        stakePerAsset = pendingStakePerAsset;
+        stakeEta = 0;
+        pendingStakePerAsset = 0;
+        emit StakePerAssetSet(stakePerAsset);
+    }
+
+    function cancelStakePerAsset() external onlyOwner {
+        stakeEta = 0;
+        pendingStakePerAsset = 0;
     }
 
     function setDepositCap(uint256 cap) external onlyOwner {
