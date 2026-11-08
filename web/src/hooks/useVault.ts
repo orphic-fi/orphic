@@ -294,7 +294,7 @@ export function useVault(kind: VaultKind): VaultState {
     const stakeBps = juniorReads.data?.[4]?.result as bigint | undefined
     const paused = juniorReads.data?.[5]?.result as boolean | undefined
     const lastSettle = juniorReads.data?.[11]?.result as bigint | undefined
-    const exitRaw = juniorReads.data?.[12]?.result as readonly [bigint, bigint] | undefined
+    const exitRaw = juniorReads.data?.[12]?.result as readonly [bigint, bigint, number] | undefined
     const tvl = DEPLOYED && totalAssets !== undefined ? Number(totalAssets) / 10 ** USDC_DECIMALS : null
     const cap = DEPLOYED && depositCap !== undefined ? Number(depositCap) / 10 ** USDC_DECIMALS : ops.caps.juniorUsd
     const balanceAssets =

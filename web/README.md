@@ -23,6 +23,10 @@ npm run screenshots  # Playwright shots of every reviewed state into screenshots
 
 Environment: copy `.env.example` to `.env` and set `VITE_ELYSIUM_RPC` to an Alchemy or Conduit Elysium mainnet URL. Without it the Elysium chain has no RPC and reads on that chain fail; HyperEVM reads are unaffected.
 
+## Docs
+
+`/docs` and `/docs/:slug` render the markdown in `docs-content/*.md` (imported at build time with `import.meta.glob`, frontmatter `title` and `order`, rendered with `marked`). The slug is the filename without its numeric prefix. External links open in a new tab with `rel="noopener noreferrer"`. Adding a page means adding a file; nothing else to wire.
+
 ## Pages
 
 - `/` Vaults. Senior and junior areas with APY, TVL, cap, balance, deposit input and write actions.
@@ -43,7 +47,7 @@ Environment: copy `.env.example` to `.env` and set `VITE_ELYSIUM_RPC` to an Alch
 - Elysium mainnet chain id 99901 is unverified; see the comment in `src/chains.ts`. Testnet 99801 is included for local testing.
 - The Elysium deposit path assumes a bridge entry contract exposing `deposit(uint256 assets, address receiver)`, the same signature as the vaults. Adjust `src/abi/` and `useVault.ts` if the real contract differs.
 - Senior withdraws and junior exit requests always target HyperEVM; the UI prompts a chain switch if the wallet is elsewhere.
-- `exitOf(address)` is assumed to return `(uint256 shares, uint256 readyAt)`. The claim button is enabled when `lastSettle() >= readyAt`.
+- `exitOf(address)` returns `(uint128 shares, uint64 readyAt, uint32 settleHint)` as documented in `docs-content/07-contracts.md`. The claim button is enabled when `lastSettle() >= readyAt`.
 - Senior shares (`osUSDC`) are assumed to have 18 decimals (Vault V2 uses max(18, asset decimals)); the deposit preview reads `convertToShares(1e6)`.
 - `public/agents.json` is hand-written. `weeklyReturn: null` renders as "n/a until first settle"; `updatedAt` is a unix timestamp or null.
 
