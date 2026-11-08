@@ -66,6 +66,7 @@ export default function Layout() {
             </NavLink>
             <NavLink to="/how-it-works">How it works</NavLink>
             <NavLink to="/agents">Agents</NavLink>
+            <NavLink to="/docs">Docs</NavLink>
           </nav>
           <div className={s.right}>
             <ConnectButton />

@@ -1,0 +1,234 @@
+.docs {
+  display: grid;
+  grid-template-columns: 220px minmax(0, 1fr);
+  gap: 40px;
+  align-items: start;
+}
+
+.nav {
+  position: sticky;
+  top: 24px;
+}
+
+.nav ol {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border-left: 1px solid var(--line);
+}
+
+.nav li a {
+  display: block;
+  padding: 6px 0 6px 14px;
+  margin-left: -1px;
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--muted);
+  border-left: 1px solid transparent;
+}
+
+.nav li a:hover {
+  color: var(--text);
+  text-decoration: none;
+}
+
+.nav li a[aria-current='page'] {
+  color: var(--accent);
+  border-left-color: var(--accent);
+}
+
+.content {
+  min-width: 0;
+  max-width: 68ch;
+  font-family: var(--sans);
+  font-size: 15px;
+  line-height: 1.6;
+  color: var(--text);
+}
+
+.content :global(h1),
+.content :global(h2),
+.content :global(h3),
+.content :global(h4) {
+  font-family: var(--mono);
+  font-weight: 500;
+  letter-spacing: 0;
+  line-height: 1.3;
+  margin: 0;
+}
+
+.content :global(h1) {
+  font-size: 20px;
+  margin-bottom: 20px;
+}
+
+.content :global(h2) {
+  font-size: 15px;
+  margin: 36px 0 10px;
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
+}
+
+.content :global(h3) {
+  font-size: 13.5px;
+  margin: 24px 0 8px;
+  color: var(--text);
+}
+
+.content :global(h4) {
+  font-size: 13px;
+  margin: 18px 0 6px;
+  color: var(--muted);
+}
+
+.content :global(p) {
+  margin: 0 0 14px;
+}
+
+.content :global(p:has(+ pre)) {
+  margin-bottom: 8px;
+}
+
+.content :global(ul),
+.content :global(ol) {
+  margin: 0 0 14px;
+  padding-left: 22px;
+}
+
+.content :global(li) {
+  margin: 4px 0;
+}
+
+.content :global(a) {
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  text-decoration-color: rgba(143, 200, 255, 0.4);
+}
+
+.content :global(code) {
+  font-family: var(--mono);
+  font-size: 0.86em;
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.05);
+  padding: 1px 4px;
+}
+
+.content :global(pre) {
+  margin: 0 0 18px;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.03);
+  overflow-x: auto;
+  font-family: var(--mono);
+  font-size: 12.5px;
+  line-height: 1.55;
+}
+
+.content :global(pre code) {
+  background: none;
+  padding: 0;
+  font-size: inherit;
+}
+
+.content :global(blockquote) {
+  margin: 0 0 14px;
+  padding: 0 0 0 14px;
+  border-left: 1px solid var(--line-strong);
+  color: var(--muted);
+}
+
+.content :global(hr) {
+  border: 0;
+  border-top: 1px solid var(--line);
+  margin: 24px 0;
+}
+
+.content :global(table) {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+  margin: 0 0 18px;
+  display: block;
+  overflow-x: auto;
+}
+
+.content :global(thead th) {
+  text-align: left;
+  font-weight: 400;
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+  padding: 0 16px 8px 0;
+  border-bottom: 1px solid var(--line);
+  white-space: nowrap;
+}
+
+.content :global(td) {
+  vertical-align: top;
+  padding: 9px 16px 9px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.content :global(td:last-child),
+.content :global(th:last-child) {
+  padding-right: 0;
+}
+
+.content :global(td code) {
+  overflow-wrap: anywhere;
+}
+
+.empty {
+  font-family: var(--mono);
+  color: var(--muted);
+}
+
+@media (max-width: 720px) {
+  .docs {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 20px;
+  }
+  .nav {
+    position: static;
+    margin: 0 calc(-1 * var(--gutter));
+    padding: 0 var(--gutter);
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+  .nav::-webkit-scrollbar {
+    display: none;
+  }
+  .nav ol {
+    display: flex;
+    gap: 4px;
+    border-left: 0;
+    border-bottom: 1px solid var(--line);
+    width: max-content;
+    min-width: 100%;
+  }
+  .nav li a {
+    padding: 8px 10px;
+    margin: 0 0 -1px;
+    border-left: 0;
+    border-bottom: 1px solid transparent;
+    white-space: nowrap;
+  }
+  .nav li a[aria-current='page'] {
+    border-left-color: transparent;
+    border-bottom-color: var(--accent);
+  }
+  .content {
+    font-size: 14.5px;
+  }
+  .content :global(table) {
+    font-size: 12px;
+  }
+  .content :global(td) {
+    padding-right: 12px;
+    min-width: 7ch;
+  }
+}

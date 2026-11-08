@@ -72,6 +72,8 @@ async function main() {
   await shot(browser, `${prodUrl}/agents`, 'agents')
   await shot(browser, `${prodUrl}/agents`, 'agents-375', { width: 375, height: 812 })
   await shot(browser, `${prodUrl}/how-it-works`, 'how-it-works')
+  await shot(browser, `${prodUrl}/docs/overview`, 'docs-overview')
+  await shot(browser, `${prodUrl}/docs/contracts`, 'docs-contracts-375', { width: 375, height: 812 })
   await shot(browser, `${prodUrl}/how-it-works`, 'how-it-works-375', { width: 375, height: 812 })
 
   await browser.close()
