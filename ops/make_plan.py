@@ -61,16 +61,17 @@ def enc_multicall(datas):
     return out
 
 
-def collapse(steps):
+def collapse(steps, extra_multicall_targets=()):
     """Consecutive calls to the same VaultV2 (which has multicall) become one multicall per ~1.5M gas chunk.
     Creations and calls to factories or junior stay as they are."""
-    vaults = {s["predictedAddress"].lower() for s in steps if s.get("predictedAddress") and s["title"].startswith("call") and "createVaultV2" in s["title"]}
+    # contracts with a multicall(bytes[]) entry point: Morpho VaultV2 and JuniorVault (OZ Multicall)
+    vaults = {s["predictedAddress"].lower() for s in steps if s.get("predictedAddress") and ("createVaultV2" in s["title"] or s.get("contractName") == "JuniorVault")} | {a.lower() for a in extra_multicall_targets if a}
     out, buf = [], []
     def flush():
         if not buf: return
         if len(buf) == 1: out.append(buf[0]); buf.clear(); return
         gas = sum(int(b["gas"], 16) for b in buf)
-        out.append({"title": f"multicall x{len(buf)} on senior", "what": f"One transaction that runs the {len(buf)} vault calls below in order (VaultV2.multicall).",
+        out.append({"title": f"multicall x{len(buf)} on {'junior' if any(b.get('contractName')=='JuniorVault' for b in buf) else 'senior'}", "what": f"One transaction that runs the {len(buf)} calls below in order (multicall).",
                     "to": buf[0]["to"], "data": enc_multicall([b["data"] for b in buf]), "value": "0x0",
                     "gas": hex(min(int(gas*1.1), 1_900_000)), "readbacks": [], "calls": [b["title"] for b in buf]})
         buf.clear()
@@ -82,6 +83,28 @@ def collapse(steps):
             flush(); out.append(s)
     flush()
     return out
+
+
+def fix_create_addresses(steps, deployer, rpc):
+    """Batching changes how many transactions the deployer sends, so CREATE addresses (deployer, nonce) move.
+    Recompute them from the live nonce and rewrite every reference (to, calldata, predictedAddress)."""
+    nonce = int(subprocess.run(["cast", "nonce", deployer, "--rpc-url", rpc], capture_output=True, text=True, check=True).stdout.strip())
+    renames = {}
+    for i, st in enumerate(steps):
+        if st["to"] is None:
+            new = subprocess.run(["cast", "compute-address", deployer, "--nonce", str(nonce + i)], capture_output=True, text=True, check=True).stdout.strip().split()[-1]
+            old = st.get("predictedAddress")
+            if old and old.lower() != new.lower():
+                renames[old.lower()[2:]] = new.lower()[2:]
+            st["predictedAddress"] = new
+    if renames:
+        print("rewrote CREATE addresses after batching:", renames)
+    for st in steps:
+        for old, new in renames.items():
+            if st["to"] and st["to"].lower()[2:] == old:
+                st["to"] = "0x" + new
+            st["data"] = st["data"].lower().replace(old, new)
+    return steps
 
 
 def call(sig, *args):
@@ -109,6 +132,22 @@ def verify(script, env, steps):
               {"label": "adapters(0) == market adapter", "to": senior, "data": call("adapters(uint256)", 0), "expect": addr_word(mkt)},
               {"label": "adapters(1) == felix adapter", "to": senior, "data": call("adapters(uint256)", 1), "expect": addr_word(felix)},
               {"label": "asset == USDC", "to": senior, "data": call("asset()"), "expect": addr_word("0xb88339CB7199b77E23DB6E890353E22632Ba630f")}]
+    if script.startswith("02"):
+        junior = next(s["predictedAddress"] for s in steps if s.get("contractName") == "JuniorVault")
+        router = next(s["predictedAddress"] for s in steps if s.get("contractName") == "FeeRouter")
+        v += [{"label": "junior.owner == deployer", "to": junior, "data": call("owner()"), "expect": addr_word(env["DEPLOYER"])},
+              {"label": "junior.agent == rotator", "to": junior, "data": call("agent()"), "expect": addr_word(env["AGENT"])},
+              {"label": "junior.senior == senior", "to": junior, "data": call("senior()"), "expect": addr_word(env["SENIOR"])},
+              {"label": "junior.seeded", "to": junior, "data": call("seeded()"), "expect": word(1)},
+              {"label": "junior.depositsPaused", "to": junior, "data": call("depositsPaused()"), "expect": word(1)},
+              {"label": "junior.depositCap == 75k", "to": junior, "data": call("depositCap()"), "expect": word(75_000_000_000)},
+              {"label": "junior.walletCap == 10k", "to": junior, "data": call("walletCap()"), "expect": word(10_000_000_000)},
+              {"label": "junior.marketsLength == 4", "to": junior, "data": call("marketsLength()"), "expect": word(4)},
+              {"label": "junior.vaultsLength == 2", "to": junior, "data": call("vaultsLength()"), "expect": word(2)},
+              {"label": "router.owner == deployer", "to": router, "data": call("owner()"), "expect": addr_word(env["DEPLOYER"])},
+              {"label": "router.keeper == rotator", "to": router, "data": call("keeper()"), "expect": addr_word(env["AGENT"])},
+              {"label": "router.treasury", "to": router, "data": call("treasury()"), "expect": addr_word(env["TREASURY"])},
+              {"label": "router.junior", "to": router, "data": call("junior()"), "expect": addr_word(junior)}]
     if script.startswith("03"):
         senior = env["SENIOR"]
         v += [{"label": "owner == senior admin", "to": senior, "data": call("owner()"), "expect": addr_word(env["SENIOR_ADMIN"])},
@@ -158,7 +197,8 @@ def main():
             "arguments": tx.get("arguments"),
         }
         steps.append(step)
-    steps = collapse(steps)
+    steps = collapse(steps, [env.get("SENIOR"), env.get("JUNIOR")])
+    steps = fix_create_addresses(steps, deployer, rpc)
     plan = {"name": name, "deployer": deployer, "chainId": 999, "script": script, "steps": steps,
             "verify": verify(script, env, steps),
             "logs": [l for l in r.stdout.splitlines() if "==" in l or "verify" in l or ":" in l and len(l) < 120][-40:]}

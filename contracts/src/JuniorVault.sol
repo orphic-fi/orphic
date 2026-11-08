@@ -11,6 +11,7 @@ import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol
 import {Ownable2Step, Ownable} from "@openzeppelin/contracts/access/Ownable2Step.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import {Address} from "@openzeppelin/contracts/utils/Address.sol";
+import {Multicall} from "@openzeppelin/contracts/utils/Multicall.sol";
 import {IMorpho, MarketParams, Id} from "morpho-blue/interfaces/IMorpho.sol";
 import {MarketParamsLib} from "morpho-blue/libraries/MarketParamsLib.sol";
 import {MorphoBalancesLib} from "morpho-blue/libraries/periphery/MorphoBalancesLib.sol";
@@ -27,7 +28,7 @@ import {IAdapter} from "vault-v2/interfaces/IAdapter.sol";
 ///  - agent: a single key that can only call (target, selector) pairs on the allowlist, and only with this contract as
 ///    the receiver where the call has one. Funds can move to allowlisted venues and back, nowhere else.
 ///  - pause: blocks deposits only. Exits, claims and settle always work.
-contract JuniorVault is ERC20, Ownable2Step, ReentrancyGuard {
+contract JuniorVault is ERC20, Ownable2Step, ReentrancyGuard, Multicall {
     using SafeERC20 for IERC20;
     using MarketParamsLib for MarketParams;
     using MorphoBalancesLib for IMorpho;

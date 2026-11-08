@@ -10,7 +10,7 @@ dep = plan["deployer"]
 
 
 def cast(*a):
-    r = subprocess.run(["cast", *a, "--rpc-url", rpc], capture_output=True, text=True)
+    r = subprocess.run(["cast", a[0], "--rpc-url", rpc, *a[1:]], capture_output=True, text=True)
     if r.returncode != 0:
         sys.exit(f"cast {a[0]} failed: {r.stderr.strip()[:800]}")
     return r.stdout.strip()
