@@ -53,13 +53,14 @@ async function main() {
       await page.locator('section[data-kind="junior"] button[type="submit"]').scrollIntoViewIfNeeded()
     },
   })
-  await shot(browser, `${devUrl}/`, 'junior-exit-timeline-demo', {
-    prepare: async (page) => {
-      await page.locator('section[data-kind="junior"] button', { hasText: 'Request exit' }).first().click()
-      await page.locator('section[data-kind="junior"] button[type="submit"]').scrollIntoViewIfNeeded()
-    },
-  })
+  const exitPrepare = async (page) => {
+    await page.locator('section[data-kind="junior"] button', { hasText: 'Request exit' }).first().click()
+    await page.locator('section[data-kind="junior"] button[type="submit"]').scrollIntoViewIfNeeded()
+  }
+  await shot(browser, `${devUrl}/`, 'junior-exit-timeline-demo', { prepare: exitPrepare })
+  await shot(browser, `${devUrl}/`, 'junior-exit-timeline-demo-375', { width: 375, height: 812, prepare: exitPrepare })
   await shot(browser, `${devUrl}/?scenario=cover`, 'senior-cover-demo')
+  await shot(browser, `${devUrl}/?scenario=cover`, 'senior-cover-demo-375', { width: 375, height: 812 })
   await dev.close()
 
   // Production build, no wallet.
@@ -69,7 +70,9 @@ async function main() {
   await shot(browser, `${prodUrl}/`, 'vaults-disconnected')
   await shot(browser, `${prodUrl}/`, 'vaults-disconnected-375', { width: 375, height: 812 })
   await shot(browser, `${prodUrl}/agents`, 'agents')
+  await shot(browser, `${prodUrl}/agents`, 'agents-375', { width: 375, height: 812 })
   await shot(browser, `${prodUrl}/how-it-works`, 'how-it-works')
+  await shot(browser, `${prodUrl}/how-it-works`, 'how-it-works-375', { width: 375, height: 812 })
 
   await browser.close()
   await prod.close()

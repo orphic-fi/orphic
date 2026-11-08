@@ -137,7 +137,8 @@ Anyone can call `settle()`; the keeper's `--weekly` run does it after `accrueInt
 
 ## 8. Kill switch
 - Pause junior deposits: `cast send $JUNIOR "setDepositsPaused(bool)" true`. Exits, claims and settle keep working by construction.
-- Stop the agent: `cast send $JUNIOR "setAgent(address)" 0x0000000000000000000000000000000000000000` and on senior (curator or sentinel) `setIsAllocator(AGENT,false)` is timelocked 3 days, so instead revoke pending submissions and `decreaseAbsoluteCap` to 0 on the market ids (curator or sentinel, instant). Deposits then stop at the Felix cap.
+- Stop the agent, junior side: `cast send $JUNIOR "setAgent(address)" 0x0000000000000000000000000000000000000000` (hardware wallet, instant).
+- Stop the agent, senior side: from the Safe, `submit(abi.encodeCall(setIsAllocator,(AGENT,false)))` then `setIsAllocator(AGENT,false)` in the same batch. This is deliberately NOT timelocked (step 3 leaves it at 0) because an allocator can, instantly: move funds between registered adapters within caps, set `maxRate` anywhere from 0 to 200%, and repoint the liquidity adapter. It cannot move funds out. After revoking, read back `maxRate()` (expect 63419583967) and `liquidityAdapter()` (expect the Felix adapter) and reset them from a fresh allocator if they were changed. The keeper checks both every tick and alerts on any change.
 - Senior deposits: V2 has no pause; set `decreaseAbsoluteCap` on the Felix id to the current allocation (instant) and deposits revert.
 - Rotator: set repo variable `LIVE` to empty; the next run is dry-run only.
 - If the agent key leaks: the above, then rotate the GitHub secret. The key could only have moved funds between allowlisted venues and the contract.

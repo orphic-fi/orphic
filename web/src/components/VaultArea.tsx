@@ -8,7 +8,8 @@ import { asSupported, hyperEvm } from '../chains'
 import { JUNIOR_SYMBOL, OPENS_LABEL, SENIOR_SYMBOL, ZERO, addresses } from '../config/addresses'
 import { DEMO } from '../config/demo'
 import { useSession } from '../hooks/useSession'
-import { LIVE, ORPH_DECIMALS, SHARE_DECIMALS, USDC_DECIMALS, requiredStake, useVault, type VaultKind } from '../hooks/useVault'
+import { LIVE, ORPH_DECIMALS, SHARE_DECIMALS, USDC_DECIMALS, requiredStake, type VaultKind, type VaultState } from '../hooks/useVault'
+import { useAnimatedNumber } from '../hooks/useAnimatedNumber'
 import { NA, fmtNum, fmtPct, fmtTime, fmtUnits, fmtUsd, truncateAddress } from '../lib/format'
 import { fmtClockUtc, fmtDateUtc, noticeEnds, settleAtOrAfter } from '../lib/schedule'
 import s from './VaultArea.module.css'
@@ -50,9 +51,8 @@ function readTitle(ms: number | undefined) {
   return ms ? `read ${fmtClockUtc(ms)} UTC` : undefined
 }
 
-export default function VaultArea({ kind }: { kind: VaultKind }) {
+export default function VaultArea({ kind, state: v }: { kind: VaultKind; state: VaultState }) {
   const copy = COPY[kind]
-  const v = useVault(kind)
   const { address: account, isConnected, chainId } = useSession()
   const { switchChain, isPending: switching } = useSwitchChain()
   const [mode, setMode] = useState<Mode>('deposit')
@@ -86,6 +86,24 @@ export default function VaultArea({ kind }: { kind: VaultKind }) {
     const id = window.setInterval(() => setNowSec(Math.floor(Date.now() / 1000)), 60_000)
     return () => window.clearInterval(id)
   }, [])
+
+  // Animated readouts: previous to new over 240 ms, never on first paint.
+  const apyShown = useAnimatedNumber(v.apy)
+  const tvlShown = useAnimatedNumber(v.tvl)
+  const capUsedShown = useAnimatedNumber(v.capUsed)
+  const balanceShown = useAnimatedNumber(v.balanceAssets !== undefined ? Number(v.balanceAssets) / 10 ** USDC_DECIMALS : null)
+  const sharesShown = useAnimatedNumber(v.balanceShares !== undefined ? Number(v.balanceShares) / 10 ** SHARE_DECIMALS : null)
+
+  // Cover recognition bar: fraction of the outstanding cover recognised since this page loaded.
+  const coverRatePerSec = v.cover && Number.isFinite(v.cover.hours) && v.cover.hours > 0 ? v.cover.usd / (v.cover.hours * 3600) : 0
+  const [coverTick, setCoverTick] = useState(0)
+  useEffect(() => {
+    if (!v.cover) return
+    const id = window.setInterval(() => setCoverTick((t) => t + 1), 1000)
+    return () => window.clearInterval(id)
+  }, [v.cover])
+  const coverElapsed = coverTick // seconds since mount, driven by the interval
+  const coverProgress = v.cover && coverRatePerSec > 0 ? Math.min(1, (coverElapsed * coverRatePerSec) / v.cover.usd) : 0
 
   const unsupportedChain = isConnected && !v.onElysium && !v.onHyperEvm
   const needsApproval = mode === 'deposit' && amount !== null && v.allowance !== undefined && v.allowance < amount
@@ -241,7 +259,7 @@ export default function VaultArea({ kind }: { kind: VaultKind }) {
     <>{lastAction ?? 'transaction'} sent</>
   ) : null
 
-  const apyText = v.apy === null ? (kind === 'junior' ? 'n/a until first settle' : v.apyLoading ? 'loading' : NA) : fmtPct(v.apy)
+  const apyText = v.apy === null ? (kind === 'junior' ? 'n/a until first settle' : v.apyLoading ? 'loading' : NA) : fmtPct(apyShown)
 
   // Stepper state.
   const steps: { label: string; done: boolean }[] = [
@@ -284,35 +302,36 @@ export default function VaultArea({ kind }: { kind: VaultKind }) {
           <div className={s.cover}>
             Cover in progress: {fmtUsd(v.cover.usd, 2)} being recognised, about {Number.isFinite(v.cover.hours) ? fmtNum(v.cover.hours, 0) : NA} hours to
             full. Withdrawing before then realises the gap.
+            <div className={s.coverBar} role="presentation">
+              <div className={s.coverFill} style={{ width: `${(coverProgress * 100).toFixed(4)}%` }} />
+            </div>
           </div>
         )}
       </div>
 
       <dl className={s.rows}>
         <div className={s.row}>
-          <dt>TVL</dt>
-          <dd title={readTitle(v.chainReadAt)}>
-            {fmtUsd(v.tvl)}
-          </dd>
+          <dt className="label">TVL</dt>
+          <dd title={readTitle(v.chainReadAt)}>{fmtUsd(tvlShown)}</dd>
         </div>
         <div className={`${s.row} ${s.capRow}`}>
           <div className={s.capTop}>
-            <dt>Cap</dt>
+            <dt className="label">Cap</dt>
             <dd title={readTitle(v.chainReadAt)}>
-              {fmtUsd(v.cap)} <span style={{ color: 'var(--muted)' }}>({v.capUsed === null ? NA : fmtPct(v.capUsed)} used)</span>
+              {fmtUsd(v.cap)} <span style={{ color: 'var(--muted)' }}>({capUsedShown === null ? NA : fmtPct(capUsedShown)} used)</span>
             </dd>
           </div>
           <div className={s.bar} role="presentation">
-            <div className={s.barFill} style={{ width: `${Math.round((v.capUsed ?? 0) * 100)}%` }} />
+            <div className={s.barFill} style={{ width: `${((capUsedShown ?? 0) * 100).toFixed(2)}%` }} />
           </div>
         </div>
         <div className={s.row}>
-          <dt>Your balance</dt>
+          <dt className="label">Your balance</dt>
           <dd title={readTitle(v.chainReadAt)}>
-            {isConnected && LIVE && v.balanceAssets !== undefined
+            {isConnected && LIVE && balanceShown !== null
               ? kind === 'junior'
-                ? `${fmtUnits(v.balanceShares, SHARE_DECIMALS)} ${JUNIOR_SYMBOL} (${fmtUsd(Number(v.balanceAssets) / 10 ** USDC_DECIMALS, 2)})`
-                : `${fmtUsd(Number(v.balanceAssets) / 10 ** USDC_DECIMALS, 2)}`
+                ? `${fmtNum(sharesShown)} ${JUNIOR_SYMBOL} (${fmtUsd(balanceShown, 2)})`
+                : fmtUsd(balanceShown, 2)
               : NA}
           </dd>
         </div>

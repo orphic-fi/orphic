@@ -31,7 +31,8 @@ contract WireSenior is Script, Addresses {
         _exec(senior, abi.encodeCall(IVaultV2.increaseTimelock, (IVaultV2.setManagementFee.selector, TIMELOCK)));
         _exec(senior, abi.encodeCall(IVaultV2.increaseTimelock, (IVaultV2.setPerformanceFeeRecipient.selector, TIMELOCK)));
         _exec(senior, abi.encodeCall(IVaultV2.increaseTimelock, (IVaultV2.setManagementFeeRecipient.selector, TIMELOCK)));
-        _exec(senior, abi.encodeCall(IVaultV2.increaseTimelock, (IVaultV2.setIsAllocator.selector, TIMELOCK)));
+        // setIsAllocator stays at timelock 0 on purpose: the Safe must be able to revoke a leaked Rotator key at once.
+        // An allocator can allocate within caps, setMaxRate (0 to 200%) and repoint the liquidity adapter, nothing else.
         _exec(senior, abi.encodeCall(IVaultV2.increaseTimelock, (IVaultV2.setReceiveSharesGate.selector, TIMELOCK)));
         _exec(senior, abi.encodeCall(IVaultV2.increaseTimelock, (IVaultV2.setSendSharesGate.selector, TIMELOCK)));
         _exec(senior, abi.encodeCall(IVaultV2.increaseTimelock, (IVaultV2.setReceiveAssetsGate.selector, TIMELOCK)));
@@ -48,6 +49,7 @@ contract WireSenior is Script, Addresses {
         require(senior.maxRate() == MAX_RATE_PER_SEC, "maxRate");
         require(senior.liquidityAdapter() == felixAdapter, "liquidity adapter");
         require(senior.timelock(IVaultV2.addAdapter.selector) == TIMELOCK, "timelock");
+        require(senior.timelock(IVaultV2.setIsAllocator.selector) == 0, "allocator revoke must be instant");
         require(senior.owner() == SENIOR_SAFE && senior.curator() == SENIOR_SAFE, "senior handed to Safe");
         console2.log("verify: ok");
     }

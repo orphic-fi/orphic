@@ -28,7 +28,7 @@ Targets, not caps. Weights are re-weighted by rate and then clipped by the const
 | `0x96c47d37...73b9` | kHYPE/USDC, LLTV 77% | 10% |
 | `0xd7d38220...59a8` | WHYPE/USDC, LLTV 77% | 20% |
 | `0x45af9c72...942f` | UBTC/USDC, LLTV 77% | 19% |
-| `felix` | Felix USDC v1.1 `0x8A862fD6...CEa27` through the MorphoVaultV1 adapter (liquidity adapter) | 15% |
+| `felix` | Felix USDC v1.1 `0x8A862fD6...CEa27` through the MorphoVaultV1 adapter (liquidity adapter (note: an allocator CAN repoint the liquidity adapter and set maxRate instantly; the keeper never does, and alerts if either changed since the last tick)) | 15% |
 | `idle` | USDC held by the vault | 2% |
 
 Market `0x8eecdd03...0ba5` is excluded, as is any market at 100% utilization or with a supply APY above 100%.

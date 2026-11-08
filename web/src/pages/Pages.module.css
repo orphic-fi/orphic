@@ -23,7 +23,20 @@
   background: var(--jun);
 }
 
+.stage {
+  position: relative;
+  padding-bottom: 72px;
+}
+
+@media (max-width: 859px) {
+  .stage {
+    padding-bottom: 0;
+  }
+}
+
 .grid {
+  position: relative;
+  z-index: 1;
   display: grid;
   grid-template-columns: 1fr;
   gap: 16px;
@@ -72,7 +85,9 @@
 
 .lines li span:first-child {
   font-family: var(--mono);
-  font-size: 11.5px;
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
   color: var(--muted);
   padding-top: 2px;
 }
@@ -99,9 +114,11 @@
 
 .table th {
   text-align: left;
-  font-family: var(--mono);
   font-weight: 400;
-  font-size: 11.5px;
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
   color: var(--muted);
   padding: 0 16px 10px 0;
   border-bottom: 1px solid var(--line);
@@ -153,9 +170,11 @@
   }
   .table td::before {
     content: attr(data-label);
-    font-family: var(--mono);
-    font-size: 11.5px;
-    color: var(--muted);
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
   }
 }
 
@@ -178,9 +197,11 @@
 
 .kv li span:first-child {
   font-family: var(--mono);
-  font-size: 11.5px;
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
   color: var(--muted);
-  padding-top: 1px;
+  padding-top: 2px;
 }
 
 .kv li span:last-child {

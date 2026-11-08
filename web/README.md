@@ -2,7 +2,9 @@
 
 Front end for Orphic (orphic.fi): an agentic USDC vault with a senior and junior split. Funds live on HyperEVM (chain 999); Elysium (Kinetiq's Hyperliquid L2) is a deposit entry point that bridges to HyperEVM.
 
-Stack: Vite, React 18, TypeScript, wagmi v2, viem, TanStack Query, CSS modules. No UI library, no icon pack, no Tailwind. Fonts are system stacks only; nothing is fetched from a font CDN.
+Stack: Vite, React 18, TypeScript, wagmi v2, viem, TanStack Query, CSS modules. No UI library, no icon pack, no Tailwind. Fonts are self-hosted under `public/fonts` (Commit Mono for readouts and the wordmark, Inter for body text, both latin subsets with licences beside them); nothing is fetched from a font CDN.
+
+The vaults page carries one instrument: a ring behind the two panels whose two arcs are senior and junior cap utilisation (mint over the top and left, amber down the right), with the live figures under its bottom point. Live numbers animate from the previous to the new value over 240 ms on each read, never on first paint, and everything stops under `prefers-reduced-motion`.
 
 ## Run
 

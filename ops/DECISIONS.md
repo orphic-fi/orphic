@@ -81,3 +81,6 @@ Junior and router owner = hardware wallet `0x2DBE…FecC`; senior owner and cura
 
 ## D22. Ranger (Cashout, 8 Nov 01:55)
 HyperEVM Uniswap v4 USDC/HYPE, ERC-4626 strategy vault funded through junior's allowlist, week one. Conditions: two-pass review before funds; single position type, no leverage or borrowing; cap 20% of junior, 30% after two clean settles; junior exits never depend on Ranger liquidity. Design: `ops/RANGER.md`.
+
+## D23. Allocator blast radius (Claude, 8 Nov 02:55, raised by the docs pass)
+Vault V2 lets any allocator call `setMaxRate` and `setLiquidityAdapterAndData` instantly; the Rotator key is an allocator. Step 3 no longer timelocks `setIsAllocator`, so the Safe can revoke a leaked key at once; everything else that adds risk stays behind 3 days. The keeper reads `maxRate` and `liquidityAdapter` every tick and alerts on change. Worst case from a leaked Rotator key is a paused yield recognition or broken deposits until the Safe revokes, never a loss of funds. Documented in RUNBOOK section 8 and the public docs.
