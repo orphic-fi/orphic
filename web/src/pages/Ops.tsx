@@ -26,7 +26,7 @@ export default function Ops() {
       { address: junior, abi: juniorAbi, functionName: 'pendingExitShares', chainId: hyperEvm.id },
       { address: junior, abi: juniorAbi, functionName: 'coverInProgress', chainId: hyperEvm.id },
       { address: junior, abi: juniorAbi, functionName: 'seniorPriceBase', chainId: hyperEvm.id },
-      { address: junior, abi: juniorAbi, functionName: 'paused', chainId: hyperEvm.id },
+      { address: junior, abi: juniorAbi, functionName: 'depositsPaused', chainId: hyperEvm.id },
     ],
     query: { enabled: DEPLOYED, refetchInterval: 30_000 },
   })
