@@ -2,6 +2,7 @@
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>orphic deploy</title>
 <script src="/ops/keccak.js"></script>
+<script src="/ops/hlsign.js"></script>
 <style>
 :root{--bg:#0b0c0e;--line:rgba(255,255,255,.1);--txt:#e4e6ea;--mut:#8a8f98;--acc:#8fc8ff;--ok:#9ad7b5;--warn:#f0c27a;--bad:#ff7a7a}
 body{margin:0;background:var(--bg);color:var(--txt);font:13px/1.5 "Commit Mono","SF Mono",Menlo,monospace}
@@ -25,11 +26,13 @@ input{font:inherit;background:transparent;color:var(--txt);border:1px solid var(
   <div>plan: <span id="planName" class="acc">loading</span> · chain 999 · deployer <span id="deployer" class="m">n/a</span></div>
   <div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap">
     <button id="connect" class="primary">connect wallet</button>
-    <button id="bigblocks">sign big blocks on</button>
+    <button id="approveAgent">1. approve deploy agent</button>
+    <button id="bigblocks">2. big blocks on</button>
     <button id="bigblocksOff">big blocks off</button>
     <span id="acct" class="m"></span>
   </div>
   <div id="bbStatus" class="m" style="margin-top:6px"></div>
+  <div class="m" style="margin-top:6px">Big blocks: MetaMask cannot sign Hyperliquid L1 actions directly (their signing domain is chain 1337), so, like the Hyperliquid app, this page uses a throwaway agent key that your wallet approves once. The key lives only in this tab, holds no funds, and can be revoked any time in the Hyperliquid app under More, API.</div>
 </div>
 
 <div class="box"><div class="m">plan url (change only if Cashout is told to)</div><input id="planUrl" value="/ops/plan1.json"><div style="margin-top:8px"><button id="reload">reload plan</button> <button id="verify">run verify read-backs</button></div></div>
@@ -51,20 +54,33 @@ async function connect(){
   if(plan&&plan.deployer&&plan.deployer.toLowerCase()!==account.toLowerCase()){log(`connected ${account} but the plan expects ${plan.deployer}; switch accounts`,'bad');}
   else log(`connected ${account}`,'ok');
 }
-// Hyperliquid L1 action: evmUserModify, signed as the phantom agent (same bytes as the official SDK's sign_l1_action)
+// Hyperliquid L1 action: evmUserModify, signed as the phantom agent (same bytes as the official SDK's sign_l1_action).
+// The signer is a throwaway agent key approved by the wallet (approveAgent is a user-signed action, which MetaMask can sign on chain 999).
 function msgpackEvmUserModify(enable){const enc=new TextEncoder();const b=[0x82,0xa4,...enc.encode('type'),0xad,...enc.encode('evmUserModify'),0xae,...enc.encode('usingBigBlocks'),enable?0xc3:0xc2];return new Uint8Array(b);}
-function hex(u8){return Array.from(u8).map(x=>x.toString(16).padStart(2,'0')).join('');}
-async function bigBlocks(enable){
+function splitSig(sig){const r=sig.slice(0,66),s='0x'+sig.slice(66,130);let v=parseInt(sig.slice(130,132),16);if(v<27)v+=27;return {r,s,v};}
+let agentKey=null;try{agentKey=sessionStorage.getItem('orphic-deploy-agent');}catch(e){}
+function agentAccount(){return agentKey?hlsign.privateKeyToAccount(agentKey):null;}
+async function approveAgent(){
   if(!account){log('connect first','bad');return;}
+  const key=hlsign.generatePrivateKey();const acct=hlsign.privateKeyToAccount(key);const nonce=Date.now();
+  const message={hyperliquidChain:'Mainnet',agentAddress:acct.address,agentName:'orphic-deploy',nonce};
+  const typed={domain:{name:'HyperliquidSignTransaction',version:'1',chainId:999,verifyingContract:'0x0000000000000000000000000000000000000000'},types:{EIP712Domain:[{name:'name',type:'string'},{name:'version',type:'string'},{name:'chainId',type:'uint256'},{name:'verifyingContract',type:'address'}],'HyperliquidTransaction:ApproveAgent':[{name:'hyperliquidChain',type:'string'},{name:'agentAddress',type:'address'},{name:'agentName',type:'string'},{name:'nonce',type:'uint64'}]},primaryType:'HyperliquidTransaction:ApproveAgent',message};
+  log('approve agent '+acct.address+': waiting for MetaMask signature');
+  let sig;try{sig=await window.ethereum.request({method:'eth_signTypedData_v4',params:[account,JSON.stringify(typed)]});}catch(e){log('approve agent: '+(e.message||e),'bad');return;}
+  const action={type:'approveAgent',hyperliquidChain:'Mainnet',signatureChainId:'0x3e7',agentAddress:acct.address,agentName:'orphic-deploy',nonce};
+  const res=await fetch('https://api.hyperliquid.xyz/exchange',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({action,nonce,signature:splitSig(sig),vaultAddress:null})});
+  const j=await res.json();log('approveAgent: '+JSON.stringify(j),j.status==='ok'?'ok':'bad');
+  if(j.status==='ok'){agentKey=key;try{sessionStorage.setItem('orphic-deploy-agent',key);}catch(e){}$('bbStatus').textContent='deploy agent '+acct.address+' approved for this tab';}
+}
+async function bigBlocks(enable){
+  const acct=agentAccount();if(!acct){log('approve the deploy agent first (button 1)','bad');return;}
   const nonce=Date.now();const body=msgpackEvmUserModify(enable);
   const nb=new Uint8Array(8);let n=BigInt(nonce);for(let i=7;i>=0;i--){nb[i]=Number(n&255n);n>>=8n;}
   const data=new Uint8Array(body.length+9);data.set(body,0);data.set(nb,body.length);data[body.length+8]=0;
   const connectionId='0x'+keccak256(data);
-  const typed={domain:{chainId:1337,name:'Exchange',verifyingContract:'0x0000000000000000000000000000000000000000',version:'1'},types:{EIP712Domain:[{name:'name',type:'string'},{name:'version',type:'string'},{name:'chainId',type:'uint256'},{name:'verifyingContract',type:'address'}],Agent:[{name:'source',type:'string'},{name:'connectionId',type:'bytes32'}]},primaryType:'Agent',message:{source:'a',connectionId}};
-  const sig=await window.ethereum.request({method:'eth_signTypedData_v4',params:[account,JSON.stringify(typed)]});
-  const r=sig.slice(0,66),s='0x'+sig.slice(66,130);let v=parseInt(sig.slice(130,132),16);if(v<27)v+=27;
-  const res=await fetch('https://api.hyperliquid.xyz/exchange',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({action:{type:'evmUserModify',usingBigBlocks:enable},nonce,signature:{r,s,v},vaultAddress:null})});
-  const j=await res.json();$('bbStatus').textContent=JSON.stringify(j);log(`evmUserModify usingBigBlocks=${enable}: ${JSON.stringify(j)}`,j.status==='ok'?'ok':'bad');
+  const sig=await acct.signTypedData({domain:{chainId:1337,name:'Exchange',verifyingContract:'0x0000000000000000000000000000000000000000',version:'1'},types:{Agent:[{name:'source',type:'string'},{name:'connectionId',type:'bytes32'}]},primaryType:'Agent',message:{source:'a',connectionId}});
+  const res=await fetch('https://api.hyperliquid.xyz/exchange',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({action:{type:'evmUserModify',usingBigBlocks:enable},nonce,signature:splitSig(sig),vaultAddress:null})});
+  const j=await res.json();$('bbStatus').textContent='big blocks '+(enable?'on':'off')+': '+JSON.stringify(j);log(`evmUserModify usingBigBlocks=${enable}: ${JSON.stringify(j)}`,j.status==='ok'?'ok':'bad');
 }
 async function loadPlan(){
   try{const r=await fetch($('planUrl').value+'?t='+Date.now());plan=await r.json();}catch(e){log('plan load failed: '+e.message,'bad');return;}
@@ -111,6 +127,6 @@ async function run(i){
   }catch(e){results[i]={ok:false,msg:e.message};log(`step ${i+1} failed: ${e.message}`,'bad');}
   render();
 }
-$('connect').onclick=connect;$('bigblocks').onclick=()=>bigBlocks(true);$('bigblocksOff').onclick=()=>bigBlocks(false);$('reload').onclick=loadPlan;$('verify').onclick=verifyAll;
+$('connect').onclick=connect;$('approveAgent').onclick=()=>approveAgent().catch(e=>log('approve agent error: '+e.message,'bad'));$('bigblocks').onclick=()=>bigBlocks(true).catch(e=>log('big blocks error: '+e.message,'bad'));$('bigblocksOff').onclick=()=>bigBlocks(false).catch(e=>log('big blocks error: '+e.message,'bad'));$('reload').onclick=loadPlan;$('verify').onclick=verifyAll;
 loadPlan();
 </script></body></html>
