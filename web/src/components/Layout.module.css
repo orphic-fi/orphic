@@ -7,10 +7,20 @@
 }
 
 .wordmark {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
   font-family: var(--mono);
   font-size: 15px;
   letter-spacing: 0.02em;
-  color: var(--text);
+  color: #ffffff;
+}
+
+.mark {
+  width: 16px;
+  height: 16px;
+  color: var(--accent);
+  flex: none;
 }
 
 .wordmark:hover {

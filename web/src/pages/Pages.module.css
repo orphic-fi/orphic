@@ -3,7 +3,24 @@
   font-size: 11.5px;
   color: var(--muted);
   padding: 10px 0 0;
-  margin: 0 0 28px;
+  margin: 0 0 10px;
+}
+
+.square {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  margin-right: 8px;
+  vertical-align: 0;
+  background: var(--faint);
+}
+
+.squareLive {
+  background: var(--sen);
+}
+
+.squareSoon {
+  background: var(--jun);
 }
 
 .grid {

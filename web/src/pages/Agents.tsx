@@ -42,7 +42,7 @@ export default function Agents() {
                 <th>Status</th>
                 <th>Mandate</th>
                 <th>Cap</th>
-                <th>Weekly realised return</th>
+                <th>realised, weekly</th>
               </tr>
             </thead>
             <tbody>
@@ -51,7 +51,8 @@ export default function Agents() {
                   <td data-label="Agent" className={s.mono}>
                     {a.name}
                   </td>
-                  <td data-label="Status" className={`${s.mono} ${a.status === 'live' ? s.live : s.muted}`}>
+                  <td data-label="Status" className={`${s.mono} ${a.status === 'live' ? '' : s.muted}`}>
+                    <span className={`${s.square} ${a.status === 'live' ? s.squareLive : a.status.startsWith('week') ? s.squareSoon : ''}`} aria-hidden="true" />
                     {a.status}
                   </td>
                   <td data-label="Mandate" className={s.mandate}>
@@ -65,7 +66,7 @@ export default function Agents() {
               ))}
             </tbody>
           </table>
-          <p className={s.foot}>Last published: {q.data.updatedAt ? fmtTime(q.data.updatedAt) : NA}</p>
+          <p className={s.foot}>Published after each Sunday settle from the keeper's report. Last published: {q.data.updatedAt ? fmtTime(q.data.updatedAt) : NA}</p>
         </>
       )}
     </>

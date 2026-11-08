@@ -6,6 +6,10 @@ export const DEPLOYED = false
 
 export const OPENS_LABEL = 'Opens Monday 9 Nov'
 
+/** Share token symbols shown in summaries. */
+export const SENIOR_SYMBOL = 'osUSDC'
+export const JUNIOR_SYMBOL = 'ojUSDC'
+
 export const ZERO: Address = '0x0000000000000000000000000000000000000000'
 
 export const addresses = {

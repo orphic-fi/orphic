@@ -78,3 +78,6 @@ Stake gate on from day one at 20%. Junior per-wallet cap $10,000 for week one on
 
 ## D21. Roles, stake rate, sweep cap (Cashout, 8 Nov 01:34)
 Junior and router owner = hardware wallet `0x2DBE…FecC`; senior owner and curator = Safe `0x9EDf…5F29` after step 3, 3-day timelock on caps. Both baked into `script/Addresses.sol`; scripts broadcast as DEPLOYER explicitly and step 3 refuses until the Safe has code on HyperEVM (it does not yet). `stakePerAsset` changes go through `proposeStakePerAsset` + 3-day `applyStakePerAsset`; weekly procedure from the keeper's 7-day pool TWAP (Uniswap v4 has no on-chain TWAP, so the keeper samples hourly). Router `sweep` takes an explicit `amountIn` and is capped at `maxSweepUsdc` (25k) of oracle value per call; oracle staleness check is week one. 37/37 tests.
+
+## D22. Ranger (Cashout, 8 Nov 01:55)
+HyperEVM Uniswap v4 USDC/HYPE, ERC-4626 strategy vault funded through junior's allowlist, week one. Conditions: two-pass review before funds; single position type, no leverage or borrowing; cap 20% of junior, 30% after two clean settles; junior exits never depend on Ranger liquidity. Design: `ops/RANGER.md`.

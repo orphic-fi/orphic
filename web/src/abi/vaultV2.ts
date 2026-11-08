@@ -8,6 +8,7 @@ export const vaultV2Abi = [
   { type: 'function', name: 'totalAssets', stateMutability: 'view', inputs: [], outputs: [{ type: 'uint256' }] },
   { type: 'function', name: 'maxWithdraw', stateMutability: 'view', inputs: [{ name: 'owner', type: 'address' }], outputs: [{ type: 'uint256' }] },
   { type: 'function', name: 'asset', stateMutability: 'view', inputs: [], outputs: [{ type: 'address' }] },
+  { type: 'function', name: 'convertToShares', stateMutability: 'view', inputs: [{ name: 'assets', type: 'uint256' }], outputs: [{ type: 'uint256' }] },
   // Per-second max interest rate, WAD scaled.
   { type: 'function', name: 'maxRate', stateMutability: 'view', inputs: [], outputs: [{ type: 'uint64' }] },
 ] as const

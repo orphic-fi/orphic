@@ -9,6 +9,9 @@
   --faint: #5c6069;
   --accent: #8fc8ff;
   --accent-ink: #0b0c0e;
+  --sen: #9ad7b5;
+  --jun: #f0c27a;
+  --amber: #f0c27a;
   --danger: #e0a0a0;
 
   --mono: "SF Mono", "JetBrains Mono", "IBM Plex Mono", ui-monospace, Menlo, monospace;
@@ -44,10 +47,34 @@ body {
   overflow-x: hidden;
 }
 
+/* Fixed structure behind the glass: a faint 48px grid and one off-centre light in the accent colour. */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background-image:
+    radial-gradient(ellipse 720px 520px at 68% 12%, rgba(143, 200, 255, 0.05), transparent 70%),
+    linear-gradient(rgba(255, 255, 255, 0.025) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.025) 1px, transparent 1px);
+  background-size: auto, 48px 48px, 48px 48px;
+  background-position: 0 0, -1px -1px, -1px -1px;
+}
+
 #root {
   min-height: 100vh;
   display: flex;
   flex-direction: column;
+  position: relative;
+}
+
+input {
+  caret-color: var(--accent);
+}
+
+input::placeholder {
+  font-family: var(--mono);
 }
 
 a {
