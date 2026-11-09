@@ -37,11 +37,14 @@ export default function Agents() {
   const rotator = useRotator()
   const [group, setGroup] = useState<'All' | AgentGroup>('All')
   const [showFarming, setShowFarming] = useState(false)
+  const [sort, setSort] = useState<'return' | 'people'>('return')
 
   const all = agents.data ?? []
   const catalogue = all.filter((a) => !ORPHIC_AGENT_IDS[a.id])
-  // Official first, then by how many people run it. Points-farming experiments are hidden unless asked for.
-  const ranked = [...catalogue].sort((x, y) => Number(y.official) - Number(x.official) || y.people - x.people)
+  // Default order: best 30-day return first, as Circuit reports it, with agents that have no figure yet after those that
+  // do. "Most run" orders by people instead. Points-farming experiments are hidden unless asked for.
+  const ret = (a: CircuitAgent) => (a.return_percent === null ? Number.NEGATIVE_INFINITY : Number(a.return_percent))
+  const ranked = [...catalogue].sort((x, y) => (sort === 'return' ? ret(y) - ret(x) || y.people - x.people : y.people - x.people || ret(y) - ret(x)))
   const visible = ranked.filter((a) => (group === 'All' ? groupOf(a) !== 'Farming' || showFarming : groupOf(a) === group))
   const counts = GROUPS.reduce((m, g) => ({ ...m, [g]: catalogue.filter((a) => groupOf(a) === g).length }), {} as Record<AgentGroup, number>)
   const people = all.reduce((n, a) => n + (a.people || 0), 0)
@@ -173,7 +176,7 @@ export default function Agents() {
         <div className={s.sectionHead}>
           <div>
             <h2 className={s.h2}>Run today on Circuit</h2>
-            <p className={s.sectionLead}>The live catalogue, grouped by what each agent does. Returns are the last 30 days of live sessions as Circuit reports them, never a forecast.</p>
+            <p className={s.sectionLead}>The live catalogue, best recent results first. Returns are the last 30 days of live sessions as Circuit reports them; a good month is not a forecast of the next one.</p>
           </div>
         </div>
         <div className={s.filters}>
@@ -187,11 +190,20 @@ export default function Agents() {
               </button>
             ))}
           </div>
-          {group === 'All' && counts.Farming > 0 && (
-            <button type="button" className={s.chip} onClick={() => setShowFarming((v) => !v)}>
-              {showFarming ? 'Hide points farming' : `Show ${counts.Farming} points-farming agents`}
+          <div className={s.sort}>
+            <span className="label">Sort</span>
+            <button type="button" className={`${s.chip} ${sort === 'return' ? s.chipOn : ''}`} onClick={() => setSort('return')}>
+              Best 30d return
             </button>
-          )}
+            <button type="button" className={`${s.chip} ${sort === 'people' ? s.chipOn : ''}`} onClick={() => setSort('people')}>
+              Most run
+            </button>
+            {group === 'All' && counts.Farming > 0 && (
+              <button type="button" className={s.chip} onClick={() => setShowFarming((v) => !v)}>
+                {showFarming ? 'Hide farming' : `Farming (${counts.Farming})`}
+              </button>
+            )}
+          </div>
         </div>
         {group !== 'All' && <p className={s.groupBlurb}>{GROUP_BLURB[group]}</p>}
         {agents.isLoading && <div className={s.notice}>Loading the live catalogue from Circuit.</div>}
