@@ -173,7 +173,12 @@ export function parseArgs(argv: string[], env: NodeJS.ProcessEnv = process.env, 
 
   const live = env.LIVE === "1" && !flags.has("dry-run");
   const fixturePath = values.get("fixture") ?? env.STATE_FIXTURE;
-  const pk = env.AGENT_PRIVATE_KEY?.trim();
+  // Accept the key with or without the 0x prefix; anything else is treated as missing (and reported, never echoed).
+  const rawPk = env.AGENT_PRIVATE_KEY?.trim().replace(/^["']|["']$/g, "");
+  const pk = rawPk && /^[0-9a-fA-F]{64}$/.test(rawPk) ? `0x${rawPk}` : rawPk;
+  if (rawPk && !(pk && /^0x[0-9a-fA-F]{64}$/.test(pk))) {
+    console.error(`AGENT_PRIVATE_KEY is set but malformed (length ${rawPk.length}, starts with ${rawPk.slice(0, 2)}); expected 0x + 64 hex characters`);
+  }
 
   return {
     dryRun: !live,
