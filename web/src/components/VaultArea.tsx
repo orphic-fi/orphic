@@ -128,7 +128,7 @@ export default function VaultArea({ kind, state: v, initialMode = 'deposit' }: {
     : v.onHyperEvm
       ? 'Deposits from HyperEVM settle in one transaction'
       : v.onElysium
-        ? 'Deposits from Elysium bridge to HyperEVM first (about a minute)'
+        ? 'Deposits are made on HyperEVM, where the vaults live. Switch network to deposit.'
         : 'Unsupported chain. Switch to HyperEVM or Elysium'
 
   const stakeEtaLine =
@@ -207,6 +207,8 @@ export default function VaultArea({ kind, state: v, initialMode = 'deposit' }: {
   }
 
   const exitNeedsSwitch = mode === 'exit' && isConnected && !v.onHyperEvm
+  // No Elysium entry contract yet: every action happens on HyperEVM. The ZERO placeholder is the switch.
+  const elysiumEntryLive = addresses.elysium.bridgeEntry !== ZERO
   const busy = signing || receipt.isLoading
 
   let primaryLabel: string
@@ -218,7 +220,7 @@ export default function VaultArea({ kind, state: v, initialMode = 'deposit' }: {
   } else if (!isConnected) {
     primaryLabel = 'Connect to continue'
     primaryDisabled = true
-  } else if (unsupportedChain || exitNeedsSwitch) {
+  } else if (unsupportedChain || exitNeedsSwitch || (v.onElysium && !elysiumEntryLive)) {
     primaryLabel = switching ? 'Switching' : 'Switch to HyperEVM'
     onPrimary = () => switchChain({ chainId: hyperEvm.id })
   } else if (mode === 'deposit' && v.paused) {
@@ -454,7 +456,7 @@ export default function VaultArea({ kind, state: v, initialMode = 'deposit' }: {
             status
           ) : mode === 'deposit' ? (
             <>
-              {isConnected ? (v.onElysium ? 'Deposits from Elysium bridge to HyperEVM first, about a minute' : v.onHyperEvm ? '' : routing) : routing}
+              {isConnected ? (v.onElysium ? <ElysiumNote /> : v.onHyperEvm ? '' : routing) : routing}
               {insufficient && <span className={s.warn}>Amount exceeds wallet balance</span>}
               {orphShort && <span className={s.warn}>Not enough ORPH in wallet: {fmtUnits(v.stake.orphBalance, ORPH_DECIMALS)} available</span>}
               {overWalletCap && <span className={s.warn}>Exceeds this wallet's limit by {fmtUnits(amount! - walletRoom!, USDC_DECIMALS)} USDC</span>}
@@ -495,7 +497,7 @@ export default function VaultArea({ kind, state: v, initialMode = 'deposit' }: {
           <dt>Your position</dt>
           <dd title={readTitle(v.chainReadAt)}>
             {isConnected && LIVE && balanceShown !== null
-              ? `${fmtNum(kind === 'junior' ? sharesShown : balanceShown)} ${kind === 'senior' ? SENIOR_SYMBOL : JUNIOR_SYMBOL} · ${fmtUsd(balanceShown, 2)}`
+              ? `${fmtNum(kind === 'junior' ? sharesShown : balanceShown)} ${kind === 'senior' ? SENIOR_SYMBOL : JUNIOR_SYMBOL} · ${fmtUsd(kind === 'junior' && v.nav?.mine !== undefined ? Number(v.nav.mine) / 10 ** USDC_DECIMALS : balanceShown, 2)}`
               : NA}
           </dd>
         </div>
@@ -505,10 +507,36 @@ export default function VaultArea({ kind, state: v, initialMode = 'deposit' }: {
             <dd>0.5% a year</dd>
           </div>
         ) : (
-          <div className={s.row}>
-            <dt>Exit queued</dt>
-            <dd>{open ? `${fmtUnits(open.shares, SHARE_DECIMALS)} · ready ${fmtDateUtc(open.readyAt)}` : 'None'}</dd>
-          </div>
+          <>
+            <div className={s.row}>
+              <dt>Price per share</dt>
+              <dd title={readTitle(v.chainReadAt)}>
+                {v.pricePerShare !== undefined ? `${fmtNum(Number(v.pricePerShare) / 1e18, 4)} USDC` : NA}
+                {v.nav && v.lastSettle !== undefined && <span className={s.dim}> · set {fmtDateUtc(v.lastSettle)}</span>}
+              </dd>
+            </div>
+            <div className={s.row}>
+              <dt>Live value per share</dt>
+              <dd title="What the next settle would freeze if it ran now, pending senior fee shares included. Exits are priced at settle.">
+                {v.nav ? (
+                  <>
+                    {fmtNum(Number(v.nav.perShare) / 1e18, 4)} USDC
+                    <span className={v.nav.unsettled < 0n ? s.warn : s.dim}>
+                      {' '}
+                      · {v.nav.unsettled < 0n ? '−' : '+'}
+                      {fmtUsd(Math.abs(Number(v.nav.unsettled)) / 10 ** USDC_DECIMALS, 2)} unsettled
+                    </span>
+                  </>
+                ) : (
+                  NA
+                )}
+              </dd>
+            </div>
+            <div className={s.row}>
+              <dt>Exit queued</dt>
+              <dd>{open ? `${fmtUnits(open.shares, SHARE_DECIMALS)} · ready ${fmtDateUtc(open.readyAt)}` : 'None'}</dd>
+            </div>
+          </>
         )}
         <div className={s.row}>
           <dt>Cap used</dt>
@@ -539,4 +567,16 @@ function shortError(e: Error): string {
   const m = e.message || String(e)
   const first = m.split('\n')[0]
   return first.length > 120 ? first.slice(0, 117) + '...' : first
+}
+
+function ElysiumNote() {
+  return (
+    <>
+      Deposits are made on HyperEVM, where the vaults live. On the{' '}
+      <a href={addresses.elysium.bridgeUrl} target="_blank" rel="noreferrer">
+        canonical bridge
+      </a>{' '}
+      USDC moves from HyperEVM to Elysium in about a minute and from Elysium to HyperEVM in about 5.5 days.
+    </>
+  )
 }

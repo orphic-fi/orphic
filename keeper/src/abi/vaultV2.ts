@@ -32,6 +32,24 @@ export const vaultV2Abi = [
   },
   {
     type: "function",
+    name: "accrueInterestView",
+    stateMutability: "view",
+    inputs: [],
+    outputs: [
+      { name: "newTotalAssets", type: "uint256" },
+      { name: "performanceFeeShares", type: "uint256" },
+      { name: "managementFeeShares", type: "uint256" },
+    ],
+  },
+  {
+    type: "function",
+    name: "lastUpdate",
+    stateMutability: "view",
+    inputs: [],
+    outputs: [{ name: "", type: "uint64" }],
+  },
+  {
+    type: "function",
     name: "totalAssets",
     stateMutability: "view",
     inputs: [],

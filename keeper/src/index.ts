@@ -6,7 +6,7 @@ import { loadStateFixture, readVaultState } from "./data/state.js";
 import { decide, proposeAllocation } from "./engine/allocate.js";
 import { buildPlan, validatePlan } from "./exec/plan.js";
 import { executePlan, weeklyClose, type ExecContext } from "./exec/send.js";
-import { juniorWeekly, readJuniorStatus, syncSenior, type JuniorCtx } from "./exec/junior.js";
+import { accrueSenior, juniorWeekly, readJuniorStatus, syncSenior, type JuniorCtx } from "./exec/junior.js";
 import { manageJuniorIdle } from "./exec/juniorDeploy.js";
 import { sampleOrphPrice } from "./data/orph.js";
 import { checkSeniorDrift } from "./exec/drift.js";
@@ -120,7 +120,15 @@ export async function run(opts: RunOptions, cfg: SeniorConfig = loadConfig(opts.
     log,
   };
   let juniorSync: RunReport["juniorSync"];
+  let juniorAccrue: RunReport["juniorAccrue"];
   let juniorStatus: RunReport["juniorStatus"];
+  // Daily nudge first, so a sync in the same tick sees the freshly minted fee shares.
+  try {
+    juniorAccrue = await accrueSenior(jctx);
+  } catch (err) {
+    juniorAccrue = { called: false, note: `accrue failed: ${(err as Error).message}` };
+    log(juniorAccrue.note);
+  }
   try {
     juniorSync = await syncSenior(jctx);
   } catch (err) {
@@ -201,6 +209,7 @@ export async function run(opts: RunOptions, cfg: SeniorConfig = loadConfig(opts.
     execution,
     weeklyClose: weekly,
     juniorSync,
+    juniorAccrue,
     juniorStatus,
     juniorIdle,
     juniorWeekly: juniorWeeklyResult,

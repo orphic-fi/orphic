@@ -29,6 +29,7 @@ export interface RunReport {
   execution: ExecutionResult[];
   weeklyClose?: { emissionsSold: number; accrueTx?: string; note: string };
   juniorSync?: SyncResult;
+  juniorAccrue?: SyncResult;
   juniorStatus?: JuniorStatus;
   juniorIdle?: JuniorIdleResult;
   juniorWeekly?: JuniorWeeklyResult;
@@ -83,6 +84,7 @@ export function humanSummary(report: Omit<RunReport, "summary">): string[] {
   if (report.mode === "live") out.push(`execution: ${sent} sent, ${failed} failed, ${report.execution.length - sent - failed} skipped`);
   if (report.juniorStatus?.enabled && report.juniorStatus.coverInProgressUsdc !== undefined) out.push(report.juniorStatus.note);
   else if (report.juniorStatus) out.push(`junior: ${report.juniorStatus.note}`);
+  if (report.juniorAccrue) out.push(`accrue: ${report.juniorAccrue.note}`);
   if (report.juniorSync) out.push(`syncSenior: ${report.juniorSync.note}`);
   if (report.juniorWeekly?.warning) out.push(report.juniorWeekly.warning);
   if (report.juniorWeekly) out.push(`junior weekly: ${report.juniorWeekly.note}`);

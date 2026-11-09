@@ -155,6 +155,49 @@ export async function syncSenior(ctx: JuniorCtx): Promise<SyncResult> {
   return { called: true, txHash: hash, note: "syncSenior sent" };
 }
 
+export const ACCRUE_EVERY = 23n * 3600n; // once a day, with an hour of slack for the hourly tick
+
+/**
+ * Pure: should the keeper nudge senior.accrueInterest()? Vault V2 mints junior's management-fee shares only when
+ * someone touches the vault, so with no deposits a quiet week shows junior earning nothing until settle. One
+ * permissionless call a day keeps the minted shares (and the UI) current. Skipped when nothing would be minted.
+ */
+export function shouldAccrue(i: { lastUpdate: bigint; now: bigint; pendingMgmtShares: bigint }): { due: boolean; reason: string } {
+  if (i.pendingMgmtShares === 0n) return { due: false, reason: "no fee shares pending" };
+  const since = i.now - i.lastUpdate;
+  if (since < ACCRUE_EVERY) return { due: false, reason: `senior accrued ${(Number(since) / 3600).toFixed(1)}h ago` };
+  return { due: true, reason: `senior last accrued ${(Number(since) / 3600).toFixed(1)}h ago, ${i.pendingMgmtShares.toString()} fee shares pending` };
+}
+
+/** Daily: senior.accrueInterest() so junior's fee shares are minted between settles. Permissionless. */
+export async function accrueSenior(ctx: JuniorCtx): Promise<SyncResult> {
+  const log = ctx.log ?? ((l: string) => console.log(l));
+  if (!juniorEnabled(ctx.cfg) || isPlaceholder(ctx.cfg.vault) || !ctx.client) return { called: false, note: "placeholder or no client; accrue skipped" };
+  const senior = ctx.cfg.vault as Address;
+  const [lastUpdate, view] = await Promise.all([
+    ctx.client.readContract({ address: senior, abi: vaultV2Abi, functionName: "lastUpdate" }),
+    ctx.client.readContract({ address: senior, abi: vaultV2Abi, functionName: "accrueInterestView" }),
+  ]);
+  const now = ctx.nowTs ?? BigInt(Math.floor(Date.now() / 1000));
+  const d = shouldAccrue({ lastUpdate: BigInt(lastUpdate), now, pendingMgmtShares: view[2] });
+  if (!d.due) {
+    log(`accrue: skip (${d.reason})`);
+    return { called: false, note: d.reason };
+  }
+  if (ctx.dryRun) {
+    log(`accrue: would call senior.accrueInterest() (${d.reason}) (dry-run)`);
+    return { called: false, note: `dry-run: ${d.reason}` };
+  }
+  assertCanBroadcast(ctx.cfg, ctx.agentPrivateKey, true);
+  const account = privateKeyToAccount(ctx.agentPrivateKey!);
+  const wallet = createWalletClient({ account, chain: hyperEvm, transport: http(ctx.cfg.rpcUrl) });
+  const { request } = await ctx.client.simulateContract({ account, address: senior, abi: vaultV2Abi, functionName: "accrueInterest", chain: hyperEvm });
+  const hash = await wallet.writeContract(request);
+  await ctx.client.waitForTransactionReceipt({ hash, confirmations: 1, timeout: 120_000 });
+  log(`accrue: senior.accrueInterest() sent ${hash} (${d.reason})`);
+  return { called: true, txHash: hash, note: `accrueInterest sent: ${d.reason}` };
+}
+
 export interface JuniorWeeklyResult {
   checked: boolean;
   pendingExitShares?: string;

@@ -16,6 +16,8 @@ export const juniorAbi = [
   { type: 'function', name: 'settlesLength', stateMutability: 'view', inputs: [], outputs: [{ type: 'uint256' }] },
   { type: 'function', name: 'pendingExitShares', stateMutability: 'view', inputs: [], outputs: [{ type: 'uint256' }] },
   { type: 'function', name: 'reservedAssets', stateMutability: 'view', inputs: [], outputs: [{ type: 'uint256' }] },
+  { type: 'function', name: 'totalSupply', stateMutability: 'view', inputs: [], outputs: [{ type: 'uint256' }] },
+  { type: 'function', name: 'pricedExitShares', stateMutability: 'view', inputs: [], outputs: [{ type: 'uint256' }] },
   { type: 'function', name: 'coverInProgress', stateMutability: 'view', inputs: [], outputs: [{ type: 'uint256' }] },
   { type: 'function', name: 'seniorPriceBase', stateMutability: 'view', inputs: [], outputs: [{ type: 'uint256' }] },
   // ORPH wei required per 1 USDC unit (1e6).

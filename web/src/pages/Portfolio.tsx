@@ -41,7 +41,9 @@ export default function Portfolio() {
   const seniorPrincipal = mine ? (BigInt(mine.seniorDeposited) - BigInt(mine.seniorWithdrawn)) : undefined
   const juniorPrincipal = mine ? (BigInt(mine.juniorDeposited) - BigInt(mine.juniorExited)) : undefined
   const seniorValue = senior.balanceAssets
-  const juniorValue = junior.balanceAssets
+  // Junior at live value (what the next settle would freeze), not the frozen price from the last settle.
+  const juniorValue = junior.nav?.mine ?? junior.balanceAssets
+  const juniorUnsettled = junior.nav?.mine !== undefined && junior.balanceAssets !== undefined ? junior.nav.mine - junior.balanceAssets : undefined
   const exitValue = junior.exit && junior.pricePerShare !== undefined ? (junior.exit.shares * junior.pricePerShare) / 10n ** 18n / 10n ** BigInt(SHARE_DECIMALS - USDC_DECIMALS) : 0n
   const juniorValueAll = juniorValue !== undefined ? juniorValue + exitValue : undefined
   const seniorEarned = seniorPrincipal !== undefined && seniorValue !== undefined ? seniorValue - seniorPrincipal : undefined
@@ -126,9 +128,11 @@ export default function Portfolio() {
           </header>
           <dl className={s.rows}>
             <Row k="Shares" v={isConnected && junior.balanceShares !== undefined ? `${fmtUnits(junior.balanceShares, SHARE_DECIMALS)} ${JUNIOR_SYMBOL}` : NA} />
-            <Row k="Price per share" v={junior.pricePerShare !== undefined ? `${fmtNum(Number(junior.pricePerShare) / 1e18, 2)} USDC` : NA} />
+            <Row k="Price per share (last settle)" v={junior.pricePerShare !== undefined ? `${fmtNum(Number(junior.pricePerShare) / 1e18, 4)} USDC` : NA} />
+            <Row k="Live value per share" v={junior.nav ? `${fmtNum(Number(junior.nav.perShare) / 1e18, 4)} USDC` : NA} />
             <Row k="Principal" v={isConnected ? fmtUsd(usd(juniorPrincipal), 2) : NA} />
             <Row k="Earned" v={isConnected ? signed(juniorEarned) : NA} tone={juniorEarned} />
+            <Row k="Of which unsettled" v={isConnected ? signed(juniorUnsettled) : NA} tone={juniorUnsettled} />
             <Row k="Exit queued" v={junior.exit ? `${fmtUnits(junior.exit.shares, SHARE_DECIMALS)} · ready ${fmtDateUtc(junior.exit.readyAt)}` : 'None'} />
             <Row k="ORPH staked" v={mine ? `${fmtUnits(BigInt(mine.juniorStaked), ORPH_DECIMALS, 0)} ORPH` : NA} />
           </dl>
@@ -146,7 +150,7 @@ export default function Portfolio() {
       <section className={s.foot}>
         <div>
           <div className="label">How earned is computed</div>
-          <p>Earned is today's value of your shares minus your principal, where principal is every deposit minus every withdrawal or claimed exit, read from the vaults' own events. It includes unrealised gains and losses and moves with the share price.</p>
+          <p>Earned is today's value of your shares minus your principal, where principal is every deposit minus every withdrawal or claimed exit, read from the vaults' own events. It includes unrealised gains and losses and moves with the share price. Junior is shown at its live value, what the weekly settle would freeze if it ran now; the unsettled part is not yet in the price exits are paid at.</p>
         </div>
         <div>
           <div className="label">Freshness</div>

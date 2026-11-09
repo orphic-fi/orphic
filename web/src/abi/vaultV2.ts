@@ -11,4 +11,7 @@ export const vaultV2Abi = [
   { type: 'function', name: 'convertToShares', stateMutability: 'view', inputs: [{ name: 'assets', type: 'uint256' }], outputs: [{ type: 'uint256' }] },
   // Per-second max interest rate, WAD scaled.
   { type: 'function', name: 'maxRate', stateMutability: 'view', inputs: [], outputs: [{ type: 'uint64' }] },
+  { type: 'function', name: 'totalSupply', stateMutability: 'view', inputs: [], outputs: [{ type: 'uint256' }] },
+  // (newTotalAssets, performanceFeeShares, managementFeeShares) that the next accrueInterest would mint.
+  { type: 'function', name: 'accrueInterestView', stateMutability: 'view', inputs: [], outputs: [{ type: 'uint256' }, { type: 'uint256' }, { type: 'uint256' }] },
 ] as const

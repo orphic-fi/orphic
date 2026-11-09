@@ -32,10 +32,14 @@ export const addresses = {
     referenceLabel: 'reference: Felix USDC V2',
   },
   elysium: {
-    // Bridged USDC on Elysium. Derivable only once the mainnet router is published.
-    usdc: ZERO,
-    // Entry contract on Elysium that bridges to HyperEVM. Placeholder.
+    // Canonical bridged USDC on Elysium mainnet (chain 99901). Verified onchain: l1Address() is HyperEVM USDC, and the
+    // HyperEVM gateway router's calculateL2TokenAddress(HyperEVM USDC) returns this address.
+    usdc: '0xb47c4C8F73F009CC0C0d3f92B388d13E293F0B65' as Address,
+    // Entry contract on Elysium that routes deposits to HyperEVM. Not deployed: the canonical Elysium to HyperEVM
+    // bridge takes about 5.5 days, so the return path needs a fast-exit answer from Kinetiq first. ZERO means
+    // "deposit on HyperEVM" in the UI.
     bridgeEntry: ZERO,
+    bridgeUrl: 'https://elysium.kinetiq.xyz/bridge',
   },
 } as const
 

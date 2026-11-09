@@ -57,6 +57,12 @@ export interface VaultState {
   pricePerShare: bigint | undefined
   /** Junior lastSettle() unix seconds; undefined when unknown. */
   lastSettle: number | undefined
+  /**
+   * Junior live valuation, before the next settle freezes it into pricePerShare. perShare is 1e18 USDC per share;
+   * unsettled is the USDC the whole vault has earned (or lost) since the last settle, pending senior fee shares included;
+   * mine is the connected wallet's shares at the live price. Display only: exits are priced at settle, not here.
+   */
+  nav: { perShare: bigint; unsettled: bigint; mine: bigint | undefined } | null
   /** Junior open exit request. */
   exit: { shares: bigint; readyAt: number } | null
   stakeBps: number
@@ -147,6 +153,8 @@ export function useVault(kind: VaultKind): VaultState {
       { address: vaultAddress, abi: juniorAbi, functionName: 'walletCap', chainId: hyperEvm.id },
       { address: vaultAddress, abi: juniorAbi, functionName: 'lastSettle', chainId: hyperEvm.id },
       { address: vaultAddress, abi: juniorAbi, functionName: 'exitOf', args: [probe], chainId: hyperEvm.id },
+      { address: vaultAddress, abi: juniorAbi, functionName: 'totalSupply', chainId: hyperEvm.id },
+      { address: vaultAddress, abi: juniorAbi, functionName: 'pricedExitShares', chainId: hyperEvm.id },
     ],
     query: { enabled: DEPLOYED && kind === 'junior', refetchInterval: 30_000 },
   })
@@ -159,13 +167,17 @@ export function useVault(kind: VaultKind): VaultState {
     chainId: hyperEvm.id,
     query: { enabled: DEPLOYED && kind === 'junior', refetchInterval: 60_000 },
   })
-  const seniorTotalForJunior = useReadContract({
-    address: addresses.hyperEvm.senior,
-    abi: vaultV2Abi,
-    functionName: 'totalAssets',
-    chainId: hyperEvm.id,
+  // Senior as seen from junior: assets (for the fee projection), supply and the fee shares the next accrueInterest
+  // would mint to junior (so junior's live value does not wait for a transaction).
+  const seniorForJunior = useReadContracts({
+    contracts: [
+      { address: addresses.hyperEvm.senior, abi: vaultV2Abi, functionName: 'totalAssets', chainId: hyperEvm.id },
+      { address: addresses.hyperEvm.senior, abi: vaultV2Abi, functionName: 'totalSupply', chainId: hyperEvm.id },
+      { address: addresses.hyperEvm.senior, abi: vaultV2Abi, functionName: 'accrueInterestView', chainId: hyperEvm.id },
+    ],
     query: { enabled: DEPLOYED && kind === 'junior', refetchInterval: 60_000 },
   })
+  const seniorTotalForJunior = { data: seniorForJunior.data?.[0]?.result as bigint | undefined }
   const stakeTokenRead = juniorReads.data?.[6]?.result as Address | undefined
   const orphToken: Address = stakeTokenRead && stakeTokenRead !== ZERO ? stakeTokenRead : addresses.hyperEvm.orph
   const orphReads = useReadContracts({
@@ -247,6 +259,7 @@ export function useVault(kind: VaultKind): VaultState {
           seniorSharesPerUsdc: (10n ** BigInt(SHARE_DECIMALS) * 10n ** BigInt(USDC_DECIMALS)) / f.senior.pricePerShare,
           pricePerShare: undefined,
           lastSettle: undefined,
+          nav: null,
           exit: null,
           stakeBps: 0,
           paused: false,
@@ -272,6 +285,7 @@ export function useVault(kind: VaultKind): VaultState {
         seniorSharesPerUsdc: undefined,
         pricePerShare: f.junior.pricePerShare,
         lastSettle: Number(f.junior.lastSettle),
+        nav: null,
         exit: f.junior.exit.shares > 0n ? { shares: f.junior.exit.shares, readyAt: Number(f.junior.exit.readyAt) } : null,
         stakeBps: Number(f.junior.stakeBps),
         paused: f.junior.paused,
@@ -323,6 +337,7 @@ export function useVault(kind: VaultKind): VaultState {
         seniorSharesPerUsdc: seniorReads.data?.[5]?.result as bigint | undefined,
         pricePerShare: undefined,
         lastSettle: undefined,
+        nav: null,
         exit: null,
         stakeBps: 0,
         paused: ops.paused,
@@ -351,13 +366,36 @@ export function useVault(kind: VaultKind): VaultState {
     const paused = juniorReads.data?.[5]?.result as boolean | undefined
     const lastSettle = juniorReads.data?.[11]?.result as bigint | undefined
     const exitRaw = juniorReads.data?.[12]?.result as readonly [bigint, bigint, number] | undefined
+    const juniorSupply = juniorReads.data?.[13]?.result as bigint | undefined
+    const pricedExit = juniorReads.data?.[14]?.result as bigint | undefined
     const tvl = DEPLOYED && totalAssets !== undefined ? Number(totalAssets) / 10 ** USDC_DECIMALS : null
     const cap = DEPLOYED && depositCap !== undefined ? Number(depositCap) / 10 ** USDC_DECIMALS : ops.caps.juniorUsd
     const balanceAssets =
       shares !== undefined && pps !== undefined ? (shares * pps) / 10n ** 18n / 10n ** BigInt(SHARE_DECIMALS - USDC_DECIMALS) : undefined
+    // Live NAV: what settle would freeze if it ran now. totalAssets already counts junior's minted senior shares
+    // (senior is an allowlisted venue); add the management-fee shares senior owes junior but has not minted yet.
+    const nav = (() => {
+      if (!DEPLOYED || totalAssets === undefined || juniorSupply === undefined || pricedExit === undefined || pps === undefined) return null
+      const liveSupply = juniorSupply - pricedExit
+      if (liveSupply <= 0n) return null
+      const sA = seniorForJunior.data?.[0]?.result as bigint | undefined
+      const sS = seniorForJunior.data?.[1]?.result as bigint | undefined
+      const view = seniorForJunior.data?.[2]?.result as readonly [bigint, bigint, bigint] | undefined
+      const pendingFee = sA !== undefined && sS !== undefined && view !== undefined && sS + view[2] > 0n ? (view[2] * sA) / (sS + view[2]) : 0n
+      const total = totalAssets + pendingFee
+      const scale = 10n ** BigInt(SHARE_DECIMALS - USDC_DECIMALS)
+      const perShare = (total * scale * 10n ** 18n) / liveSupply
+      const settledValue = (liveSupply * pps) / 10n ** 18n / scale
+      return {
+        perShare,
+        unsettled: total - settledValue,
+        mine: shares !== undefined ? (shares * perShare) / 10n ** 18n / scale : undefined,
+      }
+    })()
     return {
       ...common,
       kind,
+      nav,
       apy: juniorProjection ? juniorProjection.feeShare + juniorProjection.deployedYield : null,
       apyDerived: !!juniorProjection,
       projection: juniorProjection,

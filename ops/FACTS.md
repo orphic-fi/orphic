@@ -94,7 +94,7 @@ Safe 1.4.1 and Zodiac Roles v2 are both on HyperEVM at canonical addresses with 
 
 ## 4. Elysium (Kinetiq's Hyperliquid L2)
 
-Mainnet read back 9 Nov 2026 04:42 UTC: RPC https://rpc.elysium.kinetiq.xyz, eth_chainId 0x1863d = 99901, block 2,929,938, base fee 0.1 gwei. Bridged USDC and bridge entry addresses still unknown.
+Mainnet read back 9 Nov 2026 04:42 UTC: RPC https://rpc.elysium.kinetiq.xyz, eth_chainId 0x1863d = 99901, block 2,929,938, base fee 0.1 gwei. Bridged USDC on Elysium confirmed 9 Nov 14:30 UTC by two onchain reads: `0xb47c4C8F73F009CC0C0d3f92B388d13E293F0B65` (symbol USDC, 6 decimals, `l1Address()` = HyperEVM USDC 0xb883...630f; HyperEVM gateway router 0x5D24...68c0 `calculateL2TokenAddress(HyperEVM USDC)` returns the same address; total supply about 2.72M USDC). No Orphic entry contract on Elysium yet: canonical bridge is HyperEVM to Elysium about 1 minute, Elysium to HyperEVM about 5.5 days (483,840 blocks), so UI routes every action to HyperEVM until Kinetiq answers the fast-exit question (asked via Tuna, 9 Nov).
 
 | Item | Status |
 |---|---|

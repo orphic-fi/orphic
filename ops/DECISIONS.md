@@ -108,3 +108,9 @@ Principal and earned need deposit history, and public HyperEVM RPCs cap eth_getL
 
 ## D31. Junior idle management (Claude, 9 Nov 05:00)
 Hourly, the Rotator keeps a reserve idle in junior (max of exits owed, 1% of senior assets as a cover buffer, 5 USDC) and deploys the excess to Felix USDC through junior.execute; when idle falls under the reserve it pulls back. On the weekly tick it recalls everything from Felix before settle, so the cover bill and matured exits are always paid from idle. Rules used: USDC approve to Felix, Felix deposit (receiver pinned), Felix withdraw (receiver pinned). Fork-tested 9 Nov: all three pass the allowlist, NAV unchanged.
+
+## D32. Junior shows live value next to the settled price (9 Nov 2026)
+Junior's `pricePerShare` only moves at the weekly settle, so between settles the card read "earned nothing" while Felix yield and senior fee shares were accruing. The UI now computes live NAV per share = (totalAssets + senior fee shares pending to junior) / (totalSupply - pricedExitShares) and labels the difference "unsettled". Exits are still priced at settle; the live figure is display only. The keeper also calls senior.accrueInterest() once a day (permissionless, skipped when nothing is pending) so the minted fee shares exist onchain between settles instead of only at settle.
+
+## D33. No Elysium entry contract until the exit path is settled (9 Nov 2026)
+Elysium mainnet's canonical withdrawal to HyperEVM is about 5.5 days. An entry contract that pulls user USDC from Elysium to the vaults would strand deposits in the bridge for most of a week. Decision: deposits happen on HyperEVM; the site says so and links the canonical bridge with both durations; Kinetiq asked whether a fast bridge is planned. Revisit when they answer.

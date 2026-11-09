@@ -152,3 +152,13 @@ describe("junior: dry-run behaviour", () => {
     expect(report.summary.some((l) => l.startsWith("syncSenior:"))).toBe(true);
   });
 });
+
+describe("daily accrue nudge", () => {
+  it("skips when nothing is pending or it ran within 23h, fires otherwise", async () => {
+    const { shouldAccrue, ACCRUE_EVERY } = await import("../src/exec/junior.js");
+    const now = 1_800_000_000n;
+    expect(shouldAccrue({ lastUpdate: now - 48n * 3600n, now, pendingMgmtShares: 0n }).due).toBe(false);
+    expect(shouldAccrue({ lastUpdate: now - ACCRUE_EVERY + 60n, now, pendingMgmtShares: 5n }).due).toBe(false);
+    expect(shouldAccrue({ lastUpdate: now - ACCRUE_EVERY, now, pendingMgmtShares: 5n }).due).toBe(true);
+  });
+});
