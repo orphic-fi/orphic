@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { AGENTS } from '../lib/agents'
-import { ORPHIC_AGENT_IDS, ROTATOR_AGENT_ID, circuitAgentUrl, shortId, useCircuitAgents, useRotator, type CircuitAgent } from '../lib/circuit'
+import { GROUPS, GROUP_BLURB, NEUTRAL_AGENT_ID, ORPHIC_AGENT_IDS, ROTATOR_AGENT_ID, circuitAgentUrl, groupOf, shortId, useCircuitAgents, useRotator, type AgentGroup, type CircuitAgent } from '../lib/circuit'
 import { fmtNum, fmtPct, fmtUsd } from '../lib/format'
 import { Mark } from '../components/Layout'
 import s from './Agents.module.css'
@@ -35,12 +35,15 @@ function agentPath(a: CircuitAgent): string {
 export default function Agents() {
   const agents = useCircuitAgents()
   const rotator = useRotator()
-  const [showAll, setShowAll] = useState(false)
-  const TOP = 8
+  const [group, setGroup] = useState<'All' | AgentGroup>('All')
+  const [showFarming, setShowFarming] = useState(false)
 
   const all = agents.data ?? []
-  const official = all.filter((a) => a.official && !ORPHIC_AGENT_IDS[a.id]).sort((x, y) => y.people - x.people)
-  const community = all.filter((a) => !a.official && !ORPHIC_AGENT_IDS[a.id]).sort((x, y) => y.people - x.people)
+  const catalogue = all.filter((a) => !ORPHIC_AGENT_IDS[a.id])
+  // Official first, then by how many people run it. Points-farming experiments are hidden unless asked for.
+  const ranked = [...catalogue].sort((x, y) => Number(y.official) - Number(x.official) || y.people - x.people)
+  const visible = ranked.filter((a) => (group === 'All' ? groupOf(a) !== 'Farming' || showFarming : groupOf(a) === group))
+  const counts = GROUPS.reduce((m, g) => ({ ...m, [g]: catalogue.filter((a) => groupOf(a) === g).length }), {} as Record<AgentGroup, number>)
   const people = all.reduce((n, a) => n + (a.people || 0), 0)
   const rot = rotator.data
 
@@ -133,27 +136,75 @@ export default function Agents() {
         </div>
       </section>
 
+      {/* Orphic's second agent: the funding-capture test, on paper money. */}
+      <section className={s.twin}>
+        <article className={s.card}>
+          <div className={s.cardTop}>
+            <span className={s.orb}>
+              <Mark size={16} />
+            </span>
+            <span className="label">Orphic · paper test</span>
+          </div>
+          <div>
+            <h2 className={s.name}>
+              <Link to="/agents/orphic-neutral">Orphic Neutral</Link>
+            </h2>
+            <div className="label" style={{ marginTop: 8 }}>
+              Hyperliquid · funding capture · hourly
+            </div>
+          </div>
+          <p className={s.rule}>Holds spot $HYPE and an equal perp short so price cancels out, and collects the funding longs pay shorts while it is worth it. Running on simulated money since 9 Nov to see how it behaves before it is offered.</p>
+          <div className={s.cardFoot}>
+            <a href={circuitAgentUrl(NEUTRAL_AGENT_ID)} target="_blank" rel="noreferrer" className={s.ghostBtn}>
+              View on Circuit
+            </a>
+            <Link to="/agents/orphic-neutral" className={s.subscribe}>
+              Details
+            </Link>
+          </div>
+        </article>
+        <div className={s.twinNote}>
+          <div className="label">How Orphic agents reach the marketplace</div>
+          <p>Every Orphic agent runs on simulated money first, then with our own capital, and only then becomes something you can subscribe to. The Rotator has passed that bar and runs the vaults. Neutral is at step one. Agents we are still designing are listed at the bottom of this page.</p>
+        </div>
+      </section>
+
       <section>
         <div className={s.sectionHead}>
           <div>
             <h2 className={s.h2}>Run today on Circuit</h2>
-            <p className={s.sectionLead}>Circuit's own agents. Returns are the last 30 days of live sessions as Circuit reports them, never a forecast.</p>
+            <p className={s.sectionLead}>The live catalogue, grouped by what each agent does. Returns are the last 30 days of live sessions as Circuit reports them, never a forecast.</p>
           </div>
-          {agents.data && (
-            <button type="button" className={s.chip} onClick={() => setShowAll((v) => !v)}>
-              {showAll ? `Show the top ${TOP}` : `Show all ${official.length + community.length}, community included`}
+        </div>
+        <div className={s.filters}>
+          <div className={s.chips}>
+            <button type="button" className={`${s.chip} ${group === 'All' ? s.chipOn : ''}`} onClick={() => setGroup('All')}>
+              All
+            </button>
+            {GROUPS.filter((g) => counts[g] > 0).map((g) => (
+              <button key={g} type="button" className={`${s.chip} ${group === g ? s.chipOn : ''}`} onClick={() => setGroup(g)}>
+                {g} <span className={s.chipCount}>{counts[g]}</span>
+              </button>
+            ))}
+          </div>
+          {group === 'All' && counts.Farming > 0 && (
+            <button type="button" className={s.chip} onClick={() => setShowFarming((v) => !v)}>
+              {showFarming ? 'Hide points farming' : `Show ${counts.Farming} points-farming agents`}
             </button>
           )}
         </div>
+        {group !== 'All' && <p className={s.groupBlurb}>{GROUP_BLURB[group]}</p>}
         {agents.isLoading && <div className={s.notice}>Loading the live catalogue from Circuit.</div>}
         <div className={s.grid}>
-          {(showAll ? [...official, ...community] : official.slice(0, TOP)).map((a) => (
+          {visible.map((a) => (
             <article key={a.id} className={s.card}>
               <div className={s.cardTop}>
                 <span className={s.orb}>
                   <AgentIcon d="M3 11l3-4 3 3 2-2 2 3" />
                 </span>
-                <span className="label">{a.official ? 'Circuit' : 'Community'}</span>
+                <span className="label">
+                  {groupOf(a)} · {a.official ? 'Circuit' : 'Community'}
+                </span>
               </div>
               <div>
                 <h2 className={s.name}>
@@ -168,7 +219,7 @@ export default function Agents() {
                 <div>
                   <div className="label">30d return</div>
                   <ReturnValue value={a.return_percent} />
-                  <div className={s.perfNote}>live sessions, per Circuit</div>
+                  <div className={s.perfNote}>{a.return_percent === null ? 'no 30d figure yet' : 'live sessions, per Circuit'}</div>
                 </div>
                 <div style={{ textAlign: 'right' }}>
                   <div className="label">Running it</div>
@@ -186,6 +237,7 @@ export default function Agents() {
             </article>
           ))}
         </div>
+        {!agents.isLoading && visible.length === 0 && <div className={s.notice}>No agents in this group right now.</div>}
       </section>
 
       <section>

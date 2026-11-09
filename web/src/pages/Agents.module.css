@@ -442,3 +442,40 @@
     display: none;
   }
 }
+
+.twin {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.6fr);
+  gap: 16px;
+  align-items: stretch;
+}
+.twinNote {
+  border: 1px dashed var(--line-strong);
+  border-radius: 12px;
+  padding: 18px 20px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+.twinNote p {
+  margin: 10px 0 0;
+  font-size: 14px;
+  line-height: 1.55;
+  color: var(--muted);
+  max-width: 560px;
+}
+.chipCount {
+  color: var(--muted);
+  margin-left: 4px;
+  font-variant-numeric: tabular-nums;
+}
+.groupBlurb {
+  margin: 0 0 14px;
+  font-size: 14px;
+  color: var(--muted);
+}
+@media (max-width: 900px) {
+  .twin {
+    grid-template-columns: 1fr;
+  }
+}
