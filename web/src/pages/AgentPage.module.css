@@ -56,7 +56,7 @@
   margin: 0;
   font-family: var(--serif);
   font-weight: 400;
-  font-size: 44px;
+  font-size: 36px;
   line-height: 1;
   letter-spacing: -0.02em;
 }
@@ -92,7 +92,7 @@
 .roi {
   font-family: var(--serif);
   font-weight: 400;
-  font-size: 44px;
+  font-size: 36px;
   line-height: 1;
   letter-spacing: -0.02em;
   color: var(--muted);
@@ -229,7 +229,7 @@
 .big {
   font-family: var(--serif);
   font-weight: 400;
-  font-size: 40px;
+  font-size: 32px;
   line-height: 1;
   letter-spacing: -0.03em;
   border: 0;

@@ -1,9 +1,9 @@
 .page.page {
-  padding-top: 40px;
-  padding-bottom: 56px;
+  padding-top: 32px;
+  padding-bottom: 48px;
   display: flex;
   flex-direction: column;
-  gap: 28px;
+  gap: 24px;
 }
 
 .hero {
@@ -18,7 +18,7 @@
   margin: 0;
   font-family: var(--serif);
   font-weight: 400;
-  font-size: 44px;
+  font-size: 36px;
   line-height: 1.05;
   letter-spacing: -0.02em;
   max-width: 15ch;
@@ -34,7 +34,7 @@
 .kpi {
   font-family: var(--serif);
   font-weight: 400;
-  font-size: 26px;
+  font-size: 22px;
   line-height: 1.1;
   margin-top: 6px;
   letter-spacing: -0.01em;

@@ -22,6 +22,9 @@ export const addresses = {
     junior: '0x20D5F4f78858D257eA047EB5F47773E361697F2E' as Address,
     // FeeRouter, deployed 8 Nov 2026.
     feeRouter: '0xC2d2C5e56798Bfd0EEc67EEC12ddC2b521b1aA37' as Address,
+    // Felix USDC v1.1 (MetaMorpho), senior's liquidity adapter target, and the adapter that holds it.
+    felixVault: '0x8A862fD6c12f9ad34C9c2ff45AB2b6712e8CEa27' as Address,
+    felixAdapter: '0x0cdfdbC51744Ba1ed88bB8752098105fb43f37AC' as Address,
     // ORPH stake token. Placeholder until deployment.
     orph: ZERO,
     // Reference vault used for APY and TVL while our vault does not exist.

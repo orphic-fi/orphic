@@ -22,7 +22,7 @@
   margin: 18px 0 0;
   font-family: var(--serif);
   font-weight: 400;
-  font-size: 48px;
+  font-size: 40px;
   line-height: 1.02;
   letter-spacing: -0.03em;
 }
@@ -127,11 +127,11 @@
 .card {
   border: 1px solid var(--line-strong);
   border-radius: 12px;
-  padding: 22px;
+  padding: 18px;
   background: var(--panel);
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 12px;
 }
 
 .cardTop {
@@ -155,7 +155,7 @@
   margin: 0;
   font-family: var(--serif);
   font-weight: 400;
-  font-size: 30px;
+  font-size: 26px;
   line-height: 1;
   letter-spacing: -0.02em;
 }

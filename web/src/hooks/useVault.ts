@@ -7,7 +7,7 @@ import { vaultV2Abi } from '../abi/vaultV2'
 import { ELYSIUM_IDS, asSupported, hyperEvm } from '../chains'
 import { DEPLOYED, ZERO, addresses, ops } from '../config/addresses'
 import { DEMO, DEMO_LOADED_AT_MS, demoFixture, demoScenario } from '../config/demo'
-import { useMorphoVaultV2 } from '../lib/morpho'
+import { useMorphoVaultV1, useMorphoVaultV2 } from '../lib/morpho'
 import { useSession } from './useSession'
 
 export type VaultKind = 'senior' | 'junior'
@@ -18,6 +18,8 @@ export const SHARE_DECIMALS = 18
 
 /** True when the UI should behave as if contracts exist: deployed, or demo fixtures. */
 export const LIVE = DEPLOYED || DEMO
+/** Senior management fee, 0.5% a year, paid to junior. */
+export const MGMT_FEE_APY = 0.005
 
 /** Required ORPH (wei) for a USDC deposit amount (6 decimals): amount * stakePerAsset / 1e6. */
 export function requiredStake(amount: bigint, stakePerAsset: bigint): bigint {
@@ -30,6 +32,10 @@ export interface VaultState {
   apyLoading: boolean
   apyError: boolean
   apyUnlisted?: boolean
+  /** Senior: APY is derived from Felix (where the assets sit) because Morpho does not index senior yet. */
+  apyDerived?: boolean
+  /** Junior: the pieces behind the projection, for the explainer. */
+  projection?: { feeShare: number; deployedYield: number; seniorAssets: number; juniorAssets: number; idleShare: number } | null
   /** Unix ms of the last successful APY read. */
   apyReadAt: number | undefined
   /** Unix ms of the last successful chain read. */
@@ -97,15 +103,22 @@ export function useVault(kind: VaultKind): VaultState {
 
   const morphoAddress = DEPLOYED ? addresses.hyperEvm.senior : addresses.hyperEvm.referenceVault
   const morpho = useMorphoVaultV2(morphoAddress)
+  // Senior's assets sit in Felix USDC (a Morpho vault the API does index). While the API has no entry for senior itself,
+  // the estimate is Felix's net APY on the share of assets held there, minus senior's 0.5% a year management fee.
+  const felix = useMorphoVaultV1(addresses.hyperEvm.felixVault)
 
   const seniorReads = useReadContracts({
     contracts: [
       { address: vaultAddress, abi: vaultV2Abi, functionName: 'totalAssets', chainId: hyperEvm.id },
       { address: vaultAddress, abi: vaultV2Abi, functionName: 'balanceOf', args: [probe], chainId: hyperEvm.id },
-      { address: vaultAddress, abi: vaultV2Abi, functionName: 'maxWithdraw', args: [probe], chainId: hyperEvm.id },
+      // Vault V2 hard-codes maxWithdraw to 0 (it cannot promise a revert-free gate), so liquidity is idle USDC plus what the
+      // liquidity adapter (Felix) lets the vault pull right now.
+      { address: addresses.hyperEvm.usdc, abi: erc20Abi, functionName: 'balanceOf', args: [vaultAddress], chainId: hyperEvm.id },
       { address: vaultAddress, abi: vaultV2Abi, functionName: 'maxRate', chainId: hyperEvm.id },
       { address: addresses.hyperEvm.junior, abi: juniorAbi, functionName: 'coverInProgress', chainId: hyperEvm.id },
       { address: vaultAddress, abi: vaultV2Abi, functionName: 'convertToShares', args: [10n ** BigInt(USDC_DECIMALS)], chainId: hyperEvm.id },
+      { address: addresses.hyperEvm.felixVault, abi: vaultV2Abi, functionName: 'maxWithdraw', args: [addresses.hyperEvm.felixAdapter], chainId: hyperEvm.id },
+      { address: addresses.hyperEvm.felixVault, abi: vaultV2Abi, functionName: 'maxWithdraw', args: [addresses.hyperEvm.felixAdapter], chainId: hyperEvm.id },
     ],
     query: { enabled: DEPLOYED && kind === 'senior', refetchInterval: 30_000 },
   })
@@ -138,6 +151,21 @@ export function useVault(kind: VaultKind): VaultState {
     query: { enabled: DEPLOYED && kind === 'junior', refetchInterval: 30_000 },
   })
 
+  const juniorIdleRead = useReadContract({
+    address: addresses.hyperEvm.usdc,
+    abi: erc20Abi,
+    functionName: 'balanceOf',
+    args: [addresses.hyperEvm.junior],
+    chainId: hyperEvm.id,
+    query: { enabled: DEPLOYED && kind === 'junior', refetchInterval: 60_000 },
+  })
+  const seniorTotalForJunior = useReadContract({
+    address: addresses.hyperEvm.senior,
+    abi: vaultV2Abi,
+    functionName: 'totalAssets',
+    chainId: hyperEvm.id,
+    query: { enabled: DEPLOYED && kind === 'junior', refetchInterval: 60_000 },
+  })
   const stakeTokenRead = juniorReads.data?.[6]?.result as Address | undefined
   const orphToken: Address = stakeTokenRead && stakeTokenRead !== ZERO ? stakeTokenRead : addresses.hyperEvm.orph
   const orphReads = useReadContracts({
@@ -172,10 +200,17 @@ export function useVault(kind: VaultKind): VaultState {
   }, [refetchSenior, refetchSeniorAssets, refetchJunior, refetchWallet, refetchMorpho, refetchOrph])
 
   return useMemo<VaultState>(() => {
+    const felixApy = felix.data?.netApy ?? felix.data?.apy ?? null
+    const seniorTotal = seniorReads.data?.[0]?.result as bigint | undefined
+    const felixHeld = seniorReads.data?.[7]?.result as bigint | undefined
+    const felixShare = seniorTotal !== undefined && seniorTotal > 0n && felixHeld !== undefined ? Math.min(1, Number(felixHeld) / Number(seniorTotal)) : 1
+    const derivedSeniorApy = felixApy !== null ? Math.max(0, felixApy * felixShare - MGMT_FEE_APY) : null
+    const listedApy = morpho.data?.netApy ?? morpho.data?.apy ?? null
     const common = {
-      apy: morpho.data?.netApy ?? morpho.data?.apy ?? null,
-      apyLoading: morpho.isLoading,
-      apyError: morpho.isError,
+      apy: listedApy ?? (morpho.data?.unlisted ? derivedSeniorApy : null),
+      apyDerived: listedApy === null && derivedSeniorApy !== null && !!morpho.data?.unlisted,
+      apyLoading: morpho.isLoading || felix.isLoading,
+      apyError: morpho.isError && felix.isError,
       apyUnlisted: morpho.data?.unlisted ?? false,
       apyReadAt: morpho.dataUpdatedAt || undefined,
       target,
@@ -277,7 +312,14 @@ export function useVault(kind: VaultKind): VaultState {
         balanceShares: seniorShares,
         usdcBalance: walletReads.data?.[0]?.result as bigint | undefined,
         allowance: walletReads.data?.[1]?.result as bigint | undefined,
-        maxWithdraw: seniorReads.data?.[2]?.result as bigint | undefined,
+        maxWithdraw: (() => {
+          const idle = seniorReads.data?.[2]?.result as bigint | undefined
+          const felix = seniorReads.data?.[6]?.result as bigint | undefined
+          const mine = seniorAssets.data as bigint | undefined
+          if (idle === undefined || felix === undefined || mine === undefined) return undefined
+          const liquidity = idle + felix
+          return liquidity < mine ? liquidity : mine
+        })(),
         seniorSharesPerUsdc: seniorReads.data?.[5]?.result as bigint | undefined,
         pricePerShare: undefined,
         lastSettle: undefined,
@@ -291,6 +333,18 @@ export function useVault(kind: VaultKind): VaultState {
 
     const totalAssets = juniorReads.data?.[0]?.result as bigint | undefined
     const depositCap = juniorReads.data?.[1]?.result as bigint | undefined
+    // Junior's projected rate: senior's 0.5% fee spread over junior assets, plus Felix's rate on the share of junior
+    // USDC the agent has deployed there (idle USDC earns nothing). An estimate from today's balances, not a promise.
+    const juniorIdle = juniorIdleRead.data as bigint | undefined
+    const juniorProjection = (() => {
+      if (!DEPLOYED || totalAssets === undefined || totalAssets === 0n || seniorTotalForJunior.data === undefined) return null
+      const seniorA = Number(seniorTotalForJunior.data) / 10 ** USDC_DECIMALS
+      const juniorA = Number(totalAssets) / 10 ** USDC_DECIMALS
+      const idle = juniorIdle !== undefined ? Math.min(1, Number(juniorIdle) / Number(totalAssets)) : 1
+      const feeShare = (MGMT_FEE_APY * seniorA) / juniorA
+      const deployedYield = felixApy !== null ? felixApy * (1 - idle) : 0
+      return { feeShare, deployedYield, seniorAssets: seniorA, juniorAssets: juniorA, idleShare: idle }
+    })()
     const shares = juniorReads.data?.[2]?.result as bigint | undefined
     const pps = juniorReads.data?.[3]?.result as bigint | undefined
     const seeded = juniorReads.data?.[4]?.result as boolean | undefined
@@ -304,7 +358,9 @@ export function useVault(kind: VaultKind): VaultState {
     return {
       ...common,
       kind,
-      apy: null,
+      apy: juniorProjection ? juniorProjection.feeShare + juniorProjection.deployedYield : null,
+      apyDerived: !!juniorProjection,
+      projection: juniorProjection,
       apyLoading: false,
       apyError: false,
       chainReadAt: juniorReads.dataUpdatedAt || undefined,

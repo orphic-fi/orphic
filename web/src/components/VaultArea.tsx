@@ -276,7 +276,7 @@ export default function VaultArea({ kind, state: v }: { kind: VaultKind; state: 
         ? `1 ${JUNIOR_SYMBOL} = ${fmtNum(Number(v.pricePerShare) / 1e18, 2)} USDC`
         : `1 ${JUNIOR_SYMBOL} = 1.00 USDC`
   const balanceText = isConnected && LIVE && v.usdcBalance !== undefined ? fmtUnits(v.usdcBalance, USDC_DECIMALS) : NA
-  const juniorApyLabel = kind === 'junior' ? 'projected · est.' : 'est. APY · Morpho 7d'
+  const juniorApyLabel = kind === 'junior' ? 'projected · est.' : v.apyDerived ? 'est. APY · via Felix' : 'est. APY · Morpho 7d'
 
   return (
     <section className={s.area} data-kind={kind} aria-labelledby={`${kind}-name`}>
@@ -295,8 +295,15 @@ export default function VaultArea({ kind, state: v }: { kind: VaultKind; state: 
         </div>
       </header>
 
-      {kind === 'senior' && !v.apyError && v.apy === null && v.apyUnlisted && (
-        <p className={s.caption}>APY shows once Morpho indexes the vault. Senior assets currently sit in Felix USDC; see the Felix rate for a reference.</p>
+      {kind === 'senior' && v.apyDerived && v.apy !== null && (
+        <p className={s.caption}>Estimate: Felix USDC's current rate on the share of senior sitting there, minus the 0.5% fee. Morpho shows the vault's own rate once it indexes it.</p>
+      )}
+      {kind === 'senior' && !v.apyError && v.apy === null && v.apyUnlisted && <p className={s.caption}>Rate unavailable right now: Morpho does not index this vault yet and the Felix rate could not be read.</p>}
+      {kind === 'junior' && v.projection && (
+        <p className={s.caption}>
+          Estimate from today's balances: senior's 0.5% fee spread over junior ({fmtUsd(v.projection.seniorAssets)} on {fmtUsd(v.projection.juniorAssets)}) gives {fmtPct(v.projection.feeShare)}
+          {v.projection.idleShare < 1 ? `, plus ${fmtPct(v.projection.deployedYield)} from junior USDC deployed to Felix` : '; junior USDC is idle until the agent deploys it'}. Moves with every deposit.
+        </p>
       )}
       {kind === 'senior' && v.apyError && <p className={s.caption}>Morpho API unreachable. Retrying.</p>}
       {kind === 'senior' && LIVE && v.cover && (

@@ -2,10 +2,10 @@
   border: 1px solid var(--line-strong);
   border-radius: var(--radius);
   background: var(--panel);
-  padding: 24px;
+  padding: 20px;
   display: flex;
   flex-direction: column;
-  gap: 18px;
+  gap: 16px;
   min-width: 0;
 }
 
@@ -20,7 +20,7 @@
   margin: 0;
   font-family: var(--serif);
   font-weight: 400;
-  font-size: 28px;
+  font-size: 24px;
   line-height: 1;
   letter-spacing: -0.02em;
 }
@@ -38,7 +38,7 @@
 .apy {
   font-family: var(--serif);
   font-weight: 400;
-  font-size: 34px;
+  font-size: 28px;
   line-height: 1;
   letter-spacing: -0.02em;
   font-variant-numeric: tabular-nums;
@@ -49,8 +49,8 @@
 }
 
 .caption {
-  margin: -6px 0 0;
-  font-size: 13px;
+  margin: -4px 0 0;
+  font-size: 12px;
   line-height: 1.5;
   color: var(--muted);
 }
@@ -86,9 +86,9 @@
 }
 
 .tab {
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 500;
-  padding: 8px 14px;
+  padding: 7px 12px;
   border-radius: 4px;
   color: var(--muted);
   transition: background-color var(--motion), color var(--motion);
@@ -112,7 +112,7 @@
 .field {
   border: 1px solid var(--line);
   border-radius: 6px;
-  padding: 18px 20px;
+  padding: 14px 16px;
   background: var(--panel-inner);
   display: flex;
   flex-direction: column;
@@ -132,7 +132,7 @@
 .big {
   font-family: var(--serif);
   font-weight: 400;
-  font-size: 40px;
+  font-size: 32px;
   line-height: 1;
   letter-spacing: -0.03em;
   font-variant-numeric: tabular-nums;
@@ -153,7 +153,7 @@
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  font-size: 15px;
+  font-size: 14px;
   font-weight: 500;
   padding: 6px 10px 6px 6px;
   border: 1px solid var(--line);
@@ -181,7 +181,7 @@
   justify-content: space-between;
   align-items: center;
   gap: 12px;
-  font-size: 13px;
+  font-size: 12px;
   color: var(--muted);
   font-variant-numeric: tabular-nums;
 }
@@ -201,12 +201,12 @@
 }
 
 .primary {
-  font-size: 16px;
+  font-size: 15px;
   font-weight: 500;
   background: var(--accent);
   color: var(--accent-ink);
   border-radius: 6px;
-  padding: 18px;
+  padding: 15px;
   width: 100%;
   transition: opacity var(--motion);
 }
@@ -216,7 +216,7 @@
 }
 
 .hint {
-  font-size: 13px;
+  font-size: 12px;
   line-height: 1.5;
   color: var(--muted);
   min-height: 20px;
@@ -250,9 +250,9 @@
   justify-content: space-between;
   align-items: baseline;
   gap: 16px;
-  padding: 11px 0;
+  padding: 9px 0;
   border-top: 1px solid var(--line);
-  font-size: 14px;
+  font-size: 13px;
 }
 
 .row dt {

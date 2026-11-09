@@ -5,8 +5,8 @@
 
 .hero.hero {
   position: relative;
-  padding-top: 96px;
-  padding-bottom: 72px;
+  padding-top: 80px;
+  padding-bottom: 64px;
   overflow: hidden;
 }
 
@@ -52,7 +52,7 @@
   margin: 0;
   font-family: var(--serif);
   font-weight: 300;
-  font-size: 84px;
+  font-size: 72px;
   line-height: 0.98;
   letter-spacing: -0.035em;
 }
@@ -63,9 +63,9 @@
 }
 
 .lead {
-  margin: 30px 0 0;
-  max-width: 560px;
-  font-size: 19px;
+  margin: 26px 0 0;
+  max-width: 540px;
+  font-size: 17px;
   line-height: 1.55;
   color: #b9b6c2;
 }
@@ -120,7 +120,7 @@
 .stat {
   font-family: var(--serif);
   font-weight: 300;
-  font-size: 34px;
+  font-size: 30px;
   line-height: 1;
   margin-top: 10px;
   font-variant-numeric: tabular-nums;
@@ -129,7 +129,7 @@
 
 .band {
   border-top: 1px solid var(--line);
-  padding: 72px 0;
+  padding: 60px 0;
 }
 
 .bandLast {
@@ -147,7 +147,7 @@
   margin: 16px 0 0;
   font-family: var(--serif);
   font-weight: 300;
-  font-size: 46px;
+  font-size: 40px;
   line-height: 1.05;
   letter-spacing: -0.03em;
 }
@@ -164,20 +164,20 @@
   margin: 0;
   font-family: var(--serif);
   font-weight: 300;
-  font-size: 40px;
+  font-size: 34px;
   line-height: 1;
 }
 
 .p {
-  margin: 20px 0 0;
-  font-size: 17px;
+  margin: 18px 0 0;
+  font-size: 15px;
   line-height: 1.55;
   color: #b9b6c2;
 }
 
 .pSmall {
   margin: 0;
-  font-size: 15px;
+  font-size: 14px;
   line-height: 1.5;
   color: #b9b6c2;
 }
