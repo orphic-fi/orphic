@@ -1,0 +1,24 @@
+name = "orphic-neutral"
+tagline = "Collects HYPE funding, hedged"
+category = "experimental"
+walletVmFamily = "evm"
+agentId = "8bcba87d-fc43-49ef-9803-af3ac0d093f6"
+
+[[triggers]]
+type = "schedule"
+everyMs = 3600000
+align = "fixed"
+
+# HyperCore USDC: spot and perp legs live in the same account.
+[startingAsset]
+network = "hypercore"
+asset = "0"
+minimumAmount = "100"
+
+[settings]
+# Enter when the trailing 8h average funding, annualised, is above this percent; exit when it has been below zero for a day.
+minFundingApy = { type = "number", default = 5, min = 0, max = 100 }
+# Share of the allocation that buys spot; the rest is margin and buffer for the short. 0.6 means 2x on the hedge.
+spotShare = { type = "percentage", default = 60, min = 30, max = 70 }
+# Cut both legs by a quarter when the mark is within this percent of the short's liquidation price.
+liqBufferPct = { type = "number", default = 15, min = 5, max = 40 }

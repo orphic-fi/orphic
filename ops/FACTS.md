@@ -151,3 +151,14 @@ warp time; settle again reverted TooSoon. The dust exit (1e6 share-wei, requeste
 that settle and was priced at the following one (15 + 7 days), owed 0 USDC by rounding; claimExit cleared it. Test: contracts/test/fork/SettleRehearsal.t.sol
 (run with --fork-url; excluded from the default suite). Keeper change the same day: the junior settle check runs every hourly tick
 (the contract allows settle from lastSettle + 7d - 1h), so the first live settle lands at the 22:07 UTC tick on Sunday 15 Nov, not a week late.
+
+## Circuit, 9 Nov 2026
+Account "orphic" on Circuit (passkey held by Cashout); CLI permit in the sandbox (7 days account, 24h signing). Circuit wallet
+0x7ffc5e962696ad5b0412f3908fdc442f70b71252 funded 0.02 HYPE on Elysium and 0.3 HYPE on HyperEVM (from the junior owner wallet).
+Agents uploaded: orphic-rotator 3c05032e-3df5-4454-aa3d-b25550f23f0d (hosted session 9461 on the Circuit wallet, dryRun=true, shadow week
+from 20:09 UTC) and orphic-neutral 8bcba87d-fc43-49ef-9803-af3ac0d093f6 (paper session ses_1f421509-f911-48a0-9c0d-d4cfcd47fa36, 1,000
+simulated USDC, started 20:53 UTC through the Orphic partner app). Partner app "orphic" linked to the account with a 30-day permit
+(expires 9 Dec 20:53 UTC) held in the sandbox; the X25519 key for that permit is test-only and not the production key for orphic.fi.
+Funding read at 20:48 UTC: HYPE 8h -8.93% annualised, 24h -1.93% (Circuit data equals Hyperliquid's fundingHistory to the digit), so the
+neutral agent stayed flat. 90-day funding (Hyperliquid, annualised): HYPE 11.2%, BTC 9.2%, ETH 8.8%, SOL 7.4%; 7 to 13% of hours negative.
+Elysium 9 Nov: no Uniswap v4 PoolManager or v3 factory deployed at canonical addresses; Nest not live, asked for testnet addresses.

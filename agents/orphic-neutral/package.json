@@ -1,0 +1,12 @@
+{
+  "name": "orphic-neutral",
+  "description": "circuit.org agent",
+  "main": "index.ts",
+  "scripts": {
+    "check": "circuit check"
+  },
+  "devDependencies": {
+    "@types/bun": "1.4.4",
+    "typescript": "7.0.2"
+  }
+}
