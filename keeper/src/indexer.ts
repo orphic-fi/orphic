@@ -16,6 +16,9 @@ const DEPLOY_BLOCK = 50747831n;
 const CHUNK = BigInt(process.env.LOG_RANGE || "1000"); // public RPC caps at 1000, drpc free at 10000
 const PAUSE_MS = Number(process.env.LOG_PAUSE_MS || "1200");
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+// Time budget: the hourly job must never hang on a slow public RPC. Progress is saved after every chunk, so a run
+// that stops at the deadline simply resumes next hour.
+const DEADLINE_MS = Number(process.env.INDEX_BUDGET_MS || 6 * 60_000);
 const STATE_PATH = process.env.POSITIONS_STATE || "ops/positions-state.json";
 const OUT_PATH = process.env.POSITIONS_OUT || "../web/public/data/positions.json";
 
@@ -74,7 +77,13 @@ async function main() {
   const touch = (addr: string) => (state.accounts[addr.toLowerCase()] ??= empty());
 
   let scanned = 0;
+  const startedAt = Date.now();
+  let partial = false;
   while (from <= safeHead) {
+    if (Date.now() - startedAt > DEADLINE_MS) {
+      partial = true;
+      break;
+    }
     const to = from + CHUNK - 1n > safeHead ? safeHead : from + CHUNK - 1n;
     // One query per contract, decoded by event; the public RPC rate-limits log queries hard.
     const seniorLogs = await client.getLogs({ address: SENIOR, events: [seniorDeposit, seniorWithdraw], fromBlock: from, toBlock: to });
@@ -115,11 +124,11 @@ async function main() {
     state.lastBlock = to.toString();
     scanned += Number(to - from + 1n);
     from = to + 1n;
+    mkdirSync(STATE_PATH.split("/").slice(0, -1).join("/") || ".", { recursive: true });
+    writeFileSync(STATE_PATH, JSON.stringify(state, null, 2));
   }
-  mkdirSync(STATE_PATH.split("/").slice(0, -1).join("/") || ".", { recursive: true });
-  writeFileSync(STATE_PATH, JSON.stringify(state, null, 2));
   writeOut(state, head);
-  console.log(`scanned ${scanned} blocks to ${state.lastBlock}, ${Object.keys(state.accounts).length} accounts, ${state.events} events`);
+  console.log(`scanned ${scanned} blocks to ${state.lastBlock}${partial ? ` (time budget reached, ${(safeHead - from + 1n).toString()} blocks left for the next run)` : ""}, ${Object.keys(state.accounts).length} accounts, ${state.events} events`);
 }
 
 function writeOut(state: State, head: bigint) {

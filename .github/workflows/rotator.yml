@@ -2,8 +2,11 @@ name: rotator
 
 on:
   schedule:
-    # Hourly. The weekly close is detected inside the keeper (Sunday 00:xx UTC).
+    # Hourly, with a second attempt at :37 because GitHub drops scheduled runs under load (9 Nov: nothing ran 07:00 to
+    # 15:00 UTC). The tick is idempotent, so a second run in the same hour holds. The weekly close is detected inside the
+    # keeper (Sunday 00:xx UTC).
     - cron: "7 * * * *"
+    - cron: "37 * * * *"
   workflow_dispatch:
     inputs:
       weekly:
@@ -102,6 +105,8 @@ jobs:
       # (the public RPC caps eth_getLogs at 1000 blocks, so the site cannot rebuild history on the fly).
       - name: Index positions
         if: always()
+        timeout-minutes: 10
+        continue-on-error: true
         run: npx tsx src/indexer.ts
 
       - name: Commit position index
