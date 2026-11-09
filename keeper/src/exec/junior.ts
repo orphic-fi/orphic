@@ -5,6 +5,7 @@ import { juniorAbi } from "../abi/junior.js";
 import { vaultV2Abi } from "../abi/vaultV2.js";
 import { erc20Abi } from "../abi/erc20.js";
 import { assertCanBroadcast, hyperEvm } from "./send.js";
+import { recallFromFelix } from "./juniorDeploy.js";
 
 const WAD = 10n ** 18n;
 export const SETTLE_PERIOD = 7n * 24n * 3600n;
@@ -166,6 +167,8 @@ export interface JuniorWeeklyResult {
   settleDue?: boolean;
   settleTx?: Hex;
   note: string;
+  recall?: string;
+  recallTx?: Hex;
 }
 
 /**
@@ -214,6 +217,13 @@ export async function juniorWeekly(ctx: JuniorCtx): Promise<JuniorWeeklyResult> 
     result.note = `settle not due (lastSettle ${lastSettle})`;
     log(`junior weekly: ${result.note}`);
     return result;
+  }
+  // Before settling, bring everything junior parked in Felix back to idle so the cover bill and matured exits
+  // can be paid in full. The hourly idle step redeploys the excess afterwards.
+  if (!isPlaceholder(ctx.cfg.vault)) {
+    const recall = await recallFromFelix({ cfg: ctx.cfg, dryRun: ctx.dryRun, client: ctx.client, agentPrivateKey: ctx.agentPrivateKey, log });
+    result.recall = recall.note;
+    if (recall.txHash) result.recallTx = recall.txHash;
   }
   if (ctx.dryRun) {
     result.note = "dry-run: settle not sent";

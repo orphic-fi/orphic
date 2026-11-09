@@ -1,3 +1,4 @@
+import type { JuniorIdleResult } from "./exec/juniorDeploy.js";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import type { JuniorStatus, JuniorWeeklyResult, SyncResult } from "./exec/junior.js";
@@ -29,6 +30,7 @@ export interface RunReport {
   weeklyClose?: { emissionsSold: number; accrueTx?: string; note: string };
   juniorSync?: SyncResult;
   juniorStatus?: JuniorStatus;
+  juniorIdle?: JuniorIdleResult;
   juniorWeekly?: JuniorWeeklyResult;
   orphPrice?: OrphPriceResult;
   drift?: DriftResult;

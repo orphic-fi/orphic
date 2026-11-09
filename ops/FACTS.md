@@ -94,6 +94,8 @@ Safe 1.4.1 and Zodiac Roles v2 are both on HyperEVM at canonical addresses with 
 
 ## 4. Elysium (Kinetiq's Hyperliquid L2)
 
+Mainnet read back 9 Nov 2026 04:42 UTC: RPC https://rpc.elysium.kinetiq.xyz, eth_chainId 0x1863d = 99901, block 2,929,938, base fee 0.1 gwei. Bridged USDC and bridge entry addresses still unknown.
+
 | Item | Status |
 |---|---|
 | Mainnet launch | 9 November 2026, confirmed by Kinetiq's blog. No time of day published. |

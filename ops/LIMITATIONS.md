@@ -32,3 +32,6 @@ Principal comes from the hourly index; a deposit made in the last hour shows und
 
 ## L8. Senior APY shows n/a until Morpho indexes the vault
 The Morpho API does not list the new Vault V2 yet; ask Morpho to index 0x3F7382bd8BFC6C548CAa2D7B4dfCe628B12A9759. Until then the senior card shows n/a with a note pointing at the Felix rate. The junior projected APY stays n/a until that input exists.
+
+## L9. Junior cover is paid from idle only
+`_coverSenior` pays from junior's idle USDC; it does not pull from venues. The keeper's settle-day recall exists for this reason. If Felix were illiquid on settle day, cover would be capped at idle (the 1% buffer plus whatever is idle) and the rest recognised at the next settle. Minted ERC-4626 positions in junior should stay small relative to the buffer until a permissionless cover path exists (v1).

@@ -7,6 +7,7 @@ import { decide, proposeAllocation } from "./engine/allocate.js";
 import { buildPlan, validatePlan } from "./exec/plan.js";
 import { executePlan, weeklyClose, type ExecContext } from "./exec/send.js";
 import { juniorWeekly, readJuniorStatus, syncSenior, type JuniorCtx } from "./exec/junior.js";
+import { manageJuniorIdle } from "./exec/juniorDeploy.js";
 import { sampleOrphPrice } from "./data/orph.js";
 import { checkSeniorDrift } from "./exec/drift.js";
 import { bookApy, humanSummary, writeReport, type RunReport } from "./report.js";
@@ -132,6 +133,19 @@ export async function run(opts: RunOptions, cfg: SeniorConfig = loadConfig(opts.
     juniorStatus = { enabled: true, note: `junior status read failed: ${(err as Error).message}` };
     warnings.push(juniorStatus.note);
   }
+  // Junior idle: deploy excess to Felix or pull back to the reserve. Skipped on weekly ticks, where the recall
+  // before settle takes precedence.
+  let juniorIdle: RunReport["juniorIdle"];
+  if (opts.weekly) {
+    juniorIdle = { checked: false, action: "skipped", note: "weekly tick: idle management deferred to the settle recall" };
+  } else {
+    try {
+      juniorIdle = await manageJuniorIdle({ ...jctx, log });
+    } catch (err) {
+      juniorIdle = { checked: false, action: "skipped", note: `junior idle management failed: ${(err as Error).message}` };
+      warnings.push(juniorIdle.note);
+    }
+  }
 
   // ORPH price record (Uniswap v4 has no on-chain TWAP). Never sends anything.
   let orphPrice: RunReport["orphPrice"];
@@ -188,6 +202,7 @@ export async function run(opts: RunOptions, cfg: SeniorConfig = loadConfig(opts.
     weeklyClose: weekly,
     juniorSync,
     juniorStatus,
+    juniorIdle,
     juniorWeekly: juniorWeeklyResult,
     orphPrice,
     drift,

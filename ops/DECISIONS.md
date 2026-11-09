@@ -105,3 +105,6 @@ Eight strategy agents, each with its own token; subscribing and launching route 
 
 ## D30. Portfolio tab (Claude, 8 Nov 22:50)
 Principal and earned need deposit history, and public HyperEVM RPCs cap eth_getLogs at 1000 blocks, so the Rotator workflow indexes vault events hourly into web/public/data/positions.json (state committed in keeper/ops/positions-state.json). Earned = live value of shares minus (deposits minus withdrawals and claimed exits).
+
+## D31. Junior idle management (Claude, 9 Nov 05:00)
+Hourly, the Rotator keeps a reserve idle in junior (max of exits owed, 1% of senior assets as a cover buffer, 5 USDC) and deploys the excess to Felix USDC through junior.execute; when idle falls under the reserve it pulls back. On the weekly tick it recalls everything from Felix before settle, so the cover bill and matured exits are always paid from idle. Rules used: USDC approve to Felix, Felix deposit (receiver pinned), Felix withdraw (receiver pinned). Fork-tested 9 Nov: all three pass the allowlist, NAV unchanged.

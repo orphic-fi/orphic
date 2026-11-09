@@ -15,17 +15,15 @@ export const hyperEvm = defineChain({
   },
 })
 
-// Chain id 99901 is UNVERIFIED. Kinetiq publishes the id and explorer at launch (9 Nov 2026).
-// 99901 comes from third-party chain registry PRs only. Confirm against the published value
-// before pointing anyone at mainnet.
-const elysiumRpc = (import.meta.env.VITE_ELYSIUM_RPC as string | undefined) || ''
+// Elysium mainnet: chain id 99901, read back from rpc.elysium.kinetiq.xyz on 9 Nov 2026 (eth_chainId 0x1863d).
+const elysiumRpc = (import.meta.env.VITE_ELYSIUM_RPC as string | undefined) || 'https://rpc.elysium.kinetiq.xyz'
 
 export const elysium = defineChain({
   id: 99901,
   name: 'Elysium',
   nativeCurrency: { name: 'HYPE', symbol: 'HYPE', decimals: 18 },
   rpcUrls: {
-    default: { http: elysiumRpc ? [elysiumRpc] : [] },
+    default: { http: [elysiumRpc] },
   },
   contracts: {
     multicall3: { address: '0xcA11bde05977b3631167028862bE2a173976CA11' },

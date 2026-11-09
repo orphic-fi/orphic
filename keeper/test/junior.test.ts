@@ -76,6 +76,9 @@ function fakeClient(values: { cover?: bigint; pending?: bigint; pps?: bigint; id
         case "lastSettle": return values.lastSettle ?? 0n;
         case "maxRate": return values.maxRate ?? 0n;
         case "totalAssets": return values.total ?? 0n;
+        // Felix position reads used by the settle-day recall: nothing parked in these tests
+        case "maxWithdraw": return 0n;
+        case "convertToAssets": return 0n;
         default: throw new Error(`unexpected ${args.functionName}`);
       }
     },
