@@ -1,0 +1,37 @@
+{
+  "name": "step 5: junior cap to 5,000 USDC",
+  "deployer": "0x2DBE1Ba83084dAF698Acea79CBAfe0493f42FecC",
+  "chainId": 999,
+  "steps": [
+    {
+      "title": "junior.setDepositCap(5,000 USDC)",
+      "what": "Caps total junior deposits at 5,000 USDC (81 already in, so about 4,919 of room). Owner only, instant, reversible.",
+      "to": "0x20D5F4f78858D257eA047EB5F47773E361697F2E",
+      "data": "0x86651203000000000000000000000000000000000000000000000000000000012a05f200",
+      "value": "0x0",
+      "gas": "0x13880",
+      "readbacks": [
+        {
+          "label": "depositCap == 5,000 USDC",
+          "to": "0x20D5F4f78858D257eA047EB5F47773E361697F2E",
+          "data": "0xdbd5edc7",
+          "expect": "0x000000000000000000000000000000000000000000000000000000012a05f200"
+        }
+      ]
+    }
+  ],
+  "verify": [
+    {
+      "label": "depositCap == 5,000 USDC",
+      "to": "0x20D5F4f78858D257eA047EB5F47773E361697F2E",
+      "data": "0xdbd5edc7",
+      "expect": "0x000000000000000000000000000000000000000000000000000000012a05f200"
+    },
+    {
+      "label": "deposits still open",
+      "to": "0x20D5F4f78858D257eA047EB5F47773E361697F2E",
+      "data": "0x60da3e83",
+      "expect": "0x0000000000000000000000000000000000000000000000000000000000000000"
+    }
+  ]
+}
