@@ -129,7 +129,7 @@ export default function RotatorPage() {
               View on Circuit
             </a>
             <p className={s.fine}>
-              You do not subscribe to the Rotator: depositing into either vault is what puts it to work for you. Its decisions are public, its code is in the open repo, and a second clock on GitHub checks every hour that it did its job and steps in with the permissionless calls if it did not.
+              You do not subscribe to the Rotator: depositing into either vault is what puts it to work for you. Its decisions are public, and a second clock on GitHub checks every hour that it did its job and steps in with the permissionless calls if it did not.
             </p>
           </div>
           <dl className={s.rows}>
@@ -138,7 +138,6 @@ export default function RotatorPage() {
               ['Junior vault', `${addresses.hyperEvm.junior.slice(0, 6)}…${addresses.hyperEvm.junior.slice(-4)}`],
               ['Can do', 'Allocate within caps, junior venues, settle'],
               ['Cannot do', 'Withdraw, transfer, approve elsewhere'],
-              ['Code', 'github.com/orphic-fi/orphic'],
             ].map(([k, v]) => (
               <div key={k} className={s.row}>
                 <dt>{k}</dt>
