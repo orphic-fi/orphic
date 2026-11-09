@@ -1,9 +1,27 @@
 import { Link, Navigate, useParams } from 'react-router-dom'
-import { circuitAgentUrl, shortId, useCircuitAgents } from '../lib/circuit'
-import { AgentIcon, ReturnValue } from './Agents'
-import s from './AgentPage.module.css'
+import { GROUP_BLURB, circuitAgentUrl, groupOf, shortId, useCircuitAgents, type AgentGroup, type CircuitAgent } from '../lib/circuit'
+import { fmtNum } from '../lib/format'
+import { ReturnValue } from './Agents'
+import s from './CircuitAgentPage.module.css'
 
-/** A Circuit catalogue agent. Everything shown is what Circuit's public API reports; the session itself runs on Circuit. */
+/** What to know before running each kind of agent. Plain words, three points, no numbers. */
+const BEFORE: Record<AgentGroup, string[]> = {
+  Yield: ['Earns a rate, not a return: it rises and falls with lending demand.', 'Your money sits in the venues the agent picks; their smart-contract risk is yours.', 'Slow and steady by design; a bad month is a lower rate, not a loss of principal.'],
+  Neutral: ['Hedged, so price mostly cancels; what you earn is funding or carry.', 'Funding can turn negative and the book pays instead of earns.', 'A sharp move can stress the hedged leg before it is rebalanced.'],
+  Liquidity: ['Earns pool fees while prices stay near where you provided.', 'A sharp move leaves you holding the losing side; fees may not cover it.', 'Works best in busy pools with real volume, not thin ones.'],
+  Long: ['A bet that prices go up; it pays in rallies and bleeds in drawdowns.', 'Leverage multiplies both directions and can be liquidated.', 'A good month says nothing about the next one.'],
+  Short: ['A bet that prices go down; it pays in drawdowns and bleeds in rallies.', 'Shorts pay funding when the crowd is also short, and squeezes are fast.', 'Recent green numbers come from a falling market, not from skill you can rely on.'],
+  Copy: ['You follow other wallets; their edge, their mistakes, their timing minus a delay.', 'Leaderboards favour survivors; last month’s winners rotate.', 'Size mismatch: their position may be small for them and large for you.'],
+  Farming: ['Built to farm Papertrade points with paired high-leverage trades.', 'Not a strategy; the point is the emission, and the trades can lose.', 'Treat as an experiment with money you can lose entirely.'],
+  Other: ['Read the agent’s own page on Circuit before running it.', 'Start on paper money if it is offered.', 'Set a cap you can afford to lose.'],
+}
+
+function pctLabel(v: string | null): string {
+  if (v === null) return 'no 30-day figure yet'
+  const n = Number(v)
+  return `${n > 0 ? '+' : ''}${fmtNum(n, 2)}% over the last 30 days`
+}
+
 export default function CircuitAgentPage() {
   const { id } = useParams()
   const agents = useCircuitAgents()
@@ -13,97 +31,108 @@ export default function CircuitAgentPage() {
         <Link to="/agents" className={s.back}>
           ← All agents
         </Link>
-        <p className={s.long}>Loading from Circuit.</p>
+        <p className={s.muted}>Loading from Circuit.</p>
       </div>
     )
   }
   const agent = agents.data?.find((a) => shortId(a.id) === id)
   if (!agent) return <Navigate to="/agents" replace />
+  const group = groupOf(agent)
+  const siblings = (agents.data ?? []).filter((a) => a.id !== agent.id && groupOf(a) === group).sort((x, y) => Number(y.return_percent ?? -1e9) - Number(x.return_percent ?? -1e9)).slice(0, 3)
+
   return (
     <div className={`wrap ${s.page}`}>
       <Link to="/agents" className={s.back}>
         ← All agents
       </Link>
-      <section className={s.split}>
-        <div className={s.left}>
-          <div className={s.head}>
-            <div className={s.identity}>
-              <span className={s.avatar}>
-                <AgentIcon d="M3 11l3-4 3 3 2-2 2 3" size={28} />
-              </span>
-              <div>
-                <h1 className={s.h1}>{agent.name}</h1>
-                <div className={s.tags}>
-                  <span className={s.tag}>{agent.official ? 'Circuit agent' : 'Community agent'}</span>
-                  <span className={s.tag}>{agent.paper ? 'Paper money available' : 'Real wallets only'}</span>
-                  <span className={s.tag}>{agent.people.toLocaleString('en-US')} running</span>
-                </div>
-              </div>
-            </div>
-            <div className={s.roiBlock}>
-              <ReturnValue value={agent.return_percent} className={s.roi} />
-              <div className="label">30d · live sessions · per Circuit</div>
-            </div>
+
+      <header className={s.head}>
+        <div className={s.titleBlock}>
+          <div className={s.kicker}>
+            <span>{group}</span>
+            <span className={s.dot} />
+            <span>{agent.official ? 'Built by Circuit' : 'Community built'}</span>
+            <span className={s.dot} />
+            <span>{agent.paper ? 'Paper money available' : 'Real wallets only'}</span>
           </div>
-
-          <p className={s.long}>{agent.description}</p>
-
-          <div className={s.chart}>
-            <div className={s.chartHead}>
-              <span className="label">Activity</span>
-              <span className="label">on Circuit</span>
-            </div>
-            <div className={s.chartEmpty}>
-              <span>Session history, fills and the full strategy write-up live on the agent's Circuit page. Orphic shows the catalogue; the engine is theirs.</span>
-            </div>
+          <h1 className={s.h1}>{agent.name}</h1>
+          <p className={s.lede}>{agent.description}</p>
+        </div>
+        <div className={s.numbers}>
+          <div>
+            <ReturnValue value={agent.return_percent} className={s.big} />
+            <div className={s.numLabel}>{pctLabel(agent.return_percent)}</div>
           </div>
-
-          <div className={s.tiles}>
-            {[
-              ['30d return', agent.return_percent === null ? 'n/a' : `${Number(agent.return_percent) > 0 ? '+' : ''}${Number(agent.return_percent).toFixed(2)}%`],
-              ['People running it', agent.people.toLocaleString('en-US')],
-              ['Creator', agent.official ? 'Circuit' : 'Community'],
-              ['Paper trading', agent.paper ? 'Yes' : 'No'],
-            ].map(([k, v]) => (
-              <div key={k} className={s.tile}>
-                <div className="label">{k}</div>
-                <div className={s.tileV}>{v}</div>
-              </div>
-            ))}
+          <div>
+            <div className={s.bigPlain}>{agent.people.toLocaleString('en-US')}</div>
+            <div className={s.numLabel}>{agent.people === 1 ? 'person running it now' : 'people running it now'}</div>
           </div>
         </div>
+      </header>
 
-        <aside className={s.panel}>
-          <div className={s.panelHead}>
-            <div>
-              <h2 className={s.h2}>Run it</h2>
-              <div className="label" style={{ marginTop: 8 }}>
-                Today on Circuit · through Orphic with $ORPH at launch
-              </div>
-            </div>
+      <section className={s.body}>
+        <div className={s.main}>
+          <div className={s.block}>
+            <h2 className={s.h2}>What this kind of agent does</h2>
+            <p>{GROUP_BLURB[group]}</p>
           </div>
-          <div className={s.form}>
-            <a href={circuitAgentUrl(agent.id)} target="_blank" rel="noreferrer" className={s.primary} style={{ textAlign: 'center', textDecoration: 'none' }}>
-              Open on Circuit
-            </a>
-            <button type="button" className={s.primary} disabled>
-              Subscribe · opens with the $ORPH launch
-            </button>
-            <p className={s.fine}>
-              On Circuit you sign in with a passkey, pick a wallet and start the agent{agent.paper ? ', on paper money first if you like' : ''}. The agent trades that wallet and can never withdraw from it. Subscribing through Orphic will do the same from this page, paid in $ORPH.
+          <div className={s.block}>
+            <h2 className={s.h2}>Before you run it</h2>
+            <ol className={s.list}>
+              {BEFORE[group].map((line) => (
+                <li key={line}>{line}</li>
+              ))}
+            </ol>
+          </div>
+          <div className={s.block}>
+            <h2 className={s.h2}>Where the number comes from</h2>
+            <p>
+              The return is Circuit's own figure: the realised result of this agent's live sessions over the last 30 days, across everyone running it. Orphic reads it from Circuit and does not adjust it. The strategy write-up, trade log and equity curve are on the agent's Circuit page.
             </p>
           </div>
-          <dl className={s.rows}>
-            {[
-              ['Agent id', shortId(agent.id)],
-              ['Runs on', 'Circuit engine'],
-              ['Return source', "Circuit's live sessions, 30 days"],
-            ].map(([k, v]) => (
-              <div key={k} className={s.row}>
-                <dt>{k}</dt>
-                <dd style={{ overflowWrap: 'anywhere' }}>{v}</dd>
+          {siblings.length > 0 && (
+            <div className={s.block}>
+              <h2 className={s.h2}>Others in {group}</h2>
+              <div className={s.siblings}>
+                {siblings.map((a: CircuitAgent) => (
+                  <Link key={a.id} to={`/agents/c/${shortId(a.id)}`} className={s.sib}>
+                    <span className={s.sibName}>{a.name}</span>
+                    <span className={s.sibDesc}>{a.description}</span>
+                    <ReturnValue value={a.return_percent} className={s.sibRet} />
+                  </Link>
+                ))}
               </div>
-            ))}
+            </div>
+          )}
+        </div>
+
+        <aside className={s.side}>
+          <a href={circuitAgentUrl(agent.id)} target="_blank" rel="noreferrer" className={s.primary}>
+            Run on Circuit
+          </a>
+          <button type="button" className={s.secondary} disabled>
+            Subscribe with $ORPH · at launch
+          </button>
+          <p className={s.fine}>
+            On Circuit you sign in with a passkey, pick a wallet{agent.paper ? ' or paper money' : ''}, and start it. The agent trades that wallet and can never withdraw from it. Stop it any time.
+          </p>
+          <dl className={s.facts}>
+            <div>
+              <dt>Runs on</dt>
+              <dd>Circuit engine</dd>
+            </div>
+            <div>
+              <dt>Creator</dt>
+              <dd>{agent.official ? 'Circuit' : 'Community'}</dd>
+            </div>
+            <div>
+              <dt>Paper trading</dt>
+              <dd>{agent.paper ? 'Yes' : 'No'}</dd>
+            </div>
+            <div>
+              <dt>Agent id</dt>
+              <dd className={s.mono}>{shortId(agent.id).slice(0, 8)}</dd>
+            </div>
           </dl>
         </aside>
       </section>

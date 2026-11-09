@@ -8,6 +8,9 @@ import { decimalCompare, decimalDivide, decimalMultiply, decimalSub, type RunFun
  * This is a test agent: it runs on paper money first. Nothing here is a rate promise; the result is whatever funding was.
  */
 const COIN = "HYPE";
+// HyperCore spot market HYPE/USDC and the HYPE token index, fixed at build time (spotMeta: @107 = [150, 0]).
+const SPOT_ASSET = "@107";
+const HYPE_TOKEN = "150";
 const HOURS_8 = 8;
 const HOURS_24 = 24;
 
@@ -32,10 +35,8 @@ export const run: RunFunction = async (agent) => {
   // 2. What the session holds.
   const h = agent.allocation.holdings;
   const usdc = h.find((x) => x.kind === "token" && x.network === "hypercore" && x.asset === "0");
-  const spotMarkets = await agent.hyperliquid.spotMarkets.list();
-  const spotMarket = spotMarkets.find((m) => m.baseSymbol === COIN && m.quoteSymbol === "USDC");
-  if (!spotMarket) return agent.log(`no ${COIN}/USDC spot market on HyperCore`, { error: true });
-  const spot = h.find((x) => x.kind === "token" && x.network === "hypercore" && x.asset === String(spotMarket.baseToken));
+  const spotMarket = { asset: SPOT_ASSET };
+  const spot = h.find((x) => x.kind === "token" && x.network === "hypercore" && x.asset === HYPE_TOKEN);
   const perp = h.find((x) => x.kind === "perp" && x.asset === COIN);
   const spotQty = spot?.quantity ?? "0";
   const perpQty = perp?.quantity ?? "0"; // negative when short
