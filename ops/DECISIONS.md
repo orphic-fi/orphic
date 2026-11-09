@@ -93,3 +93,15 @@ MetaMask refuses EIP-712 payloads whose domain chainId (1337 for Hyperliquid L1 
 
 ## D26. Live test split (Cashout, 8 Nov 16:47)
 Own-capital test follows the tranche shape: 316 USDC senior, 80 USDC junior, not junior-heavy.
+
+## D27. Site rebuilt in the chosen design (Cashout, 8 Nov evening)
+Homepage "Descent" (always dark, serif display, orbit mark, headline "Agentic USDC. Strategies on autopilot."), app in the "Statement" direction (paper default, dark mode toggle), vault cards in the swap-style deposit/receive shape with Deposit as the single primary action. Elysium is the header network label; HyperEVM appears only in the footer read-back. No status language for agents on the homepage; Steady/Boosted naming with Senior/Junior as the sub-label. Write "onchain".
+
+## D28. Junior cap instead of allowlist (Cashout, 8 Nov 20:20)
+No redeploy. Junior depositCap goes to 5,000 USDC (plan5, fork-tested, awaiting signature); raise later with one owner call. UI shows the cap, not an allowlist.
+
+## D29. Agent marketplace (Cashout, 8 Nov 21:25)
+Eight strategy agents, each with its own token; subscribing and launching route through $ORPH under the hood while the UI says "Subscribe". Anyone can launch an agent (rules compiled to a fixed onchain policy, token seeded and paired with $ORPH, creator earns a fee share). Pages ship as a preview: strategies final, ROI and subscribers show nothing until live fills, buttons disabled until the $ORPH launch. Contracts for this are not designed yet.
+
+## D30. Portfolio tab (Claude, 8 Nov 22:50)
+Principal and earned need deposit history, and public HyperEVM RPCs cap eth_getLogs at 1000 blocks, so the Rotator workflow indexes vault events hourly into web/public/data/positions.json (state committed in keeper/ops/positions-state.json). Earned = live value of shares minus (deposits minus withdrawals and claimed exits).

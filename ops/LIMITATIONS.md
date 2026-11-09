@@ -26,3 +26,9 @@ Cover is billed only for senior shares that existed at the last `syncSenior()` (
 
 ## L6. Agent allowlist is unaudited custom code
 About 40 lines. Covered by tests for the Morpho and ERC-4626 shapes used at launch. Zodiac Roles (audited) is the week-two replacement.
+
+## L7. Portfolio principal lags up to an hour
+Principal comes from the hourly index; a deposit made in the last hour shows under value but not yet under principal, so earned briefly reads negative by that amount. The page says so.
+
+## L8. Senior APY shows n/a until Morpho indexes the vault
+The Morpho API does not list the new Vault V2 yet; ask Morpho to index 0x3F7382bd8BFC6C548CAa2D7B4dfCe628B12A9759. Until then the senior card shows n/a with a note pointing at the Felix rate. The junior projected APY stays n/a until that input exists.
