@@ -46,7 +46,7 @@ export const ops = {
   settleHour: '09:00 ET',
   caps: {
     seniorUsd: 425_000,
-    juniorUsd: 75_000,
+    juniorUsd: 5_000,
   },
 }
 

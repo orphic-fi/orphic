@@ -17,7 +17,7 @@ All signed by Cashout from 0x2DBE through the signer page, 23 transactions in to
 Roles: senior owner and curator 0x9EDfDc92A46adbfa7b6189295376bEF4599c5F29 (MetaMask account, Safe later); allocators 0x2DBE and the Rotator key 0xC772F0ea992236dA71Fa30b8899D71B680866956; junior and router owner 0x2DBE1Ba83084dAF698Acea79CBAfe0493f42FecC; junior agent and router keeper 0xC772; treasury 0xba08A51bb1BB49E9840Eb55511E8880F95306A40.
 
 Senior state: management fee 158548959/s (0.5% a year) to junior, maxRate 63419583967/s, liquidity adapter Felix, absolute caps 425k on both adapters, relative caps 100%, 12 curator functions at timelock 259200 (3 days), setIsAllocator at 0.
-Junior state: seeded (1 USDC dead shares), depositCap 75k, walletCap 10k, 4 markets, 2 vaults (Felix, senior), deposits open since the live test.
+Junior state: seeded (1 USDC dead shares), depositCap 5,000 USDC (was 75k, lowered 9 Nov 04:0x UTC, plan5), walletCap 10k, 4 markets, 2 vaults (Felix, senior), deposits open since the live test.
 Live test (same day): 316 USDC into senior (all in Felix), 80 USDC into junior, 0.000001 ojUSDC exit queued for 16 Nov 00:00 UTC. seniorSupplyBase synced at 316 shares, cover 0.
 Hyperliquid L1: 0x2DBE has an approved API agent "orphic-deploy" 0x23354F1bcd8dD322778628696C3E9912588b6203 (valid 180 days) used to toggle big blocks; to be removed by Cashout. Big blocks are off.
 Gas: our transactions paid 0.1 gwei; at 22:00 UTC the base fee was 56 gwei, so the Rotator's gas-aware HOLD is working as intended.
