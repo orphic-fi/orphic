@@ -10,6 +10,7 @@ export default function Docs() {
     return <Navigate to={`/docs/${docPages[0].slug}`} replace />
   }
   return (
+    <div className="wrap" style={{ paddingTop: 32, paddingBottom: 56, flex: 1, width: "100%" }}>
     <div className={s.docs}>
       <nav className={s.nav} aria-label="Docs">
         <ol>
@@ -21,6 +22,7 @@ export default function Docs() {
         </ol>
       </nav>
       <article className={s.content} dangerouslySetInnerHTML={{ __html: page.html }} />
+    </div>
     </div>
   )
 }

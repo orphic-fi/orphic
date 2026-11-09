@@ -1,0 +1,292 @@
+.page.page {
+  padding-top: 28px;
+  padding-bottom: 64px;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.back {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--muted);
+}
+
+.head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 32px;
+  flex-wrap: wrap;
+}
+
+.h1 {
+  margin: 0;
+  font-family: var(--serif);
+  font-weight: 400;
+  font-size: 44px;
+  line-height: 1;
+  letter-spacing: -0.02em;
+}
+
+.h2 {
+  margin: 0;
+  font-family: var(--serif);
+  font-weight: 400;
+  font-size: 24px;
+  line-height: 1;
+}
+
+.lead {
+  margin: 14px 0 0;
+  font-size: 16px;
+  line-height: 1.5;
+  color: var(--muted);
+  max-width: 58ch;
+}
+
+.steps {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.pill {
+  font-size: 13px;
+  font-weight: 500;
+  padding: 9px 12px;
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  color: var(--muted);
+}
+
+.pillOn {
+  background: var(--accent);
+  color: var(--accent-ink);
+  border-color: var(--accent);
+}
+
+.split {
+  display: grid;
+  grid-template-columns: minmax(0, 7fr) minmax(0, 5fr);
+  gap: 24px;
+  align-items: start;
+}
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+}
+
+.card {
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  padding: 24px;
+  background: var(--panel);
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.card label,
+.block {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+.step {
+  display: flex;
+  gap: 14px;
+  align-items: flex-start;
+}
+
+.num {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  border: 1px solid var(--ink);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 26px;
+  text-align: center;
+  flex: none;
+}
+
+.row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.rule3 {
+  display: grid;
+  grid-template-columns: 1.2fr 0.8fr 1fr;
+  gap: 12px;
+}
+
+.in,
+.sel {
+  font-size: 15px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 12px 14px;
+  background: var(--panel-inner);
+  color: var(--text);
+  width: 100%;
+  outline: none;
+}
+
+.in:focus,
+.sel:focus {
+  border-color: var(--ink);
+}
+
+.fine {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--muted);
+}
+
+.preview {
+  position: sticky;
+  top: 24px;
+  gap: 16px;
+}
+
+.previewCard {
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  padding: 20px;
+  background: var(--panel-inner);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.pTop {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.orb {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  border: 1px solid var(--line-strong);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.pName {
+  font-family: var(--serif);
+  font-weight: 400;
+  font-size: 28px;
+  line-height: 1;
+}
+
+.pRule {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--muted);
+}
+
+.params {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+  padding: 12px 0;
+}
+
+.pk {
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.pv {
+  font-size: 12px;
+  font-weight: 500;
+  margin-top: 6px;
+  overflow-wrap: anywhere;
+}
+
+.pFoot {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.pBtn {
+  font-size: 13px;
+  font-weight: 500;
+  border: 1px solid var(--ink);
+  border-radius: 999px;
+  padding: 9px 12px;
+}
+
+.rows {
+  margin: 0;
+}
+
+.drow {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 11px 0;
+  border-top: 1px solid var(--line);
+  font-size: 14px;
+}
+
+.drow dt {
+  color: var(--muted);
+}
+
+.drow dd {
+  margin: 0;
+  text-align: right;
+}
+
+.primary {
+  font-size: 16px;
+  font-weight: 500;
+  background: var(--accent);
+  color: var(--accent-ink);
+  border-radius: 6px;
+  padding: 18px;
+  width: 100%;
+}
+
+.primary:disabled {
+  opacity: 0.45;
+}
+
+@media (max-width: 900px) {
+  .split {
+    grid-template-columns: 1fr;
+  }
+  .preview {
+    position: static;
+  }
+  .h1 {
+    font-size: 34px;
+  }
+}
+
+@media (max-width: 560px) {
+  .row,
+  .rule3 {
+    grid-template-columns: 1fr;
+  }
+}

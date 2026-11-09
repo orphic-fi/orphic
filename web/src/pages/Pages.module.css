@@ -1,57 +1,68 @@
-.head {
+.page.page {
+  padding-top: 40px;
+  padding-bottom: 56px;
   display: flex;
   flex-direction: column;
-  margin-bottom: 28px;
+  gap: 28px;
 }
 
-.headText {
-  min-width: 0;
+.hero {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 32px;
+  flex-wrap: wrap;
 }
 
-.notice {
-  font-family: var(--mono);
-  font-size: 11.5px;
-  color: var(--muted);
-  padding: 10px 0 0;
-  margin: 0 0 10px;
+.h1 {
+  margin: 0;
+  font-family: var(--serif);
+  font-weight: 400;
+  font-size: 44px;
+  line-height: 1.05;
+  letter-spacing: -0.02em;
+  max-width: 15ch;
 }
 
-@media (min-width: 721px) {
-  .head {
-    flex-direction: row;
-    align-items: center;
-    justify-content: space-between;
-    gap: 32px;
-  }
+.kpis {
+  display: grid;
+  grid-template-columns: repeat(3, auto);
+  gap: 36px;
+  text-align: right;
 }
 
-.square {
-  display: inline-block;
-  width: 7px;
-  height: 7px;
-  margin-right: 8px;
-  vertical-align: 0;
-  background: var(--faint);
-}
-
-.squareLive {
-  background: var(--sen);
-}
-
-.squareSoon {
-  background: var(--jun);
+.kpi {
+  font-family: var(--serif);
+  font-weight: 400;
+  font-size: 26px;
+  line-height: 1.1;
+  margin-top: 6px;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
 }
 
 .grid {
   display: grid;
   grid-template-columns: 1fr;
-  gap: 16px;
+  gap: 24px;
 }
 
-@media (min-width: 860px) {
+@media (min-width: 900px) {
   .grid {
     grid-template-columns: 1fr 1fr;
+  }
+}
+
+@media (max-width: 700px) {
+  .h1 {
+    font-size: 34px;
+  }
+  .kpis {
+    text-align: left;
     gap: 20px;
+  }
+  .kpi {
+    font-size: 22px;
   }
 }
 
@@ -60,7 +71,7 @@
 }
 
 .title {
-  font-family: var(--mono);
+  font-family: var(--sans);
   font-size: 15px;
   font-weight: 400;
   margin: 0;
@@ -90,7 +101,7 @@
 }
 
 .lines li span:first-child {
-  font-family: var(--mono);
+  font-family: var(--sans);
   font-size: 11px;
   letter-spacing: 0.06em;
   text-transform: uppercase;
@@ -121,7 +132,7 @@
 .table th {
   text-align: left;
   font-weight: 400;
-  font-family: var(--mono);
+  font-family: var(--sans);
   font-size: 11px;
   letter-spacing: 0.06em;
   text-transform: uppercase;
@@ -142,7 +153,7 @@
 }
 
 .mono {
-  font-family: var(--mono);
+  font-family: var(--sans);
   font-variant-numeric: tabular-nums;
 }
 
@@ -176,7 +187,7 @@
   }
   .table td::before {
     content: attr(data-label);
-  font-family: var(--mono);
+  font-family: var(--sans);
   font-size: 11px;
   letter-spacing: 0.06em;
   text-transform: uppercase;
@@ -202,7 +213,7 @@
 }
 
 .kv li span:first-child {
-  font-family: var(--mono);
+  font-family: var(--sans);
   font-size: 11px;
   letter-spacing: 0.06em;
   text-transform: uppercase;
@@ -211,7 +222,7 @@
 }
 
 .kv li span:last-child {
-  font-family: var(--mono);
+  font-family: var(--sans);
   overflow-wrap: anywhere;
 }
 
@@ -224,7 +235,7 @@
 
 .foot {
   margin-top: 24px;
-  font-family: var(--mono);
+  font-family: var(--sans);
   font-size: 11.5px;
   color: var(--faint);
 }

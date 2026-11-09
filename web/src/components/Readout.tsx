@@ -21,11 +21,11 @@ export default function Readout() {
 
   return (
     <p className={s.line} aria-live="polite">
-      <span className={rpcOk ? '' : s.bad}>hyperevm {hyperEvm.id} {rpcOk ? 'ok' : 'rpc unreachable'}</span>
+      <span className={rpcOk ? '' : s.bad}>Vaults settle on HyperEVM{rpcOk ? '' : ' · rpc unreachable'}</span>
       <span className={s.sep}>·</span>
       <span>block {blockShown !== null ? blockFmt.format(Math.round(blockShown)) : block.isLoading ? 'loading' : 'n/a'}</span>
       <span className={s.sep}>·</span>
-      <span className={apiOk || morpho.isLoading ? '' : s.bad}>morpho api {apiOk ? (morpho.data?.unlisted ? 'not indexing this vault yet' : 'ok') : morpho.isLoading ? 'loading' : 'unreachable'}</span>
+      <span className={apiOk || morpho.isLoading ? '' : s.bad}>Morpho API {apiOk ? (morpho.data?.unlisted ? 'not indexing this vault yet' : 'ok') : morpho.isLoading ? 'loading' : 'unreachable'}</span>
       <span className={s.sep}>·</span>
       <span>read {fmtClockUtc(readAt)} UTC</span>
     </p>

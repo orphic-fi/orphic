@@ -35,28 +35,55 @@
 }
 
 :root {
-  --field: #0b0c0e;
-  --panel: rgba(255, 255, 255, 0.025);
-  --panel-inner: rgba(255, 255, 255, 0.05);
-  --line: rgba(255, 255, 255, 0.08);
-  --line-strong: rgba(255, 255, 255, 0.16);
-  --text: #e4e6ea;
-  --muted: #878c95;
-  --faint: #5c6069;
-  --accent: #8fc8ff;
-  --accent-ink: #0b0c0e;
-  --sen: #9ad7b5;
-  --jun: #f0c27a;
-  --amber: #f0c27a;
-  --danger: #e0a0a0;
+  /* Paper, default (light). */
+  --field: #f4f1ea;
+  --panel: #faf8f3;
+  --panel-inner: #ffffff;
+  --panel-soft: #f4f1ea;
+  --line: #e3ddd0;
+  --line-strong: #c9c2b2;
+  --ink: #1d1c1a;
+  --text: #1d1c1a;
+  --muted: #6f685a;
+  --faint: #b5ad9c;
+  --accent: #1d1c1a;
+  --accent-ink: #f4f1ea;
+  --ok: #3a8f5c;
+  --sen: #3a8f5c;
+  --jun: #b8762a;
+  --amber: #b8762a;
+  --danger: #a8463a;
 
-  --mono: 'Commit Mono', 'SF Mono', 'JetBrains Mono', 'IBM Plex Mono', ui-monospace, Menlo, monospace;
+  --serif: 'Newsreader', 'Iowan Old Style', 'Palatino Linotype', Georgia, serif;
+  --mono: 'Commit Mono', 'SF Mono', 'JetBrains Mono', ui-monospace, Menlo, monospace;
   --sans: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
   --motion: 240ms;
 
-  --max: 960px;
-  --gutter: 16px;
+  --max: 1120px;
+  --gutter: 24px;
+  --radius: 8px;
 
+  color-scheme: light;
+}
+
+:root[data-theme='dark'] {
+  --field: #0b0b0f;
+  --panel: #111117;
+  --panel-inner: #16161d;
+  --panel-soft: #0e0e13;
+  --line: #23222c;
+  --line-strong: #3a3946;
+  --ink: #ece9e1;
+  --text: #ece9e1;
+  --muted: #8b8894;
+  --faint: #4a4956;
+  --accent: #ece9e1;
+  --accent-ink: #0b0b0f;
+  --ok: #7fd0a8;
+  --sen: #7fd0a8;
+  --jun: #e0b071;
+  --amber: #e0b071;
+  --danger: #ff9a9a;
   color-scheme: dark;
 }
 
@@ -72,6 +99,7 @@ body {
   padding: 0;
   background: var(--field);
   color: var(--text);
+  transition: background-color var(--motion);
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
 }
@@ -79,26 +107,13 @@ body {
 body {
   font-family: var(--sans);
   font-feature-settings: 'tnum' 1, 'ss01' 1, 'cv11' 1;
-  font-size: 14px;
+  font-size: 15px;
   line-height: 1.5;
+  transition: background-color var(--motion), color var(--motion);
   min-width: 320px;
   overflow-x: hidden;
 }
 
-/* Fixed structure behind the glass: a faint 48px grid and one off-centre light in the accent colour. */
-body::before {
-  content: '';
-  position: fixed;
-  inset: 0;
-  z-index: -1;
-  pointer-events: none;
-  background-image:
-    radial-gradient(ellipse 720px 520px at 68% 12%, rgba(143, 200, 255, 0.05), transparent 70%),
-    linear-gradient(rgba(255, 255, 255, 0.025) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(255, 255, 255, 0.025) 1px, transparent 1px);
-  background-size: auto, 48px 48px, 48px 48px;
-  background-position: 0 0, -1px -1px, -1px -1px;
-}
 
 #root {
   min-height: 100vh;
@@ -112,7 +127,7 @@ input {
 }
 
 input::placeholder {
-  font-family: var(--mono);
+  color: var(--faint);
 }
 
 a {
@@ -156,11 +171,18 @@ input {
 
 /* Row labels: Inter has no small caps, so these are tracked uppercase in the mono. */
 .label {
-  font-family: var(--mono);
-  font-size: 11px;
-  letter-spacing: 0.06em;
+  font-family: var(--sans);
+  font-weight: 500;
+  font-size: 12px;
+  letter-spacing: 0.04em;
   text-transform: uppercase;
   color: var(--muted);
+}
+
+.serif {
+  font-family: var(--serif);
+  font-weight: 400;
+  letter-spacing: -0.02em;
 }
 
 .sr-only {

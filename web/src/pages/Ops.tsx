@@ -37,6 +37,7 @@ export default function Ops() {
   const paused = typeof r(6) === 'boolean' ? (r(6) as boolean) : ops.paused
 
   return (
+    <div className="wrap" style={{ paddingTop: 32, paddingBottom: 56, flex: 1, width: "100%" }}>
     <>
       <div className={s.pageHead}>
         <h1 className={s.title}>Status</h1>
@@ -137,5 +138,6 @@ export default function Ops() {
         </li>
       </ul>
     </>
+    </div>
   )
 }

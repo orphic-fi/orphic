@@ -18,7 +18,7 @@ concurrency:
   cancel-in-progress: false
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   tick:
@@ -76,6 +76,21 @@ jobs:
         with:
           path: keeper/ops/price-samples.jsonl
           key: orph-price-samples-${{ github.run_id }}
+
+      # Position index for the Portfolio tab: folds vault events into per-address totals and commits the result
+      # (the public RPC caps eth_getLogs at 1000 blocks, so the site cannot rebuild history on the fly).
+      - name: Index positions
+        if: always()
+        run: npx tsx src/indexer.ts
+
+      - name: Commit position index
+        if: always()
+        working-directory: .
+        run: |
+          git config user.name "orphic-rotator"
+          git config user.email "rotator@orphic.fi"
+          git add keeper/ops/positions-state.json web/public/data/positions.json
+          git diff --cached --quiet || (git commit -m "index: positions through block $(python3 -c "import json;print(json.load(open('keeper/ops/positions-state.json'))['lastBlock'])") [skip ci]" && git push)
 
       - name: Upload report
         if: always()

@@ -1,25 +1,42 @@
-import CapRing from '../components/CapRing'
-import Readout from '../components/Readout'
 import VaultArea from '../components/VaultArea'
 import { useVault } from '../hooks/useVault'
+import { fmtUsd } from '../lib/format'
+import { settleAtOrAfter } from '../lib/schedule'
 import s from './Pages.module.css'
+
+function nextSettleLabel(lastSettle: number | undefined) {
+  const now = Math.floor(Date.now() / 1000)
+  const t = settleAtOrAfter(now + 1, lastSettle)
+  return new Intl.DateTimeFormat('en-GB', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC' }).format(new Date(t * 1000))
+}
 
 export default function Vaults() {
   const senior = useVault('senior')
   const junior = useVault('junior')
+  const total = senior.tvl !== null && junior.tvl !== null ? senior.tvl + junior.tvl : null
   return (
-    <>
-      <div className={s.head}>
-        <div className={s.headText}>
-          <p className={s.notice}>Unaudited. Capped. Owner can pause deposits, never withdrawals. Basis agent not active.</p>
-          <Readout />
+    <div className={`wrap ${s.page}`}>
+      <section className={s.hero}>
+        <h1 className={s.h1}>Agentic USDC vaults built on Morpho and Hyperliquid.</h1>
+        <div className={s.kpis}>
+          <div>
+            <div className="label">Total deposited</div>
+            <div className={s.kpi}>{fmtUsd(total)}</div>
+          </div>
+          <div>
+            <div className="label">Next settle</div>
+            <div className={s.kpi}>{nextSettleLabel(junior.lastSettle)}</div>
+          </div>
+          <div>
+            <div className="label">Status</div>
+            <div className={s.kpi}>Capped · unaudited</div>
+          </div>
         </div>
-        <CapRing senior={senior.capUsed} junior={junior.capUsed} />
-      </div>
+      </section>
       <div className={s.grid}>
         <VaultArea kind="senior" state={senior} />
         <VaultArea kind="junior" state={junior} />
       </div>
-    </>
+    </div>
   )
 }

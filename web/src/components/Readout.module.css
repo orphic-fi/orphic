@@ -1,8 +1,7 @@
 .line {
-  margin: 0 0 24px;
-  font-family: var(--mono);
+  margin: 0;
   font-variant-numeric: tabular-nums;
-  font-size: 12px;
+  font-size: 13px;
   color: var(--muted);
   display: flex;
   flex-wrap: wrap;

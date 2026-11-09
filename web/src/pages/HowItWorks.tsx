@@ -32,6 +32,7 @@ export default function HowItWorks() {
   }, [])
 
   return (
+    <div className="wrap" style={{ paddingTop: 32, paddingBottom: 56, flex: 1, width: "100%" }}>
     <>
       <div className={s.pageHead}>
         <h1 className={s.title}>How it works</h1>
@@ -59,5 +60,6 @@ export default function HowItWorks() {
       </ul>
       <iframe ref={ref} className={s.frame} src="/flow/how-it-works.html" title="Flow of funds" style={{ height }} scrolling="no" />
     </>
+    </div>
   )
 }

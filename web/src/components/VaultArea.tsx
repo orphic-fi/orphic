@@ -16,17 +16,17 @@ import s from './VaultArea.module.css'
 
 const COPY = {
   senior: {
-    name: 'senior',
-    chip: 'paid first',
+    name: 'Senior',
+    chip: 'Paid first · withdraw any time',
     desc: 'USDC in a Morpho vault we curate. Paid first each week. Withdraw to available liquidity any time.',
-    apyLabel: 'est. APY, live from Morpho',
+    apyLabel: 'est. APY · Morpho 7d',
     secondary: 'Withdraw',
   },
   junior: {
-    name: 'junior',
-    chip: 'first loss',
-    desc: "First loss. 20% of your deposit staked in ORPH. Exit after 7 days' notice, priced at the first weekly settle after the notice ends.",
-    apyLabel: 'est. APY, after first settle',
+    name: 'Junior',
+    chip: 'First loss · 7-day exit · capped',
+    desc: "First loss. Exit after 7 days' notice, priced at the first weekly settle after the notice ends.",
+    apyLabel: 'projected · est.',
     secondary: 'Request exit',
   },
 } as const
@@ -259,84 +259,77 @@ export default function VaultArea({ kind, state: v }: { kind: VaultKind; state: 
     <>{lastAction ?? 'transaction'} sent</>
   ) : null
 
-  const apyText = v.apy === null ? (kind === 'junior' ? 'n/a until first settle' : v.apyLoading ? 'loading' : NA) : fmtPct(apyShown)
-
-  // Stepper state.
-  const steps: { label: string; done: boolean }[] = [
-    { label: 'approve usdc', done: amount !== null && v.allowance !== undefined && v.allowance >= amount },
-    ...(kind === 'junior' ? [{ label: 'approve orph', done: amount !== null && (!stakeRequired || (v.stake.orphAllowance !== undefined && v.stake.orphAllowance >= orphNeeded)) }] : []),
-    { label: 'deposit', done: confirmed?.action === 'deposit' },
-  ]
-  const currentStep = steps.findIndex((st) => !st.done)
-
-  const summary = (() => {
-    if (amount === null || mode !== 'deposit') return null
-    const usdcText = `${fmtUnits(amount, USDC_DECIMALS)} USDC`
-    if (kind === 'senior') {
-      return `You deposit ${usdcText} and receive about ${previewShares !== null ? fmtUnits(previewShares, SHARE_DECIMALS) : NA} ${SENIOR_SYMBOL}`
-    }
-    const stakeText = stakeRequired ? `, stake ${fmtUnits(orphNeeded, ORPH_DECIMALS, 0)} ORPH (returned on exit)` : ''
-    return `You deposit ${usdcText}${stakeText} and receive ${previewShares !== null ? fmtUnits(previewShares, SHARE_DECIMALS) : NA} ${JUNIOR_SYMBOL}`
-  })()
 
   const lockedWorth = open && v.pricePerShare !== undefined ? Number((open.shares * v.pricePerShare) / 10n ** 18n) / 10 ** SHARE_DECIMALS : null
 
+  const receiveText = (() => {
+    if (mode !== 'deposit') return null
+    if (amount === null) return '0.00'
+    return previewShares !== null ? fmtUnits(previewShares, SHARE_DECIMALS) : NA
+  })()
+  const rateText =
+    kind === 'senior'
+      ? v.seniorSharesPerUsdc !== undefined && v.seniorSharesPerUsdc > 0n
+        ? `1 ${SENIOR_SYMBOL} = ${fmtNum(Number((10n ** BigInt(SHARE_DECIMALS) * 10n ** 6n) / v.seniorSharesPerUsdc) / 1e6, 2)} USDC`
+        : `1 ${SENIOR_SYMBOL} = 1.00 USDC`
+      : v.pricePerShare !== undefined
+        ? `1 ${JUNIOR_SYMBOL} = ${fmtNum(Number(v.pricePerShare) / 1e18, 2)} USDC`
+        : `1 ${JUNIOR_SYMBOL} = 1.00 USDC`
+  const balanceText = isConnected && LIVE && v.usdcBalance !== undefined ? fmtUnits(v.usdcBalance, USDC_DECIMALS) : NA
+  const juniorApyLabel = kind === 'junior' ? 'projected · est.' : 'est. APY · Morpho 7d'
+
   return (
     <section className={s.area} data-kind={kind} aria-labelledby={`${kind}-name`}>
-      <div className={s.head}>
-        <h2 id={`${kind}-name`} className={s.name}>
-          {copy.name}
-        </h2>
-        <span className={s.chip}>{copy.chip}</span>
-      </div>
-      <p className={s.desc}>{copy.desc}</p>
+      <header className={s.head}>
+        <div>
+          <h2 id={`${kind}-name`} className={s.name}>
+            {copy.name}
+          </h2>
+          <div className={s.sub}>{copy.chip}</div>
+        </div>
+        <div className={s.apyBlock} title={readTitle(v.apyReadAt)}>
+          <div className={`${s.apy} ${v.apy === null ? s.apyNa : ''}`} aria-live="polite">
+            {v.apy === null ? NA : fmtPct(apyShown)}
+          </div>
+          <div className={s.sub}>{juniorApyLabel}</div>
+        </div>
+      </header>
 
-      <div className={s.apyBlock}>
-        <div className={`${s.apy} ${v.apy === null ? s.apyNa : ''}`} aria-live="polite" title={readTitle(v.apyReadAt)}>
-          {apyText}
-        </div>
-        <div className={s.apyLabel}>{copy.apyLabel}</div>
-        {kind === 'senior' && !LIVE && <div className={s.caption}>{addresses.hyperEvm.referenceLabel}</div>}
-        {kind === 'senior' && v.apyError && <div className={s.caption}>Morpho API unreachable. Retrying.</div>}
-        {kind === 'senior' && !v.apyError && v.apy === null && v.apyUnlisted && <div className={s.caption}>APY shows once Morpho indexes the vault. Senior assets currently sit in Felix USDC; see the Felix rate for a reference.</div>}
-        {kind === 'senior' && LIVE && v.cover && (
-          <div className={s.cover}>
-            Cover in progress: {fmtUsd(v.cover.usd, 2)} being recognised, about {Number.isFinite(v.cover.hours) ? fmtNum(v.cover.hours, 0) : NA} hours to
-            full. Withdrawing before then realises the gap.
-            <div className={s.coverBar} role="presentation">
-              <div className={s.coverFill} style={{ width: `${(coverProgress * 100).toFixed(4)}%` }} />
-            </div>
+      {kind === 'senior' && !v.apyError && v.apy === null && v.apyUnlisted && (
+        <p className={s.caption}>APY shows once Morpho indexes the vault. Senior assets currently sit in Felix USDC; see the Felix rate for a reference.</p>
+      )}
+      {kind === 'senior' && v.apyError && <p className={s.caption}>Morpho API unreachable. Retrying.</p>}
+      {kind === 'senior' && LIVE && v.cover && (
+        <div className={s.cover}>
+          Cover in progress: {fmtUsd(v.cover.usd, 2)} being recognised, about {Number.isFinite(v.cover.hours) ? fmtNum(v.cover.hours, 0) : NA} hours to full.
+          Withdrawing before then realises the gap.
+          <div className={s.coverBar} role="presentation">
+            <div className={s.coverFill} style={{ width: `${(coverProgress * 100).toFixed(4)}%` }} />
           </div>
-        )}
-      </div>
+        </div>
+      )}
 
-      <dl className={s.rows}>
-        <div className={s.row}>
-          <dt className="label">TVL</dt>
-          <dd title={readTitle(v.chainReadAt)}>{fmtUsd(tvlShown)}</dd>
-        </div>
-        <div className={`${s.row} ${s.capRow}`}>
-          <div className={s.capTop}>
-            <dt className="label">Cap</dt>
-            <dd title={readTitle(v.chainReadAt)}>
-              {fmtUsd(v.cap)} <span style={{ color: 'var(--muted)' }}>({capUsedShown === null ? NA : fmtPct(capUsedShown)} used)</span>
-            </dd>
-          </div>
-          <div className={s.bar} role="presentation">
-            <div className={s.barFill} style={{ width: `${((capUsedShown ?? 0) * 100).toFixed(2)}%` }} />
-          </div>
-        </div>
-        <div className={s.row}>
-          <dt className="label">Your balance</dt>
-          <dd title={readTitle(v.chainReadAt)}>
-            {isConnected && LIVE && balanceShown !== null
-              ? kind === 'junior'
-                ? `${fmtNum(sharesShown)} ${JUNIOR_SYMBOL} (${fmtUsd(balanceShown, 2)})`
-                : fmtUsd(balanceShown, 2)
-              : NA}
-          </dd>
-        </div>
-      </dl>
+      <div className={s.tabs} role="tablist" aria-label={`${copy.name} action`}>
+        {(['deposit', 'exit'] as Mode[]).map((m) => (
+          <button
+            key={m}
+            type="button"
+            role="tab"
+            aria-selected={mode === m}
+            className={`${s.tab} ${mode === m ? s.tabOn : ''}`}
+            disabled={!LIVE}
+            onClick={() => {
+              if (mode === m) return
+              setMode(m)
+              setRaw('')
+              setConfirmed(null)
+              reset()
+            }}
+          >
+            {m === 'deposit' ? 'Deposit' : kind === 'senior' ? 'Withdraw' : 'Exit'}
+          </button>
+        ))}
+      </div>
 
       <form
         className={s.form}
@@ -345,130 +338,97 @@ export default function VaultArea({ kind, state: v }: { kind: VaultKind; state: 
           if (!primaryDisabled) onPrimary()
         }}
       >
-        {mode === 'exit' && kind === 'senior' && (
-          <p className={s.avail} title={readTitle(v.chainReadAt)}>
-            Available now: <b>{v.maxWithdraw !== undefined ? fmtUsd(Number(v.maxWithdraw) / 10 ** USDC_DECIMALS, 2) : NA}</b>
-          </p>
-        )}
-
         {mode === 'exit' && kind === 'junior' && open ? (
-          <>
-            <p className={s.locked}>
-              {fmtUnits(open.shares, SHARE_DECIMALS)} {JUNIOR_SYMBOL} locked, worth about {lockedWorth !== null ? fmtUsd(lockedWorth, 2) : NA} at the last price
-            </p>
-            <p className={s.lockedSub}>Exit requested. Claim opens after the settle that prices it.</p>
-          </>
+          <div className={s.field}>
+            <div className="label">Exit requested</div>
+            <div className={s.fieldRow}>
+              <span className={s.big}>{fmtUnits(open.shares, SHARE_DECIMALS)}</span>
+              <span className={s.chip}>
+                <Coin kind="junior" />
+                {JUNIOR_SYMBOL}
+              </span>
+            </div>
+            <div className={s.fieldSub}>
+              <span>Worth about {lockedWorth !== null ? fmtUsd(lockedWorth, 2) : NA} at the last price</span>
+              <span>Claim opens after the settle that prices it</span>
+            </div>
+          </div>
         ) : (
-          <label className={s.inputWrap}>
-            <span className="sr-only">{mode === 'deposit' ? 'Amount to deposit' : kind === 'senior' ? 'Amount to withdraw' : 'Shares to exit'}</span>
-            <input
-              className={s.input}
-              inputMode="decimal"
-              autoComplete="off"
-              placeholder="0.00"
-              value={raw}
-              disabled={!LIVE}
-              onChange={(e) => {
-                const next = e.target.value.replace(',', '.')
-                if (next === '' || amountRegex(inputDecimals).test(next)) setRaw(next)
-              }}
-            />
-            <span className={s.unit}>{mode === 'exit' && kind === 'junior' ? JUNIOR_SYMBOL : 'USDC'}</span>
-            <button type="button" className={s.max} onClick={setMax} disabled={!LIVE || !isConnected}>
-              MAX
-            </button>
-          </label>
+          <div className={s.field}>
+            <label className="label" htmlFor={`${kind}-amount`}>
+              {mode === 'deposit' ? 'You deposit' : kind === 'senior' ? 'You withdraw' : 'You exit'}
+            </label>
+            <div className={s.fieldRow}>
+              <input
+                id={`${kind}-amount`}
+                className={s.big}
+                inputMode="decimal"
+                autoComplete="off"
+                placeholder="0.00"
+                value={raw}
+                disabled={!LIVE}
+                onChange={(e) => {
+                  const next = e.target.value.replace(',', '.')
+                  if (next === '' || amountRegex(inputDecimals).test(next)) setRaw(next)
+                }}
+              />
+              <span className={s.chip}>
+                {mode === 'exit' && kind === 'junior' ? <Coin kind="junior" /> : <Coin kind="usdc" />}
+                {mode === 'exit' && kind === 'junior' ? JUNIOR_SYMBOL : 'USDC'}
+              </span>
+            </div>
+            <div className={s.fieldSub}>
+              <span>
+                {mode === 'deposit'
+                  ? amount !== null
+                    ? fmtUsd(Number(amount) / 10 ** USDC_DECIMALS, 2)
+                    : '$0.00'
+                  : kind === 'senior'
+                    ? `Available now ${v.maxWithdraw !== undefined ? fmtUsd(Number(v.maxWithdraw) / 10 ** USDC_DECIMALS, 2) : NA}`
+                    : `Held ${fmtNum(sharesShown)} ${JUNIOR_SYMBOL}`}
+              </span>
+              <span>
+                {mode === 'deposit' ? `Balance ${balanceText}` : ''}
+                <button type="button" className={s.max} onClick={setMax} disabled={!LIVE || !isConnected}>
+                  Max
+                </button>
+              </span>
+            </div>
+          </div>
         )}
 
-        <div className={s.hint}>
-          {mode === 'deposit' ? (
-            <>
-              {routing}
-              {kind === 'junior' && (
-                <>
-                  <br />
-                  {!LIVE ? (
-                    <>Required ORPH: n/a until Monday</>
-                  ) : v.stake.token === ZERO ? (
-                    <>No stake required yet</>
-                  ) : stakeRequired && amount !== null ? (
-                    <>
-                      Requires <span className={s.hintStrong}>{fmtUnits(orphNeeded, ORPH_DECIMALS)} ORPH</span> ({v.stakeBps / 100}% of deposit at the
-                      current rate)
-                    </>
-                  ) : stakeRequired ? (
-                    <>
-                      Stake rate: {fmtUnits(v.stake.perAsset, ORPH_DECIMALS, 0)} ORPH per USDC ({v.stakeBps / 100}% of deposit)
-                    </>
-                  ) : (
-                    <>Required ORPH: loading</>
-                  )}
-                  {stakeEtaLine && (
-                    <>
-                      <br />
-                      {stakeEtaLine}
-                    </>
-                  )}
-                  {walletCap !== null && (
-                    <>
-                      <br />
-                      Week-one limit: {fmtUsd(Number(walletCap) / 10 ** USDC_DECIMALS)} per wallet
-                    </>
-                  )}
-                </>
-              )}
-              {insufficient && (
-                <>
-                  <br />
-                  <span className={s.warn}>Amount exceeds wallet balance</span>
-                </>
-              )}
-              {orphShort && (
-                <>
-                  <br />
-                  <span className={s.warn}>Not enough ORPH in wallet: {fmtUnits(v.stake.orphBalance, ORPH_DECIMALS)} ORPH available</span>
-                </>
-              )}
-              {overWalletCap && (
-                <>
-                  <br />
-                  <span className={s.warn}>Exceeds week-one limit by {fmtUnits(amount! - walletRoom!, USDC_DECIMALS)} USDC</span>
-                </>
-              )}
-            </>
-          ) : kind === 'senior' ? (
-            aboveAvailable ? (
-              <span className={s.warn}>Above available liquidity. The rest is in Morpho markets; try a smaller amount or again later.</span>
-            ) : (
-              <>Withdraws from available liquidity on HyperEVM</>
-            )
-          ) : open ? null : (
-            <>Priced at the first weekly settle after your 7-day notice ends. Claim after that settle</>
-          )}
-        </div>
-
-        {mode === 'deposit' && LIVE && (
-          <>
-            <div className={`${s.summary} ${summary ? '' : s.summaryEmpty}`} aria-live="polite">
-              {summary ?? 'Enter an amount to see what you receive'}
+        {mode === 'deposit' && (
+          <div className={`${s.field} ${s.fieldSoft}`}>
+            <div className="label">You receive</div>
+            <div className={s.fieldRow}>
+              <span className={`${s.big} ${amount === null ? s.bigMuted : ''}`}>{receiveText}</span>
+              <span className={s.chip}>
+                <Coin kind={kind} />
+                {kind === 'senior' ? SENIOR_SYMBOL : JUNIOR_SYMBOL}
+              </span>
             </div>
-            <ol className={s.steps} aria-label="Deposit steps">
-              {steps.map((st, i) => (
-                <li key={st.label} className={`${s.step} ${st.done ? s.stepDone : i === currentStep ? s.stepCurrent : ''}`}>
-                  {i + 1} {st.label}
-                </li>
-              ))}
-            </ol>
-          </>
+            <div className={s.fieldSub}>
+              <span>{rateText}</span>
+              <span>
+                {kind === 'senior'
+                  ? 'Withdraw any time'
+                  : v.stake.token === ZERO || v.stake.token === undefined
+                    ? 'No stake needed yet'
+                    : stakeRequired && amount !== null
+                      ? `Stake ${fmtUnits(orphNeeded, ORPH_DECIMALS, 0)} ORPH, returned on exit`
+                      : `Stake ${fmtUnits(v.stake.perAsset, ORPH_DECIMALS, 0)} ORPH per USDC`}
+              </span>
+            </div>
+          </div>
         )}
 
         {mode === 'exit' && kind === 'junior' && (
           <ol className={s.timeline} aria-label="Exit timeline">
             {[
-              { label: 'request', date: open ? fmtDateUtc(open.readyAt - 7 * 86_400) : 'today' },
-              { label: 'notice ends', date: fmtDateUtc(readyAt) },
-              { label: 'priced at settle', date: fmtDateUtc(settleAt) },
-              { label: 'claim', date: claimable ? 'now' : `after ${fmtDateUtc(settleAt)}` },
+              { label: 'Request', date: open ? fmtDateUtc(open.readyAt - 7 * 86_400) : 'today' },
+              { label: 'Notice ends', date: fmtDateUtc(readyAt) },
+              { label: 'Priced at settle', date: fmtDateUtc(settleAt) },
+              { label: 'Claim', date: claimable ? 'now' : `after ${fmtDateUtc(settleAt)}` },
             ].map((stop, i) => (
               <li key={stop.label} className={`${s.stop} ${open && i < exitStop ? s.stopDone : i === exitStop && (open || i === 0) ? s.stopCurrent : ''}`}>
                 <span className={s.stopLabel}>{stop.label}</span>
@@ -478,30 +438,93 @@ export default function VaultArea({ kind, state: v }: { kind: VaultKind; state: 
           </ol>
         )}
 
-        <div className={s.actions}>
-          <button type="submit" className={s.primary} disabled={primaryDisabled}>
-            {primaryLabel}
-          </button>
-          <button
-            type="button"
-            className={s.secondary}
-            disabled={!LIVE}
-            onClick={() => {
-              setMode(mode === 'deposit' ? 'exit' : 'deposit')
-              setRaw('')
-              setConfirmed(null)
-              reset()
-            }}
-          >
-            {mode === 'deposit' ? copy.secondary : 'Deposit'}
-          </button>
-        </div>
-        <div className={s.status} aria-live="polite">
-          {status}
+        <button type="submit" className={s.primary} disabled={primaryDisabled}>
+          {primaryLabel}
+        </button>
+
+        <div className={s.hint} aria-live="polite">
+          {status ? (
+            status
+          ) : mode === 'deposit' ? (
+            <>
+              {isConnected ? (v.onElysium ? 'Deposits from Elysium bridge to HyperEVM first, about a minute' : v.onHyperEvm ? '' : routing) : routing}
+              {insufficient && <span className={s.warn}>Amount exceeds wallet balance</span>}
+              {orphShort && <span className={s.warn}>Not enough ORPH in wallet: {fmtUnits(v.stake.orphBalance, ORPH_DECIMALS)} available</span>}
+              {overWalletCap && <span className={s.warn}>Exceeds this wallet's limit by {fmtUnits(amount! - walletRoom!, USDC_DECIMALS)} USDC</span>}
+              {stakeEtaLine && <span>{stakeEtaLine}</span>}
+            </>
+          ) : kind === 'senior' ? (
+            aboveAvailable ? (
+              <span className={s.warn}>Above available liquidity. The rest is in Morpho markets; try a smaller amount or again later.</span>
+            ) : (
+              'Withdraws from available liquidity on HyperEVM'
+            )
+          ) : open ? null : (
+            'Priced at the first weekly settle after your 7-day notice ends'
+          )}
           {DEMO && !status && <span style={{ color: 'var(--faint)' }}>demo fixtures, no wallet</span>}
         </div>
       </form>
+
+      <dl className={s.rows}>
+        <div className={s.row}>
+          <dt>Deposited</dt>
+          <dd title={readTitle(v.chainReadAt)}>
+            {fmtUsd(tvlShown)} <span className={s.dim}>/ {fmtUsd(v.cap)}</span>
+          </dd>
+        </div>
+        {kind === 'senior' ? (
+          <div className={s.row}>
+            <dt>Allocation</dt>
+            <dd>Felix USDC 100%</dd>
+          </div>
+        ) : (
+          <div className={s.row}>
+            <dt>Stake</dt>
+            <dd>{v.stake.token === ZERO || v.stake.token === undefined ? 'None yet' : `${fmtUnits(v.stake.perAsset, ORPH_DECIMALS, 0)} ORPH per USDC`}</dd>
+          </div>
+        )}
+        <div className={s.row}>
+          <dt>Your position</dt>
+          <dd title={readTitle(v.chainReadAt)}>
+            {isConnected && LIVE && balanceShown !== null
+              ? `${fmtNum(kind === 'junior' ? sharesShown : balanceShown)} ${kind === 'senior' ? SENIOR_SYMBOL : JUNIOR_SYMBOL} · ${fmtUsd(balanceShown, 2)}`
+              : NA}
+          </dd>
+        </div>
+        {kind === 'senior' ? (
+          <div className={s.row}>
+            <dt>Senior fee to junior</dt>
+            <dd>0.5% a year</dd>
+          </div>
+        ) : (
+          <div className={s.row}>
+            <dt>Exit queued</dt>
+            <dd>{open ? `${fmtUnits(open.shares, SHARE_DECIMALS)} · ready ${fmtDateUtc(open.readyAt)}` : 'None'}</dd>
+          </div>
+        )}
+        <div className={s.row}>
+          <dt>Cap used</dt>
+          <dd>
+            {capUsedShown === null ? NA : fmtPct(capUsedShown)}
+            <span className={s.bar} role="presentation">
+              <span className={s.barFill} style={{ width: `${((capUsedShown ?? 0) * 100).toFixed(2)}%` }} />
+            </span>
+          </dd>
+        </div>
+      </dl>
     </section>
+  )
+}
+
+function Coin({ kind }: { kind: 'usdc' | 'senior' | 'junior' }) {
+  if (kind === 'usdc') return <span className={s.coin}>$</span>
+  return (
+    <span className={s.coin}>
+      <svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+        <path d="M11.2 2.9A6 6 0 1 0 13.1 4.8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+      </svg>
+    </span>
   )
 }
 
