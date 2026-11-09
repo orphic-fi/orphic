@@ -143,3 +143,11 @@ Foundry 1.5.1 (forge, cast, anvil, chisel) installed; HyperEVM RPC, Ethereum and
 ## 9. Decision needed from you (one)
 
 Senior's USDC sleeve mix given constraints 3 and 4. My recommendation: Vault V2, caps as in section 7 (kHYPE 77% 30%, WHYPE 77% 30%, kHYPE 62.5% 20%, UBTC 77% 10%, 10% idle), 0.5% management fee to junior, 0 performance fee, 3-day timelock after setup. The alternative is to add the MorphoVaultV1 adapter and park a slice in Felix USDC v1.1 for diversification across curators, at the cost of paying Felix's 10% fee on that slice.
+
+## Settle rehearsal, 9 Nov 2026 (forge fork of mainnet at block 50832164)
+Warped to 15 Nov 21:32 UTC (lastSettle + 7d + 5m). accrueInterest minted 0.0302 osUSDC of fee shares to junior (worth 0.030 USDC);
+recall from Felix brought 76.06 USDC back to idle (81.06 idle); settle set pricePerShare 1.0011729 (from 1.0000) and lastSettle to the
+warp time; settle again reverted TooSoon. The dust exit (1e6 share-wei, requested 8 Nov, notice ends 16 Nov 00:00 UTC) stayed pending at
+that settle and was priced at the following one (15 + 7 days), owed 0 USDC by rounding; claimExit cleared it. Test: contracts/test/fork/SettleRehearsal.t.sol
+(run with --fork-url; excluded from the default suite). Keeper change the same day: the junior settle check runs every hourly tick
+(the contract allows settle from lastSettle + 7d - 1h), so the first live settle lands at the 22:07 UTC tick on Sunday 15 Nov, not a week late.

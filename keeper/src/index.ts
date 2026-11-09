@@ -147,11 +147,21 @@ export async function run(opts: RunOptions, cfg: SeniorConfig = loadConfig(opts.
     juniorStatus = { enabled: true, note: `junior status read failed: ${(err as Error).message}` };
     warnings.push(juniorStatus.note);
   }
-  // Junior idle: deploy excess to Felix or pull back to the reserve. Skipped on weekly ticks, where the recall
-  // before settle takes precedence.
+  // Junior settle runs on the first tick after the contract allows it (lastSettle + 7d - 1h), whatever the hour: the
+  // seed settle happened on a Sunday evening, so a Sunday-midnight-only window would skip a week. juniorWeekly is a
+  // read until settle is due; when due it recalls junior's Felix position and settles.
+  let juniorWeeklyResult: RunReport["juniorWeekly"];
+  try {
+    juniorWeeklyResult = await juniorWeekly(jctx);
+  } catch (err) {
+    juniorWeeklyResult = { checked: false, note: `junior weekly failed: ${(err as Error).message}` };
+    log(juniorWeeklyResult.note);
+  }
+  // Junior idle: deploy excess to Felix or pull back to the reserve. Skipped on a settle tick, where the recall
+  // before settle takes precedence (the next hourly tick redeploys the excess).
   let juniorIdle: RunReport["juniorIdle"];
-  if (opts.weekly) {
-    juniorIdle = { checked: false, action: "skipped", note: "weekly tick: idle management deferred to the settle recall" };
+  if (opts.weekly || juniorWeeklyResult?.settleDue) {
+    juniorIdle = { checked: false, action: "skipped", note: "settle tick: idle management deferred to the next hour" };
   } else {
     try {
       juniorIdle = await manageJuniorIdle({ ...jctx, log });
@@ -176,16 +186,8 @@ export async function run(opts: RunOptions, cfg: SeniorConfig = loadConfig(opts.
 
   // Rule 7.
   let weekly: RunReport["weeklyClose"];
-  let juniorWeeklyResult: RunReport["juniorWeekly"];
   const weeklyDue = opts.weekly || isWeeklyCloseWindow(opts.now);
   if (weeklyDue) {
-    // Junior maturity check and settle run before the senior close logic.
-    try {
-      juniorWeeklyResult = await juniorWeekly(jctx);
-    } catch (err) {
-      juniorWeeklyResult = { checked: false, note: `junior weekly failed: ${(err as Error).message}` };
-      log(juniorWeeklyResult.note);
-    }
     try {
       weekly = await weeklyClose(ctx);
     } catch (err) {
