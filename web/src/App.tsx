@@ -1,6 +1,8 @@
 import { BrowserRouter, Route, Routes } from 'react-router-dom'
 import Layout from './components/Layout'
 import AgentPage from './pages/AgentPage'
+import CircuitAgentPage from './pages/CircuitAgentPage'
+import RotatorPage from './pages/RotatorPage'
 import Agents from './pages/Agents'
 import Docs from './pages/Docs'
 import Home from './pages/Home'
@@ -21,6 +23,8 @@ export default function App() {
           <Route path="/how-it-works" element={<HowItWorks />} />
           <Route path="/agents" element={<Agents />} />
           <Route path="/agents/launch" element={<LaunchAgent />} />
+          <Route path="/agents/orphic-rotator" element={<RotatorPage />} />
+          <Route path="/agents/c/:id" element={<CircuitAgentPage />} />
           <Route path="/agents/:slug" element={<AgentPage />} />
           <Route path="/docs" element={<Docs />} />
           <Route path="/docs/:slug" element={<Docs />} />

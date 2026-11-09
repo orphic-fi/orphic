@@ -109,13 +109,19 @@ jobs:
         continue-on-error: true
         run: npx tsx src/indexer.ts
 
+      # Public Rotator summary for the agents page (numbers from the latest report; only written in keeper mode).
+      - name: Publish Rotator summary
+        if: always() && vars.ROTATOR_MODE != 'watchdog'
+        continue-on-error: true
+        run: test -f ops/reports/latest.json && npx tsx src/publishRotator.ts
+
       - name: Commit position index
         if: always()
         working-directory: .
         run: |
           git config user.name "orphic-rotator"
           git config user.email "rotator@orphic.fi"
-          git add keeper/ops/positions-state.json web/public/data/positions.json
+          git add keeper/ops/positions-state.json web/public/data/positions.json web/public/data/rotator.json
           git diff --cached --quiet || (git commit -m "index: positions through block $(python3 -c "import json;print(json.load(open('keeper/ops/positions-state.json'))['lastBlock'])") [skip ci]" && git push)
 
       - name: Upload report
