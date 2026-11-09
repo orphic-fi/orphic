@@ -296,13 +296,13 @@ export default function VaultArea({ kind, state: v, initialMode = 'deposit' }: {
       </header>
 
       {kind === 'senior' && v.apyDerived && v.apy !== null && (
-        <p className={s.caption}>Estimate: Felix USDC's current rate on the share of senior sitting there, minus the 0.5% fee. Morpho shows the vault's own rate once it indexes it.</p>
+        <p className={s.caption}>Estimate: Felix USDC's current rate on the share of senior sitting there, minus the 0.5% fee. Not yet included: senior's 50% share of protocol fees, which starts with the $ORPH pool. Morpho shows the vault's own rate once it indexes it.</p>
       )}
       {kind === 'senior' && !v.apyError && v.apy === null && v.apyUnlisted && <p className={s.caption}>Rate unavailable right now: Morpho does not index this vault yet and the Felix rate could not be read.</p>}
       {kind === 'junior' && v.projection && (
         <p className={s.caption}>
           Estimate from today's balances: senior's 0.5% fee spread over junior ({fmtUsd(v.projection.seniorAssets)} on {fmtUsd(v.projection.juniorAssets)}) gives {fmtPct(v.projection.feeShare)}
-          {v.projection.idleShare < 1 ? `, plus ${fmtPct(v.projection.deployedYield)} from junior USDC deployed to Felix` : '; junior USDC is idle until the agent deploys it'}. Moves with every deposit.
+          {v.projection.idleShare < 1 ? `, plus ${fmtPct(v.projection.deployedYield)} from junior USDC deployed to Felix` : '; junior USDC is idle until the agent deploys it'}. Not yet included: junior's 25% share of protocol fees. Moves with every deposit.
         </p>
       )}
       {kind === 'senior' && v.apyError && <p className={s.caption}>Morpho API unreachable. Retrying.</p>}
