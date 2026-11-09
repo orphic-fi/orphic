@@ -31,7 +31,7 @@ const COPY = {
   },
 } as const
 
-type Mode = 'deposit' | 'exit'
+export type Mode = 'deposit' | 'exit'
 
 function amountRegex(decimals: number) {
   return new RegExp(`^\\d*(\\.\\d{0,${decimals}})?$`)
@@ -51,11 +51,11 @@ function readTitle(ms: number | undefined) {
   return ms ? `read ${fmtClockUtc(ms)} UTC` : undefined
 }
 
-export default function VaultArea({ kind, state: v }: { kind: VaultKind; state: VaultState }) {
+export default function VaultArea({ kind, state: v, initialMode = 'deposit' }: { kind: VaultKind; state: VaultState; initialMode?: Mode }) {
   const copy = COPY[kind]
   const { address: account, isConnected, chainId } = useSession()
   const { switchChain, isPending: switching } = useSwitchChain()
-  const [mode, setMode] = useState<Mode>('deposit')
+  const [mode, setMode] = useState<Mode>(initialMode)
   const [raw, setRaw] = useState('')
   const [lastAction, setLastAction] = useState<string | null>(null)
 

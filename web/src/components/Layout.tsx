@@ -100,7 +100,7 @@ export default function Layout() {
             ) : (
               <ConnectButton />
             )}
-            <ThemeToggle />
+            {!home && <ThemeToggle />}
           </div>
         </div>
       </header>

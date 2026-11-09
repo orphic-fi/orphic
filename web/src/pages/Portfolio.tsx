@@ -108,7 +108,7 @@ export default function Portfolio() {
             <Link to="/vaults" className={s.btn}>
               Deposit
             </Link>
-            <Link to="/vaults" className={s.ghost}>
+            <Link to="/vaults?senior=withdraw" className={s.ghost}>
               Withdraw
             </Link>
           </div>
@@ -136,7 +136,7 @@ export default function Portfolio() {
             <Link to="/vaults" className={s.btn}>
               Deposit
             </Link>
-            <Link to="/vaults" className={s.ghost}>
+            <Link to="/vaults?junior=exit" className={s.ghost}>
               Request exit
             </Link>
           </div>

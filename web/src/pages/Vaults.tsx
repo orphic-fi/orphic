@@ -1,3 +1,4 @@
+import { useSearchParams } from 'react-router-dom'
 import VaultArea from '../components/VaultArea'
 import { useVault } from '../hooks/useVault'
 import { fmtUsd } from '../lib/format'
@@ -13,6 +14,10 @@ function nextSettleLabel(lastSettle: number | undefined) {
 export default function Vaults() {
   const senior = useVault('senior')
   const junior = useVault('junior')
+  // /vaults?senior=withdraw or ?junior=exit opens that card on its exit side (Portfolio links use this).
+  const [params] = useSearchParams()
+  const seniorMode = params.get('senior') === 'withdraw' ? 'exit' : 'deposit'
+  const juniorMode = params.get('junior') === 'exit' ? 'exit' : 'deposit'
   const total = senior.tvl !== null && junior.tvl !== null ? senior.tvl + junior.tvl : null
   return (
     <div className={`wrap ${s.page}`}>
@@ -34,8 +39,8 @@ export default function Vaults() {
         </div>
       </section>
       <div className={s.grid}>
-        <VaultArea kind="senior" state={senior} />
-        <VaultArea kind="junior" state={junior} />
+        <VaultArea key={`s-${seniorMode}`} kind="senior" state={senior} initialMode={seniorMode} />
+        <VaultArea key={`j-${juniorMode}`} kind="junior" state={junior} initialMode={juniorMode} />
       </div>
     </div>
   )
