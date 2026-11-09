@@ -134,6 +134,17 @@ export async function syncSenior(ctx: JuniorCtx): Promise<SyncResult> {
     log("syncSenior: junior is a placeholder; skipped");
     return { called: false, note: "junior placeholder; skipped" };
   }
+  // Only worth a transaction when senior's share supply moved since junior last synced; otherwise the call is a no-op.
+  if (ctx.client && !isPlaceholder(ctx.cfg.vault)) {
+    const [base, supply] = await Promise.all([
+      ctx.client.readContract({ address: ctx.cfg.junior as Address, abi: juniorAbi, functionName: "seniorSupplyBase" }),
+      ctx.client.readContract({ address: ctx.cfg.vault as Address, abi: vaultV2Abi, functionName: "totalSupply" }),
+    ]);
+    if (base === supply) {
+      log(`syncSenior: senior supply unchanged (${supply.toString()}), nothing to sync`);
+      return { called: false, note: "senior supply unchanged; syncSenior not needed" };
+    }
+  }
   if (ctx.dryRun) {
     log("syncSenior: would call junior.syncSenior() (dry-run)");
     return { called: false, note: "dry-run: syncSenior not sent" };

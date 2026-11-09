@@ -26,6 +26,18 @@ export function cfg(overrides: Partial<SeniorConfig> = {}): SeniorConfig {
   return structuredClone({ ...base, ...overrides, constraints: { ...base.constraints, ...(overrides.constraints ?? {}) }, economics: { ...base.economics, ...(overrides.economics ?? {}) } });
 }
 
+/** The pre-deploy shape of the config: every Orphic address still a placeholder. Tests of placeholder handling use this. */
+export function placeholderCfg(overrides: Partial<SeniorConfig> = {}): SeniorConfig {
+  const c = cfg(overrides);
+  c.vault = "0xTODO";
+  c.junior = "0xTODO";
+  c.orph = "0xTODO";
+  c.poolId = "0xTODO";
+  c.adapters = { ...c.adapters, morphoMarketV1: "0xTODO", morphoVaultV1: "0xTODO" };
+  delete c.felixAdapter;
+  return c;
+}
+
 export function markets(): MarketData[] {
   const raw = fixture<{ data: { markets: { items: ApiMarketItem[] } } }>("markets-api.json");
   return parseApiMarkets(raw.data.markets.items);

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { PublicClient } from "viem";
 import { checkSeniorDrift, expectedLiquidityAdapter } from "../src/exec/drift.js";
-import { cfg } from "./helpers.js";
+import { cfg, placeholderCfg } from "./helpers.js";
 
 const VAULT = "0x1000000000000000000000000000000000000001";
 const FELIX_ADAPTER = "0x1000000000000000000000000000000000000003";
@@ -19,7 +19,7 @@ function fakeClient(maxRate: bigint, liquidityAdapter: string) {
 }
 
 function liveCfg() {
-  const c = cfg();
+  const c = placeholderCfg();
   c.vault = VAULT;
   c.adapters.morphoVaultV1 = FELIX_ADAPTER;
   return c;
@@ -28,7 +28,7 @@ function liveCfg() {
 describe("senior config drift", () => {
   it("expected maxRate in config is 63419583967 and the expected adapter falls back to the MorphoVaultV1 adapter", () => {
     expect(cfg().expectedMaxRate).toBe("63419583967");
-    expect(expectedLiquidityAdapter(cfg())).toBeUndefined();
+    expect(expectedLiquidityAdapter(placeholderCfg())).toBeUndefined();
     expect(expectedLiquidityAdapter(liveCfg())).toBe(FELIX_ADAPTER);
     const c = liveCfg();
     c.felixAdapter = OTHER;
@@ -36,7 +36,7 @@ describe("senior config drift", () => {
   });
 
   it("skips while the vault is a placeholder", async () => {
-    const res = await checkSeniorDrift(cfg(), fakeClient(0n, OTHER), () => undefined);
+    const res = await checkSeniorDrift(placeholderCfg(), fakeClient(0n, OTHER), () => undefined);
     expect(res.checked).toBe(false);
     expect(res.alerts).toEqual([]);
   });

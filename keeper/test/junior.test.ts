@@ -14,7 +14,7 @@ import {
 } from "../src/exec/junior.js";
 import { parseArgs } from "../src/config.js";
 import { run } from "../src/index.js";
-import { cfg, fakeFetch } from "./helpers.js";
+import { cfg, fakeFetch, placeholderCfg } from "./helpers.js";
 
 const WAD = 10n ** 18n;
 const USDC = 10n ** 6n;
@@ -87,7 +87,7 @@ function fakeClient(values: { cover?: bigint; pending?: bigint; pps?: bigint; id
 describe("junior: dry-run behaviour", () => {
   it("skips everything while junior is a placeholder", async () => {
     const log: string[] = [];
-    const c = cfg();
+    const c = placeholderCfg();
     const sync = await syncSenior({ cfg: c, dryRun: true, log: (l) => log.push(l) });
     const status = await readJuniorStatus({ cfg: c, dryRun: true });
     const weekly = await juniorWeekly({ cfg: c, dryRun: true });
@@ -98,7 +98,7 @@ describe("junior: dry-run behaviour", () => {
   });
 
   it("reads cover status and logs that syncSenior would be called", async () => {
-    const c = cfg();
+    const c = placeholderCfg();
     c.junior = JUNIOR;
     const maxRate = (WAD / 10n) / (365n * 24n * 3600n);
     const { client, calls } = fakeClient({ cover: 1_000n * USDC, maxRate, total: 2_000_000n * USDC });
@@ -142,7 +142,7 @@ describe("junior: dry-run behaviour", () => {
   it("a full tick carries junior fields in the report", async () => {
     const opts = parseArgs(["--dry-run", "--fixture", "test/fixtures/state.json", "--weekly"], {}, new Date("2026-11-07T12:00:00Z"));
     opts.opsDir = `${process.env.TMPDIR ?? "/tmp"}/orphic-junior-${Date.now()}`;
-    const report = await run(opts, cfg(), { fetchFn: fakeFetch(), client: null });
+    const report = await run(opts, placeholderCfg(), { fetchFn: fakeFetch(), client: null });
     expect(report.juniorSync?.called).toBe(false);
     expect(report.juniorStatus?.enabled).toBe(false);
     expect(report.juniorWeekly?.checked).toBe(false);

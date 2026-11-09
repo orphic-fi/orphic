@@ -1,5 +1,6 @@
 // Minimal ABI fragments of Morpho Vault V2 used by the keeper.
 export const vaultV2Abi = [
+  { type: "function", name: "totalSupply", stateMutability: "view", inputs: [], outputs: [{ name: "", type: "uint256" }] },
   {
     type: "function",
     name: "allocate",

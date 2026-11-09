@@ -10,14 +10,14 @@ import { assertCanBroadcast, executePlan, weeklyClose } from "../src/exec/send.j
 import { proposeAllocation } from "../src/engine/allocate.js";
 import { buildPlan } from "../src/exec/plan.js";
 import { run } from "../src/index.js";
-import { K62, cfg, fakeFetch, felix, fixturesDir, markets, state } from "./helpers.js";
+import { K62, cfg, fakeFetch, felix, fixturesDir, markets, state, placeholderCfg } from "./helpers.js";
 
 const PK = `0x${"11".repeat(32)}` as const;
 const tmp = () => mkdtempSync(join(tmpdir(), "orphic-keeper-"));
 
 describe("safety: broadcasting", () => {
   it("refuses to broadcast while any address is a placeholder", () => {
-    const c = cfg();
+    const c = placeholderCfg();
     expect(hasPlaceholders(c)).toEqual(["vault", "adapters.morphoMarketV1", "adapters.morphoVaultV1"]);
     expect(() => assertCanBroadcast(c, PK, true)).toThrow(/placeholder/);
     expect(() => assertCanBroadcast(c, PK, false)).toThrow(/not in live mode/);
@@ -34,7 +34,7 @@ describe("safety: broadcasting", () => {
   });
 
   it("live execution with placeholders throws before touching the chain", async () => {
-    const c = cfg();
+    const c = placeholderCfg();
     const s = state({}, c);
     const p = proposeAllocation({ cfg: c, markets: markets(), felix: felix(), state: s });
     const { plan } = buildPlan(c, s, p);
