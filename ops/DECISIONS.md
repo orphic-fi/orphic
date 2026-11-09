@@ -114,3 +114,15 @@ Junior's `pricePerShare` only moves at the weekly settle, so between settles the
 
 ## D33. No Elysium entry contract until the exit path is settled (9 Nov 2026)
 Elysium mainnet's canonical withdrawal to HyperEVM is about 5.5 days. An entry contract that pulls user USDC from Elysium to the vaults would strand deposits in the bridge for most of a week. Decision: deposits happen on HyperEVM; the site says so and links the canonical bridge with both durations; Kinetiq asked whether a fast bridge is planned. Revisit when they answer.
+
+## D34. The Rotator moves to Circuit; GitHub becomes the watchdog (9 Nov 2026)
+Tested on a HyperEVM fork with Circuit's local engine: identical decisions to the GitHub keeper, privileged sends go through
+junior.execute and senior allocate as before, and a wallet without the roles is refused at simulation. The agent key moves from
+a GitHub Actions secret to Circuit's passkey-guarded wallet; the blast radius is unchanged because the contracts, not the runner,
+bound what the key can do. GitHub keeps the hourly clock as a watchdog with permissionless fallbacks and alerts, so Circuit being
+down degrades to "the vaults still settle and accrue, and we are told", never to "nothing happens". The session's starting asset
+is HYPE on Elysium so the agent is an Elysium agent in Circuit's catalogue; its transactions target HyperEVM where the vaults are.
+Shadow week first (dryRun=true), then the two role transactions.
+
+## D35. $ORPH, junior staking and the agent marketplace launch on Elysium (9 Nov 2026)
+Decided with Cashout. Vault settlement stays on HyperEVM until a lending venue exists on Elysium.

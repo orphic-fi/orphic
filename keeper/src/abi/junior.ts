@@ -1,5 +1,9 @@
 // JuniorVault read and write fragments used by the keeper.
 export const juniorAbi = [
+  { type: "function", name: "agent", stateMutability: "view", inputs: [], outputs: [{ type: "address" }] },
+  { type: "function", name: "totalAssets", stateMutability: "view", inputs: [], outputs: [{ type: "uint256" }] },
+  { type: "function", name: "coverInProgress", stateMutability: "view", inputs: [], outputs: [{ type: "uint256" }] },
+  { type: "function", name: "depositsPaused", stateMutability: "view", inputs: [], outputs: [{ type: "bool" }] },
   { type: "function", name: "syncSenior", stateMutability: "nonpayable", inputs: [], outputs: [] },
   { type: "function", name: "settle", stateMutability: "nonpayable", inputs: [], outputs: [] },
   { type: "function", name: "coverInProgress", stateMutability: "view", inputs: [], outputs: [{ name: "", type: "uint256" }] },

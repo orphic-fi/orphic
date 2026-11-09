@@ -150,3 +150,27 @@ https://orphic.fi/ops/deploy.html loads `/ops/planN.json`, one plan per step. Cl
 Big blocks: `createVaultV2` (about 4.5M gas) and `createMorphoMarketV1AdapterV2` (about 2.5M) exceed the 2M small-block limit. The page's "sign big blocks on" button signs the `evmUserModify` L1 action with the wallet (EIP-712, phantom agent, verified against the exchange API: the API recovers the signer address from the page's payload). The signer must exist on Hyperliquid L1 (`userRole` not `missing`): receive HYPE on the Hyperliquid app first, then Transfer to EVM. Turn big blocks off after step 1.
 
 Step 1 plan (plan1.json, 7 signatures): createVaultV2 -> senior 0x3F7382bd8BFC6C548CAa2D7B4dfCe628B12A9759; multicall(setCurator,setName,setSymbol); market adapter -> 0x7b00b45e77afe7e07a2C9910FF9c5CE538386fb1; Felix adapter -> 0x0cdfdbC51744Ba1ed88bB8752098105fb43f37AC; three multicalls (allocators, adapters, caps). Addresses are CREATE2 and do not depend on nonce. Replayed on fork 8 Nov: all 7 succeed, 6 read-backs match.
+
+## Rotator on Circuit (added 9 Nov 2026)
+
+The keeper's decision code is bundled into `agents/orphic-rotator` and runs as a Circuit agent; Circuit's wallet signs.
+The GitHub Action keeps running hourly as the watchdog (`ROTATOR_MODE=watchdog`): invariants, heartbeat, permissionless
+fallbacks (accrueInterest, settle), alerts by red run plus Telegram when the two secrets exist.
+
+Handover, in order:
+1. Shadow week. On the Mac: `curl -fsSL https://api.circuit.org/dev | bash`, `circuit auth login` (passkey), create a
+   Circuit wallet at app.circuit.org, fund it with 0.02 HYPE on Elysium and 0.3 HYPE on HyperEVM. In the repo:
+   `cd agents/orphic-rotator && circuit run --target hosted --wallet <circuit wallet> --amount 0.01`. dryRun defaults to
+   true, so the hosted session logs every decision and sends nothing. Compare its logs with the keeper's reports for 7 days.
+2. Roles. Curator (0x9EDf) on senior: `submit(abi.encodeCall(setIsAllocator,(circuitWallet,true)))` then the call itself
+   (timelock 0), and the same pair with `(githubAgent,false)`. Owner (0x2DBE) on junior: `setAgent(circuitWallet)`.
+   Read back `isAllocator(circuitWallet)`, `isAllocator(githubAgent)`, `junior.agent()`.
+3. Switch. Stop the shadow session and start it with `--setting dryRun=false`. Set repository variables
+   `ROTATOR_MODE=watchdog` and `EXPECTED_AGENT=<circuit wallet>`. The next hourly Action runs the watchdog only.
+4. Alerts. BotFather bot, add it to a private chat, store `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` as secrets.
+
+Rollback: `ROTATOR_MODE=keeper`, give the roles back to the GitHub agent (same two transactions reversed), stop the
+Circuit session. The permissionless calls work from either runner at any time.
+
+Rebuild after any keeper change: `cd keeper && npm run build:agent && cd ../agents/orphic-rotator && circuit check`,
+then `circuit upload` (a new code version reaches the running session on its next run).

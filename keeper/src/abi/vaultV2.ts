@@ -43,6 +43,20 @@ export const vaultV2Abi = [
   },
   {
     type: "function",
+    name: "adaptersLength",
+    stateMutability: "view",
+    inputs: [],
+    outputs: [{ name: "", type: "uint256" }],
+  },
+  {
+    type: "function",
+    name: "adapters",
+    stateMutability: "view",
+    inputs: [{ name: "i", type: "uint256" }],
+    outputs: [{ name: "", type: "address" }],
+  },
+  {
+    type: "function",
     name: "lastUpdate",
     stateMutability: "view",
     inputs: [],

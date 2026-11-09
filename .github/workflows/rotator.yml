@@ -59,7 +59,10 @@ jobs:
       - name: Test
         run: npm test
 
+      # ROTATOR_MODE (repository variable): "keeper" runs the full tick from here (default); "watchdog" means the
+      # Rotator runs on Circuit and this job only monitors, with permissionless fallbacks.
       - name: Tick
+        if: vars.ROTATOR_MODE != 'watchdog'
         env:
           # Only injected when LIVE=1 so a dry-run job never even holds the key.
           AGENT_PRIVATE_KEY: ${{ vars.LIVE == '1' && secrets.AGENT_PRIVATE_KEY || '' }}
@@ -68,6 +71,24 @@ jobs:
             npm run tick -- --weekly
           else
             npm run tick
+          fi
+
+      # Invariants every hour whatever the mode. EXPECTED_AGENT is the wallet that should hold the roles: the GitHub
+      # agent in keeper mode, Circuit's wallet in watchdog mode. Exit 2 (red run, email) on any alert; Telegram when
+      # TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID secrets exist. Fallback calls are permissionless and only sent in
+      # watchdog mode with LIVE=1.
+      - name: Watchdog
+        if: always()
+        env:
+          EXPECTED_AGENT: ${{ vars.EXPECTED_AGENT || '0xC772F0ea992236dA71Fa30b8899D71B680866956' }}
+          AGENT_PRIVATE_KEY: ${{ vars.ROTATOR_MODE == 'watchdog' && vars.LIVE == '1' && secrets.AGENT_PRIVATE_KEY || '' }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          if [ "${{ vars.ROTATOR_MODE }}" = "watchdog" ]; then
+            npm run watchdog
+          else
+            npm run watchdog -- --dry-run
           fi
 
       - name: Save price samples
