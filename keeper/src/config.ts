@@ -84,7 +84,8 @@ export interface RunOptions {
   weekly: boolean;
   fixturePath?: string;
   configPath: string;
-  opsDir: string;
+  /** Directory for reports, last plan and price samples. Undefined on hosted runs: nothing is written. */
+  opsDir?: string;
   rpcUrl: string;
   agentPrivateKey?: Hex;
   now: Date;

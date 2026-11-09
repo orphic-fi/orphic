@@ -1,0 +1,24 @@
+name = "orphic-rotator"
+tagline = "Runs the Orphic vaults hourly"
+category = "experimental"
+walletVmFamily = "evm"
+agentId = "3c05032e-3df5-4454-aa3d-b25550f23f0d"
+
+# Hourly, aligned to the clock, so the Sunday 00:xx UTC tick carries the weekly settle like the GitHub keeper does.
+[[triggers]]
+type = "schedule"
+everyMs = 3600000
+align = "fixed"
+
+# The session lives on Elysium (HYPE pays nothing here; it marks the agent as an Elysium agent and funds nothing else).
+# Every transaction the agent sends goes to the vault contracts on HyperEVM, which the wallet pays for with HYPE there.
+[startingAsset]
+network = "ethereum:99901" # Elysium
+asset = "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee" # native HYPE
+minimumAmount = "0.01"
+
+[settings]
+# Shadow mode: compute and log every decision, send nothing. Flip to false only after the wallet holds the roles.
+dryRun = { type = "boolean", default = true }
+# Read endpoint for vault state and gas. The agent reads protocol state here; Circuit's engine signs and broadcasts.
+rpcUrl = { type = "text", default = "https://rpc.hyperliquid.xyz/evm" }

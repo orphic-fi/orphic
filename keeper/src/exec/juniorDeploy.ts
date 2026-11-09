@@ -13,12 +13,11 @@
  * (Felix is a registered vault, deposit/withdraw have the receiver pinned to junior) and refuses any call that
  * would dip idle below reservedAssets.
  */
-import { createWalletClient, encodeFunctionData, http, parseAbi, type Address, type Hex, type PublicClient } from "viem";
-import { privateKeyToAccount } from "viem/accounts";
+import { encodeFunctionData, parseAbi, type Address, type Hex, type PublicClient } from "viem";
 import { isPlaceholder, type SeniorConfig } from "../config.js";
 import { juniorAbi } from "../abi/junior.js";
 import { vaultV2Abi } from "../abi/vaultV2.js";
-import { assertCanBroadcast, hyperEvm } from "./send.js";
+import { sendCall, type SignerCtx } from "./send.js";
 
 export const COVER_BUFFER_BPS = 100n; // 1% of senior assets kept idle for a settle-day cover bill
 export const MIN_RESERVE = 5_000_000n; // 5 USDC
@@ -90,11 +89,7 @@ export interface JuniorIdleResult {
   note: string;
 }
 
-export interface IdleCtx {
-  cfg: SeniorConfig;
-  dryRun: boolean;
-  client?: PublicClient;
-  agentPrivateKey?: Hex;
+export interface IdleCtx extends SignerCtx {
   nowTs?: bigint;
   log?: (line: string) => void;
 }
@@ -121,20 +116,8 @@ export async function readIdleInputs(ctx: IdleCtx): Promise<IdleInputs> {
 }
 
 async function execute(ctx: IdleCtx, target: Address, data: Hex): Promise<Hex> {
-  assertCanBroadcast(ctx.cfg, ctx.agentPrivateKey, !ctx.dryRun);
-  const account = privateKeyToAccount(ctx.agentPrivateKey!);
-  const wallet = createWalletClient({ account, chain: hyperEvm, transport: http(ctx.cfg.rpcUrl) });
-  const { request } = await ctx.client!.simulateContract({
-    account,
-    address: ctx.cfg.junior as Address,
-    abi: juniorAbi,
-    functionName: "execute",
-    args: [target, data],
-    chain: hyperEvm,
-  });
-  const hash = await wallet.writeContract(request);
-  await ctx.client!.waitForTransactionReceipt({ hash, confirmations: 1, timeout: 120_000 });
-  return hash;
+  const calldata = encodeFunctionData({ abi: juniorAbi, functionName: "execute", args: [target, data] });
+  return sendCall(ctx, ctx.cfg.junior as Address, calldata, `junior.execute -> ${target}`);
 }
 
 /** Hourly: deploy excess idle to Felix, or pull back to the reserve. */

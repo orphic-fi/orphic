@@ -6,6 +6,7 @@ import { loadStateFixture, readVaultState } from "./data/state.js";
 import { decide, proposeAllocation } from "./engine/allocate.js";
 import { buildPlan, validatePlan } from "./exec/plan.js";
 import { executePlan, weeklyClose, type ExecContext } from "./exec/send.js";
+import type { TxSigner } from "./exec/signer.js";
 import { accrueSenior, juniorWeekly, readJuniorStatus, syncSenior, type JuniorCtx } from "./exec/junior.js";
 import { manageJuniorIdle } from "./exec/juniorDeploy.js";
 import { sampleOrphPrice } from "./data/orph.js";
@@ -16,10 +17,14 @@ import type { ExecutionResult, HyperlendRate, VaultState } from "./types.js";
 export interface RunDeps {
   fetchFn?: FetchLike;
   client?: PublicClient | null;
+  /** Who signs privileged calls. Circuit's wallet on Circuit; built from AGENT_PRIVATE_KEY on GitHub when absent. */
+  signer?: TxSigner;
+  /** Where log lines go. console.log by default; the Circuit agent routes them to agent.log. */
+  log?: (line: string) => void;
 }
 
 export async function run(opts: RunOptions, cfg: SeniorConfig = loadConfig(opts.configPath), deps: RunDeps = {}): Promise<RunReport> {
-  const log = (l: string) => console.log(l);
+  const log = deps.log ?? ((l: string) => console.log(l));
   const runAt = opts.now.toISOString();
   const mode = opts.dryRun ? "dry-run" : "live";
   const warnings: string[] = [];
@@ -93,7 +98,7 @@ export async function run(opts: RunOptions, cfg: SeniorConfig = loadConfig(opts.
   validatePlan(cfg, state, plan);
   const decision = decide({ cfg, proposal, plan, hypePriceUsd: morpho.hypePriceUsd, gasPriceGwei });
 
-  const ctx: ExecContext = { cfg, dryRun: opts.dryRun, opsDir: opts.opsDir, state, markets: morpho.markets, client, agentPrivateKey: opts.agentPrivateKey, log };
+  const ctx: ExecContext = { cfg, dryRun: opts.dryRun, opsDir: opts.opsDir, state, markets: morpho.markets, client, signer: deps.signer, agentPrivateKey: opts.agentPrivateKey, log };
 
   // Rule 6.
   let execution: ExecutionResult[] = [];
@@ -114,6 +119,7 @@ export async function run(opts: RunOptions, cfg: SeniorConfig = loadConfig(opts.
     cfg,
     dryRun: opts.dryRun,
     client,
+    signer: deps.signer,
     agentPrivateKey: opts.agentPrivateKey,
     seniorTotalAssetsFallback: state.totalAssets,
     nowTs: BigInt(Math.floor(opts.now.getTime() / 1000)),
@@ -155,9 +161,11 @@ export async function run(opts: RunOptions, cfg: SeniorConfig = loadConfig(opts.
     }
   }
 
-  // ORPH price record (Uniswap v4 has no on-chain TWAP). Never sends anything.
+  // ORPH price record (Uniswap v4 has no on-chain TWAP). Never sends anything. Needs a disk for the sample log.
   let orphPrice: RunReport["orphPrice"];
-  try {
+  if (!opts.opsDir) {
+    orphPrice = { enabled: false, sampleCount: 0, note: "no ops dir; price sampling is the GitHub keeper's job" };
+  } else try {
     const res = await sampleOrphPrice({ cfg, opsDir: opts.opsDir, client, hypeUsd: morpho.hypePriceUsd, nowTs: Math.floor(opts.now.getTime() / 1000), log });
     orphPrice = res.result;
     warnings.push(...res.warnings);
@@ -220,11 +228,12 @@ export async function run(opts: RunOptions, cfg: SeniorConfig = loadConfig(opts.
     error,
   };
   const report: RunReport = { ...partial, summary: humanSummary(partial) };
-  const path = writeReport(opts.opsDir, report);
-
   log("");
   for (const line of report.summary) log(line);
-  log(`report written to ${path}`);
+  if (opts.opsDir) {
+    const path = writeReport(opts.opsDir, report);
+    log(`report written to ${path}`);
+  }
   return report;
 }
 

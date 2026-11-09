@@ -1,18 +1,10 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
-import {
-  createWalletClient,
-  http,
-  parseUnits,
-  type Address,
-  type Hex,
-  type PublicClient,
-  type WalletClient,
-  type Account,
-  type Chain,
-} from "viem";
-import { privateKeyToAccount } from "viem/accounts";
+import { encodeFunctionData, parseUnits, type Address, type Hex, type PublicClient } from "viem";
 import { hasPlaceholders, type SeniorConfig } from "../config.js";
+import { hyperEvm } from "./chain.js";
+import { localSigner, simulate, type TxSigner } from "./signer.js";
+export { hyperEvm } from "./chain.js";
 import type { ExecutionResult, MarketData, PlanStep, VaultState } from "../types.js";
 import { vaultV2Abi } from "../abi/vaultV2.js";
 import { adapterAbi, marketAdapterAbi } from "../abi/adapters.js";
@@ -20,30 +12,45 @@ import { erc20Abi } from "../abi/erc20.js";
 import { encodeMarketParams } from "../data/state.js";
 import { formatPlanTable } from "./plan.js";
 
-export const hyperEvm: Chain = {
-  id: 999,
-  name: "HyperEVM",
-  nativeCurrency: { name: "HYPE", symbol: "HYPE", decimals: 18 },
-  rpcUrls: { default: { http: ["https://rpc.hyperliquid.xyz/evm"] } },
-};
-
-export interface ExecContext {
+export interface SignerCtx {
   cfg: SeniorConfig;
   dryRun: boolean;
-  opsDir: string;
+  client?: PublicClient;
+  /** Who signs: Circuit's wallet when the Rotator runs on Circuit, a local key on GitHub. Built from the key when absent. */
+  signer?: TxSigner;
+  agentPrivateKey?: Hex;
+}
+
+export interface ExecContext extends SignerCtx {
+  /** Where last-plan.json goes; undefined skips the file (hosted runs have no disk worth keeping). */
+  opsDir?: string;
   state: VaultState;
   markets: MarketData[];
-  client?: PublicClient;
-  agentPrivateKey?: Hex;
   log?: (line: string) => void;
 }
 
 /** Throws unless every precondition for broadcasting holds. */
-export function assertCanBroadcast(cfg: SeniorConfig, agentPrivateKey: Hex | undefined, live: boolean): void {
+export function assertCanBroadcast(cfg: SeniorConfig, agentPrivateKey: Hex | undefined, live: boolean, signer?: TxSigner): void {
   if (!live) throw new Error("not in live mode");
   const missing = hasPlaceholders(cfg);
   if (missing.length) throw new Error(`refusing to broadcast: placeholder addresses in config: ${missing.join(", ")}`);
-  if (!agentPrivateKey) throw new Error("refusing to broadcast: AGENT_PRIVATE_KEY missing or malformed");
+  if (!signer && !agentPrivateKey) throw new Error("refusing to broadcast: no signer and AGENT_PRIVATE_KEY missing or malformed");
+}
+
+/** The signer for a live step: the injected one, else a local wallet from the key. Throws when neither can broadcast. */
+export function resolveSigner(ctx: SignerCtx): TxSigner {
+  assertCanBroadcast(ctx.cfg, ctx.agentPrivateKey, !ctx.dryRun, ctx.signer);
+  if (ctx.signer) return ctx.signer;
+  if (!ctx.client) throw new Error("live mode needs an RPC client");
+  return localSigner(ctx.agentPrivateKey!, ctx.cfg.rpcUrl, ctx.client);
+}
+
+/** Simulate from the signer's address, then send. Every privileged call goes through here. */
+export async function sendCall(ctx: SignerCtx, to: Address, data: Hex, label: string): Promise<Hex> {
+  const signer = resolveSigner(ctx);
+  if (!ctx.client) throw new Error("live mode needs an RPC client");
+  await simulate(ctx.client, signer, { to, data });
+  return signer.send({ to, data }, label);
 }
 
 export function writeLastPlan(opsDir: string, plan: PlanStep[], extra: Record<string, unknown>): string {
@@ -91,22 +98,21 @@ export async function executePlan(ctx: ExecContext, plan: PlanStep[]): Promise<E
   log(formatPlanTable(plan, total));
   log("");
 
-  const planPath = writeLastPlan(ctx.opsDir, plan, { mode: ctx.dryRun ? "dry-run" : "live", totalAssets: total });
-  log(`plan written to ${planPath}`);
+  if (ctx.opsDir) {
+    const planPath = writeLastPlan(ctx.opsDir, plan, { mode: ctx.dryRun ? "dry-run" : "live", totalAssets: total });
+    log(`plan written to ${planPath}`);
+  }
 
   if (ctx.dryRun) {
     return plan.map((step) => ({ step, status: "simulated" as const }));
   }
 
-  assertCanBroadcast(ctx.cfg, ctx.agentPrivateKey, true);
+  const signer = resolveSigner(ctx);
   if (!ctx.client) throw new Error("live mode needs an RPC client");
-
-  const account: Account = privateKeyToAccount(ctx.agentPrivateKey!);
-  const wallet: WalletClient = createWalletClient({ account, chain: hyperEvm, transport: http(ctx.cfg.rpcUrl) });
   const vault = ctx.cfg.vault as Address;
 
-  const isAllocator = await ctx.client.readContract({ address: vault, abi: vaultV2Abi, functionName: "isAllocator", args: [account.address] });
-  if (!isAllocator) throw new Error(`agent ${account.address} is not an allocator on ${vault}`);
+  const isAllocator = await ctx.client.readContract({ address: vault, abi: vaultV2Abi, functionName: "isAllocator", args: [signer.address] });
+  if (!isAllocator) throw new Error(`agent ${signer.address} is not an allocator on ${vault}`);
 
   const results: ExecutionResult[] = [];
   const idleFloor = ctx.cfg.constraints.minIdle * total;
@@ -121,18 +127,11 @@ export async function executePlan(ctx: ExecContext, plan: PlanStep[]): Promise<E
     const assets = parseUnits(step.amount.toFixed(ctx.cfg.usdcDecimals), ctx.cfg.usdcDecimals);
     try {
       const before = await readPost(ctx, step);
-      const { request } = await ctx.client.simulateContract({
-        account,
-        address: vault,
-        abi: vaultV2Abi,
-        functionName: step.action,
-        args: [adapter, data, assets],
-        chain: hyperEvm,
-      });
-      const hash = await wallet.writeContract(request);
+      const calldata = encodeFunctionData({ abi: vaultV2Abi, functionName: step.action, args: [adapter, data, assets] });
+      const hash = await sendCall(ctx, vault, calldata, `${step.action} ${step.label}`);
       log(`${step.action} ${step.label} ${step.amount} USDC -> ${hash}`);
-      const receipt = await ctx.client.waitForTransactionReceipt({ hash, confirmations: 1, timeout: 120_000 });
-      if (receipt.status !== "success") throw new Error(`tx ${hash} reverted`);
+      // Circuit's wallet reports an operation id rather than a hash when it cannot resolve one; gas is then unknown.
+      const gasUsed = /^0x[0-9a-fA-F]{64}$/.test(hash) ? (await ctx.client.getTransactionReceipt({ hash })).gasUsed.toString() : "n/a";
 
       const after = await readPost(ctx, step);
       const expected = step.action === "allocate" ? step.amount : -step.amount;
@@ -145,7 +144,7 @@ export async function executePlan(ctx: ExecContext, plan: PlanStep[]): Promise<E
       if (after.idle < idleFloor - tol) {
         throw new Error(`post-state check failed: idle ${after.idle} below floor ${idleFloor}`);
       }
-      results.push({ step, status: "sent", txHash: hash, gasUsed: receipt.gasUsed.toString(), postIdle: after.idle, postPosition: after.position });
+      results.push({ step, status: "sent", txHash: hash, gasUsed, postIdle: after.idle, postPosition: after.position });
     } catch (err) {
       const message = (err as Error).message ?? String(err);
       log(`ABORT: ${message}`);
@@ -167,18 +166,7 @@ export async function weeklyClose(ctx: ExecContext): Promise<{ emissionsSold: nu
     log("weekly close: would call vault.accrueInterest() (dry-run)");
     return { emissionsSold: 0, note: "dry-run: accrueInterest not sent" };
   }
-  assertCanBroadcast(ctx.cfg, ctx.agentPrivateKey, true);
-  const account = privateKeyToAccount(ctx.agentPrivateKey!);
-  const wallet = createWalletClient({ account, chain: hyperEvm, transport: http(ctx.cfg.rpcUrl) });
-  const { request } = await ctx.client!.simulateContract({
-    account,
-    address: ctx.cfg.vault as Address,
-    abi: vaultV2Abi,
-    functionName: "accrueInterest",
-    chain: hyperEvm,
-  });
-  const hash = await wallet.writeContract(request);
-  await ctx.client!.waitForTransactionReceipt({ hash, confirmations: 1, timeout: 120_000 });
+  const hash = await sendCall(ctx, ctx.cfg.vault as Address, encodeFunctionData({ abi: vaultV2Abi, functionName: "accrueInterest" }), "accrueInterest");
   log(`weekly close: accrueInterest sent ${hash}`);
   return { emissionsSold: 0, accrueTx: hash, note: "accrueInterest sent" };
 }

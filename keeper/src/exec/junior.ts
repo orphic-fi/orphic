@@ -1,10 +1,9 @@
-import { createWalletClient, http, type Address, type Hex, type PublicClient } from "viem";
-import { privateKeyToAccount } from "viem/accounts";
+import { encodeFunctionData, type Address, type Hex, type PublicClient } from "viem";
 import { isPlaceholder, type SeniorConfig } from "../config.js";
 import { juniorAbi } from "../abi/junior.js";
 import { vaultV2Abi } from "../abi/vaultV2.js";
 import { erc20Abi } from "../abi/erc20.js";
-import { assertCanBroadcast, hyperEvm } from "./send.js";
+import { sendCall, type SignerCtx } from "./send.js";
 import { recallFromFelix } from "./juniorDeploy.js";
 
 const WAD = 10n ** 18n;
@@ -58,11 +57,7 @@ export interface JuniorStatus {
   note: string;
 }
 
-export interface JuniorCtx {
-  cfg: SeniorConfig;
-  dryRun: boolean;
-  client?: PublicClient;
-  agentPrivateKey?: Hex;
+export interface JuniorCtx extends SignerCtx {
   /** Senior total assets in USDC whole units, used when the senior vault is a placeholder. */
   seniorTotalAssetsFallback?: number;
   nowTs?: bigint;
@@ -113,13 +108,7 @@ export function coverLine(coverUsdc: number, hours: number): string {
 // ---------------------------------------------------------------------------
 
 async function send(ctx: JuniorCtx, functionName: "syncSenior" | "settle"): Promise<Hex> {
-  assertCanBroadcast(ctx.cfg, ctx.agentPrivateKey, !ctx.dryRun);
-  const account = privateKeyToAccount(ctx.agentPrivateKey!);
-  const wallet = createWalletClient({ account, chain: hyperEvm, transport: http(ctx.cfg.rpcUrl) });
-  const { request } = await ctx.client!.simulateContract({ account, address: ctx.cfg.junior as Address, abi: juniorAbi, functionName, chain: hyperEvm });
-  const hash = await wallet.writeContract(request);
-  await ctx.client!.waitForTransactionReceipt({ hash, confirmations: 1, timeout: 120_000 });
-  return hash;
+  return sendCall(ctx, ctx.cfg.junior as Address, encodeFunctionData({ abi: juniorAbi, functionName }), functionName);
 }
 
 export interface SyncResult {
@@ -188,12 +177,7 @@ export async function accrueSenior(ctx: JuniorCtx): Promise<SyncResult> {
     log(`accrue: would call senior.accrueInterest() (${d.reason}) (dry-run)`);
     return { called: false, note: `dry-run: ${d.reason}` };
   }
-  assertCanBroadcast(ctx.cfg, ctx.agentPrivateKey, true);
-  const account = privateKeyToAccount(ctx.agentPrivateKey!);
-  const wallet = createWalletClient({ account, chain: hyperEvm, transport: http(ctx.cfg.rpcUrl) });
-  const { request } = await ctx.client.simulateContract({ account, address: senior, abi: vaultV2Abi, functionName: "accrueInterest", chain: hyperEvm });
-  const hash = await wallet.writeContract(request);
-  await ctx.client.waitForTransactionReceipt({ hash, confirmations: 1, timeout: 120_000 });
+  const hash = await sendCall(ctx, senior, encodeFunctionData({ abi: vaultV2Abi, functionName: "accrueInterest" }), "accrueInterest");
   log(`accrue: senior.accrueInterest() sent ${hash} (${d.reason})`);
   return { called: true, txHash: hash, note: `accrueInterest sent: ${d.reason}` };
 }
@@ -264,7 +248,7 @@ export async function juniorWeekly(ctx: JuniorCtx): Promise<JuniorWeeklyResult> 
   // Before settling, bring everything junior parked in Felix back to idle so the cover bill and matured exits
   // can be paid in full. The hourly idle step redeploys the excess afterwards.
   if (!isPlaceholder(ctx.cfg.vault)) {
-    const recall = await recallFromFelix({ cfg: ctx.cfg, dryRun: ctx.dryRun, client: ctx.client, agentPrivateKey: ctx.agentPrivateKey, log });
+    const recall = await recallFromFelix({ cfg: ctx.cfg, dryRun: ctx.dryRun, client: ctx.client, signer: ctx.signer, agentPrivateKey: ctx.agentPrivateKey, log });
     result.recall = recall.note;
     if (recall.txHash) result.recallTx = recall.txHash;
   }

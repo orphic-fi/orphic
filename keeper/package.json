@@ -13,7 +13,8 @@
     "weekly": "tsx src/index.ts --weekly",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "build:agent": "esbuild src/agentEntry.ts --bundle --platform=node --format=esm --target=es2022 --outfile=../agents/orphic-rotator/rotator-core.mjs --log-level=warning"
   },
   "dependencies": {
     "viem": "2.21.55"
