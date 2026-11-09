@@ -13938,6 +13938,20 @@ var vaultV2Abi = [
   },
   {
     type: "function",
+    name: "adaptersLength",
+    stateMutability: "view",
+    inputs: [],
+    outputs: [{ name: "", type: "uint256" }]
+  },
+  {
+    type: "function",
+    name: "adapters",
+    stateMutability: "view",
+    inputs: [{ name: "i", type: "uint256" }],
+    outputs: [{ name: "", type: "address" }]
+  },
+  {
+    type: "function",
     name: "lastUpdate",
     stateMutability: "view",
     inputs: [],
@@ -14746,6 +14760,10 @@ async function weeklyClose(ctx) {
 
 // src/abi/junior.ts
 var juniorAbi = [
+  { type: "function", name: "agent", stateMutability: "view", inputs: [], outputs: [{ type: "address" }] },
+  { type: "function", name: "totalAssets", stateMutability: "view", inputs: [], outputs: [{ type: "uint256" }] },
+  { type: "function", name: "coverInProgress", stateMutability: "view", inputs: [], outputs: [{ type: "uint256" }] },
+  { type: "function", name: "depositsPaused", stateMutability: "view", inputs: [], outputs: [{ type: "bool" }] },
   { type: "function", name: "syncSenior", stateMutability: "nonpayable", inputs: [], outputs: [] },
   { type: "function", name: "settle", stateMutability: "nonpayable", inputs: [], outputs: [] },
   { type: "function", name: "coverInProgress", stateMutability: "view", inputs: [], outputs: [{ name: "", type: "uint256" }] },
@@ -15400,9 +15418,16 @@ async function run(opts, cfg = loadConfig(opts.configPath), deps = {}) {
     juniorStatus = { enabled: true, note: `junior status read failed: ${err.message}` };
     warnings.push(juniorStatus.note);
   }
+  let juniorWeeklyResult;
+  try {
+    juniorWeeklyResult = await juniorWeekly(jctx);
+  } catch (err) {
+    juniorWeeklyResult = { checked: false, note: `junior weekly failed: ${err.message}` };
+    log(juniorWeeklyResult.note);
+  }
   let juniorIdle;
-  if (opts.weekly) {
-    juniorIdle = { checked: false, action: "skipped", note: "weekly tick: idle management deferred to the settle recall" };
+  if (opts.weekly || juniorWeeklyResult?.settleDue) {
+    juniorIdle = { checked: false, action: "skipped", note: "settle tick: idle management deferred to the next hour" };
   } else {
     try {
       juniorIdle = await manageJuniorIdle({ ...jctx, log });
@@ -15423,15 +15448,8 @@ async function run(opts, cfg = loadConfig(opts.configPath), deps = {}) {
     warnings.push(orphPrice.note);
   }
   let weekly;
-  let juniorWeeklyResult;
   const weeklyDue = opts.weekly || isWeeklyCloseWindow(opts.now);
   if (weeklyDue) {
-    try {
-      juniorWeeklyResult = await juniorWeekly(jctx);
-    } catch (err) {
-      juniorWeeklyResult = { checked: false, note: `junior weekly failed: ${err.message}` };
-      log(juniorWeeklyResult.note);
-    }
     try {
       weekly = await weeklyClose(ctx);
     } catch (err) {
