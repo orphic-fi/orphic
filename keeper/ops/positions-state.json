@@ -1,0 +1,15 @@
+{
+  "lastBlock": "50768264",
+  "accounts": {
+    "0x2dbe1ba83084daf698acea79cbafe0493f42fecc": {
+      "seniorDeposited": "316000000",
+      "seniorWithdrawn": "0",
+      "juniorDeposited": "80000000",
+      "juniorExited": "0",
+      "juniorStaked": "0",
+      "firstDeposit": 1794175009,
+      "lastActivity": 1794175065
+    }
+  },
+  "events": 2
+}

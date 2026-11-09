@@ -10,3 +10,8 @@ ops/reports/
 ops/last-plan.json
 keeper/ops/
 web/screenshots/*-full.png
+
+# The position index state is committed so the hourly indexer scans only new blocks.
+!keeper/ops/
+keeper/ops/*
+!keeper/ops/positions-state.json
