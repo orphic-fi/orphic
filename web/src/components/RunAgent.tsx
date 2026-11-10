@@ -152,7 +152,7 @@ export default function RunAgent({ agent, mode: initialMode, onClose }: Props) {
             {mode === 'live' && (
               <>
                 <label className={s.field}>
-                  <span>Circuit wallet</span>
+                  <span>Agent wallet (held by Circuit)</span>
                   {wallets.length ? (
                     <select
                       value={wallet ?? ''}
@@ -166,7 +166,8 @@ export default function RunAgent({ agent, mode: initialMode, onClose }: Props) {
                     >
                       {wallets.map((w) => (
                         <option key={w.id} value={w.id}>
-                          {w.name} · {w.address.slice(0, 6)}…{w.address.slice(-4)} · {w.value_usd ? fmtUsd(Number(w.value_usd)) : '–'}
+                          {w.address.slice(0, 6)}…{w.address.slice(-4)} · {w.value_usd ? fmtUsd(Number(w.value_usd)) : '–'}
+                          {wallets.length > 1 ? ` · ${w.name}` : ''}
                         </option>
                       ))}
                       <option value="__add">+ Add a wallet on Circuit</option>
@@ -181,9 +182,10 @@ export default function RunAgent({ agent, mode: initialMode, onClose }: Props) {
                   const held = w.holdings.filter((h) => Number(h.amount) > 0)
                   return (
                     <>
+                      <FundCircuit to={w.address as `0x${string}`} onSent={() => void account.refetch()} />
                       <div className={s.holdings}>
                         <div className={s.holdingsHead}>
-                          <span>What this wallet holds</span>
+                          <span>What the agent wallet holds</span>
                           <span>{w.value_usd ? fmtUsd(Number(w.value_usd), 2) : '–'}</span>
                         </div>
                         {held.length === 0 && <div className={s.muted}>Empty on every network.</div>}
@@ -199,9 +201,8 @@ export default function RunAgent({ agent, mode: initialMode, onClose }: Props) {
                           </div>
                         ))}
                       </div>
-                      <FundCircuit to={w.address as `0x${string}`} onSent={() => void account.refetch()} />
                       <p className={s.fine}>
-                        Agents run on your Circuit wallet, not the wallet connected to this site: its key sits behind your passkey so the agent can sign on its own, which MetaMask never allows. Most agents here trade on Hyperliquid and start from USDC there; Circuit moves funds between its networks, and its reply here tells you if a start needs more.
+                        Two wallets: your MetaMask is where money starts; the agent wallet is where it trades. Circuit holds the agent wallet's key behind your passkey so the agent can sign on its own, which MetaMask never allows. Most agents here trade on Hyperliquid and start from USDC there.
                       </p>
                     </>
                   )

@@ -36,11 +36,11 @@ export default function FundCircuit({ to, onSent }: { to: Address; onSent?: () =
   return (
     <div className={s.holdings}>
       <div className={s.holdingsHead}>
-        <span>Fund from your connected wallet</span>
-        <span>{isConnected && address ? `MetaMask ${truncateAddress(address)}` : 'not connected'}</span>
+        <span>Your wallet (MetaMask)</span>
+        <span>{isConnected && address ? truncateAddress(address) : 'not connected'}</span>
       </div>
       {!isConnected ? (
-        <div className={s.muted}>Connect a wallet (top right) to send USDC to the Circuit wallet without copying addresses.</div>
+        <div className={s.muted}>Connect a wallet (top right) to send USDC to the agent wallet without copying addresses.</div>
       ) : (
         <>
           <div className={s.holding}>
@@ -54,14 +54,14 @@ export default function FundCircuit({ to, onSent }: { to: Address; onSent?: () =
             <input className={s.inlineInput} inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value.replace(/[^0-9.]/g, ''))} />
           </div>
           {receipt.isSuccess ? (
-            <div className={s.ok}>Sent. It shows in the Circuit wallet within a minute.</div>
+            <div className={s.ok}>Sent. It shows in the agent wallet within a minute.</div>
           ) : !onHyperEvm ? (
             <button type="button" className={s.secondary} onClick={() => switchChain({ chainId: hyperEvm.id })}>
               Switch to HyperEVM to send
             </button>
           ) : (
             <button type="button" className={s.secondary} disabled={isPending || receipt.isLoading || !amount || (balance !== null && Number(amount) > balance)} onClick={send}>
-              {isPending ? 'Confirm in MetaMask…' : receipt.isLoading ? 'Sending…' : `Send ${amount || '0'} USDC to the Circuit wallet`}
+              {isPending ? 'Confirm in MetaMask…' : receipt.isLoading ? 'Sending…' : `Send ${amount || '0'} USDC to the agent wallet`}
             </button>
           )}
           {error && <div className={s.err}>{(error as Error).message.split('\n')[0].slice(0, 140)}</div>}
