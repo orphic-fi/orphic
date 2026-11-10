@@ -174,3 +174,10 @@ Circuit session. The permissionless calls work from either runner at any time.
 
 Rebuild after any keeper change: `cd keeper && npm run build:agent && cd ../agents/orphic-rotator && circuit check`,
 then `circuit upload` (a new code version reaches the running session on its next run).
+
+## Sniper on Circuit (added 10 Nov 2026)
+1. Shadow run: start `orphic-sniper` on Circuit's own page (app.circuit.org/agents/68d25adc-ca1d-4e34-8d82-a17510e50360) on "Your EVM Wallet" with 0.25 HYPE on Elysium. A partner-started session cannot send its buys (see FACTS), so until Circuit lifts that, every Sniper session starts on Circuit, and orphic.fi's Sniper page points there.
+2. Watch: orphic.fi/agents/orphic-sniper shows the gate feed and the shadow wallet's trades read from the chain; Circuit's session log shows each minute's decision and every skip with its reason.
+3. Stop: Circuit's Stop leaves tokens in the wallet; sell them by asking Circuit ("sell all <token> on Elysium").
+4. Changing a rule: edit `agents/orphic-sniper/index.ts`, run the harness in the scratchpad against live data, `circuit check`, `circuit upload`, then restart the session. Settings (cap, take profit, stop) change per session without an upload.
+5. Ask foobar: allow raw transactions to allowlisted contracts (LaunchRouter) for partner-started sessions, or route Montra pools; builder fee 0.05% to 0xba08A51bb1BB49E9840Eb55511E8880F95306A40; per-agent daily bars on the partner API; the iframe framing.
