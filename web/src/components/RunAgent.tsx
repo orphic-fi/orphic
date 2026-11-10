@@ -19,7 +19,7 @@ interface Props {
  */
 export default function RunAgent({ agent, mode: initialMode, onClose }: Props) {
   const permit = usePermit()
-  const { state, begin } = useCircuitLink()
+  const { state, begin, unlink } = useCircuitLink()
   const account = useCircuitAccount()
   const { start } = useCircuitActions()
   const [mode, setMode] = useState<RunMode>(initialMode)
@@ -123,20 +123,30 @@ export default function RunAgent({ agent, mode: initialMode, onClose }: Props) {
               </button>
             </div>
             {mode === 'live' && (
-              <label className={s.field}>
-                <span>Wallet</span>
-                {wallets.length ? (
-                  <select value={wallet ?? ''} onChange={(e) => setWallet(e.target.value)}>
-                    {wallets.map((w) => (
-                      <option key={w.id} value={w.id}>
-                        {w.name} · {w.address.slice(0, 6)}…{w.address.slice(-4)} · {w.value_usd ? fmtUsd(Number(w.value_usd)) : '–'}
-                      </option>
-                    ))}
-                  </select>
-                ) : (
-                  <span className={s.muted}>{account.isLoading ? 'loading' : 'no wallets on this account yet'}</span>
-                )}
-              </label>
+              <>
+                <label className={s.field}>
+                  <span>Circuit wallet</span>
+                  {wallets.length ? (
+                    <select value={wallet ?? ''} onChange={(e) => setWallet(e.target.value)}>
+                      {wallets.map((w) => (
+                        <option key={w.id} value={w.id}>
+                          {w.name} · {w.address.slice(0, 6)}…{w.address.slice(-4)} · {w.value_usd ? fmtUsd(Number(w.value_usd)) : '–'}
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    <span className={s.muted}>{account.isLoading ? 'loading' : 'no wallets on this account yet'}</span>
+                  )}
+                </label>
+                {(() => {
+                  const w = wallets.find((x) => x.id === wallet)
+                  return w ? (
+                    <p className={s.fine}>
+                      Agents run on your Circuit wallet, not the wallet connected to this site: its key sits behind your passkey so the agent can sign on its own. To fund it, send USDC or HYPE on HyperEVM to <span className={s.mono}>{w.address}</span> from any wallet.
+                    </p>
+                  ) : null
+                })()}
+              </>
             )}
             <label className={s.field}>
               <span>{mode === 'paper' ? 'Start with (simulated)' : 'Allot'}</span>
@@ -156,7 +166,10 @@ export default function RunAgent({ agent, mode: initialMode, onClose }: Props) {
             </button>
             {error && <div className={s.err}>{error}</div>}
             <div className={s.footnote}>
-              Linked to Circuit{days !== null ? `, ${days} days left on the permit` : ''}. Runs on Circuit's engine.
+              Linked to Circuit{days !== null ? `, ${days} days left on the permit` : ''}. Runs on Circuit's engine.{' '}
+              <button type="button" className={s.linkBtn} onClick={() => void unlink()}>
+                Unlink
+              </button>
             </div>
           </div>
         )}

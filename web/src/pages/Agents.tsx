@@ -39,7 +39,7 @@ export default function Agents() {
   const funding = useFunding('HYPE')
   const permit = usePermit()
   const account = useCircuitAccount()
-  const { begin, state: linkState } = useCircuitLink()
+  const { begin, unlink, state: linkState } = useCircuitLink()
   const { stop } = useCircuitActions()
   const [mood, setMood] = useState<Mood>('steady')
   const [showAll, setShowAll] = useState(false)
@@ -311,8 +311,15 @@ export default function Agents() {
           <section id="my-agents" className={s.mine}>
             <div className={s.listHead}>
               <span className="label">My agents · from your Circuit account</span>
-              <span className="label">{account.isFetching ? 'refreshing' : ''}</span>
+              <button type="button" className="label" style={{ background: 'none', border: 0, cursor: 'pointer', color: 'var(--muted)' }} onClick={() => void unlink()}>
+                Unlink Circuit
+              </button>
             </div>
+            {account.data?.wallets.length ? (
+              <div className={s.sm} style={{ marginBottom: 8 }}>
+                Circuit wallet{account.data.wallets.length > 1 ? 's' : ''}: {account.data.wallets.map((w) => `${w.address.slice(0, 6)}…${w.address.slice(-4)} (${w.value_usd ? fmtUsd(Number(w.value_usd)) : '–'})`).join(', ')}. Agents run here, not on the wallet connected to the site.
+              </div>
+            ) : null}
             {sessions.length === 0 && <div className={s.muted}>{account.isLoading ? 'Loading your account.' : 'Nothing running yet. Pick an agent above and start it on paper money.'}</div>}
             {sessions.map((sess) => (
               <div key={sess.id} className={s.mineRow}>
