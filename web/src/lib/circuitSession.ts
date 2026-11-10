@@ -68,11 +68,22 @@ export function useCircuitLink() {
     try {
       const returnUrl = `${window.location.origin}/linked`
       const { url, permit: pending } = await link(APP_ID, undefined, returnUrl)
-      window.open(url, '_blank', 'noopener')
+      // A small window over Orphic rather than a new tab: the passkey has to happen on Circuit's own page (passkeys
+      // are bound to the site that made them), but the user never loses this page. The popup closes itself from /linked.
+      const w = Math.min(520, window.screen.availWidth)
+      const h = Math.min(760, window.screen.availHeight)
+      const left = Math.max(0, (window.screen.availWidth - w) / 2)
+      const top = Math.max(0, (window.screen.availHeight - h) / 2)
+      const popup = window.open(url, 'orphic-circuit-link', `popup=yes,width=${w},height=${h},left=${left},top=${top}`)
       setState({ phase: 'waiting', url })
       const p = await pending
       setPermit({ permit: p, linkedAt: Date.now() })
       setState({ phase: 'linked' })
+      try {
+        popup?.close()
+      } catch {
+        /* already closed by /linked */
+      }
     } catch (err) {
       setState({ phase: 'failed', message: err instanceof Error ? err.message : 'Linking failed' })
     }

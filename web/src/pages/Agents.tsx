@@ -113,7 +113,7 @@ export default function Agents() {
               ) : (
                 <>
                   <button type="button" className={s.cta} onClick={() => void begin()}>
-                    {linkState.phase === 'waiting' ? 'Waiting for your passkey…' : 'Link Circuit and start on paper'}
+                    {linkState.phase === 'waiting' ? 'Waiting for your passkey in the window…' : 'Link Circuit and start on paper'}
                   </button>
                   <Link to="/how-it-works" className={s.ghost}>
                     How agents work

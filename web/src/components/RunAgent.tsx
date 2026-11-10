@@ -92,9 +92,9 @@ export default function RunAgent({ agent, mode: initialMode, onClose }: Props) {
             </p>
             {state.phase === 'waiting' ? (
               <>
-                <div className={s.waiting}>Waiting for your passkey in the Circuit tab…</div>
+                <div className={s.waiting}>Waiting for your passkey in the Circuit window. This page stays put; the window closes on its own.</div>
                 <a href={state.url} target="_blank" rel="noreferrer" className={s.secondary}>
-                  Reopen the Circuit tab
+                  Reopen the window
                 </a>
               </>
             ) : (
