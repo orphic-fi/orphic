@@ -8,6 +8,20 @@ import s from './RunAgent.module.css'
 
 export type RunMode = 'paper' | 'live'
 
+/** Opens Circuit's wallet page in a small window; polls the account until a new wallet shows, then closes it. */
+function addWalletOnCircuit(countBefore: number, refetch: () => void) {
+  const w = Math.min(520, window.screen.availWidth)
+  const h = Math.min(760, window.screen.availHeight)
+  const popup = window.open('https://app.circuit.org/wallets', 'orphic-circuit-wallets', `popup=yes,width=${w},height=${h},left=${(window.screen.availWidth - w) / 2},top=${(window.screen.availHeight - h) / 2}`)
+  let ticks = 0
+  const t = setInterval(() => {
+    refetch()
+    ticks += 1
+    if (ticks > 90 || popup?.closed) clearInterval(t)
+  }, 4000)
+  void countBefore
+}
+
 function networkLabel(n: string): string {
   const map: Record<string, string> = {
     hypercore: 'Hyperliquid',
@@ -140,12 +154,22 @@ export default function RunAgent({ agent, mode: initialMode, onClose }: Props) {
                 <label className={s.field}>
                   <span>Circuit wallet</span>
                   {wallets.length ? (
-                    <select value={wallet ?? ''} onChange={(e) => setWallet(e.target.value)}>
+                    <select
+                      value={wallet ?? ''}
+                      onChange={(e) => {
+                        if (e.target.value === '__add') {
+                          addWalletOnCircuit(wallets.length, () => void account.refetch())
+                          return
+                        }
+                        setWallet(e.target.value)
+                      }}
+                    >
                       {wallets.map((w) => (
                         <option key={w.id} value={w.id}>
                           {w.name} · {w.address.slice(0, 6)}…{w.address.slice(-4)} · {w.value_usd ? fmtUsd(Number(w.value_usd)) : '–'}
                         </option>
                       ))}
+                      <option value="__add">+ Add a wallet on Circuit</option>
                     </select>
                   ) : (
                     <span className={s.muted}>{account.isLoading ? 'loading' : 'no wallets on this account yet'}</span>
