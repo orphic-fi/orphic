@@ -3,6 +3,7 @@ import type { CircuitAgent } from '../lib/circuit'
 import { CircuitError, type Session } from '../lib/circuitClient'
 import { permitDaysLeft, useCircuitAccount, useCircuitActions, useCircuitLink, usePermit } from '../lib/circuitSession'
 import { fmtUsd } from '../lib/format'
+import FundCircuit from './FundCircuit'
 import s from './RunAgent.module.css'
 
 export type RunMode = 'paper' | 'live'
@@ -174,8 +175,9 @@ export default function RunAgent({ agent, mode: initialMode, onClose }: Props) {
                           </div>
                         ))}
                       </div>
+                      <FundCircuit to={w.address as `0x${string}`} onSent={() => void account.refetch()} />
                       <p className={s.fine}>
-                        Agents run on your Circuit wallet, not the wallet connected to this site: its key sits behind your passkey so the agent can sign on its own. Most agents here trade on Hyperliquid and start from USDC there. To fund it, send USDC to <span className={s.mono}>{w.address}</span> on HyperEVM or Arbitrum, then open Circuit to move it to Hyperliquid; Circuit's reply here tells you if the start needs funds, and where.
+                        Agents run on your Circuit wallet, not the wallet connected to this site: its key sits behind your passkey so the agent can sign on its own, which MetaMask never allows. Most agents here trade on Hyperliquid and start from USDC there; Circuit moves funds between its networks, and its reply here tells you if a start needs more.
                       </p>
                     </>
                   )

@@ -230,3 +230,18 @@
   justify-content: space-between;
   gap: 12px;
 }
+
+.inlineInput {
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid var(--line-strong);
+  color: var(--text);
+  font: inherit;
+  text-align: right;
+  width: 90px;
+  outline: none;
+}
+.ok {
+  font-size: 13px;
+  color: var(--sen);
+}
