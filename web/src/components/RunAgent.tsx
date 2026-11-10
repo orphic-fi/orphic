@@ -7,6 +7,18 @@ import s from './RunAgent.module.css'
 
 export type RunMode = 'paper' | 'live'
 
+function networkLabel(n: string): string {
+  const map: Record<string, string> = {
+    hypercore: 'Hyperliquid',
+    'ethereum:999': 'HyperEVM',
+    'ethereum:99901': 'Elysium',
+    'ethereum:42161': 'Arbitrum',
+    'ethereum:8453': 'Base',
+    'ethereum:1': 'Ethereum',
+  }
+  return map[n] ?? n.replace('ethereum:', 'chain ')
+}
+
 interface Props {
   agent: Pick<CircuitAgent, 'id' | 'name' | 'paper'>
   mode: RunMode
@@ -140,11 +152,33 @@ export default function RunAgent({ agent, mode: initialMode, onClose }: Props) {
                 </label>
                 {(() => {
                   const w = wallets.find((x) => x.id === wallet)
-                  return w ? (
-                    <p className={s.fine}>
-                      Agents run on your Circuit wallet, not the wallet connected to this site: its key sits behind your passkey so the agent can sign on its own. To fund it, send USDC or HYPE on HyperEVM to <span className={s.mono}>{w.address}</span> from any wallet.
-                    </p>
-                  ) : null
+                  if (!w) return null
+                  const held = w.holdings.filter((h) => Number(h.amount) > 0)
+                  return (
+                    <>
+                      <div className={s.holdings}>
+                        <div className={s.holdingsHead}>
+                          <span>What this wallet holds</span>
+                          <span>{w.value_usd ? fmtUsd(Number(w.value_usd), 2) : '–'}</span>
+                        </div>
+                        {held.length === 0 && <div className={s.muted}>Empty on every network.</div>}
+                        {held.map((h) => (
+                          <div key={`${h.network}-${h.symbol}-${h.kind}`} className={s.holding}>
+                            <span>
+                              {h.symbol} <span className={s.muted}>on {networkLabel(h.network)}</span>
+                            </span>
+                            <span>
+                              {Number(h.amount).toLocaleString('en-US', { maximumFractionDigits: 4 })}
+                              {h.value_usd ? ` · ${fmtUsd(Number(h.value_usd), 2)}` : ''}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                      <p className={s.fine}>
+                        Agents run on your Circuit wallet, not the wallet connected to this site: its key sits behind your passkey so the agent can sign on its own. Most agents here trade on Hyperliquid and start from USDC there. To fund it, send USDC to <span className={s.mono}>{w.address}</span> on HyperEVM or Arbitrum, then open Circuit to move it to Hyperliquid; Circuit's reply here tells you if the start needs funds, and where.
+                      </p>
+                    </>
+                  )
                 })()}
               </>
             )}
