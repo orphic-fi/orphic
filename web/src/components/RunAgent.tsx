@@ -53,6 +53,7 @@ export default function RunAgent({ agent, mode: initialMode, onClose }: Props) {
   const [amount, setAmount] = useState(initialMode === 'paper' ? '1000' : '100')
   const [chosenWallet, setWallet] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  const [showFund, setShowFund] = useState(false)
   const [result, setResult] = useState<Session | null>(null)
   const [error, setError] = useState<string | null>(null)
 
@@ -179,31 +180,41 @@ export default function RunAgent({ agent, mode: initialMode, onClose }: Props) {
                 {(() => {
                   const w = wallets.find((x) => x.id === wallet)
                   if (!w) return null
+                  const usdcHyper = w.holdings.filter((h) => h.symbol === 'USDC' && h.network === 'hypercore').reduce((n, h) => n + Number(h.amount), 0)
                   const held = w.holdings.filter((h) => Number(h.amount) > 0)
                   return (
                     <>
-                      <FundCircuit to={w.address as `0x${string}`} onSent={() => void account.refetch()} />
-                      <div className={s.holdings}>
-                        <div className={s.holdingsHead}>
-                          <span>What the agent wallet holds</span>
-                          <span>{w.value_usd ? fmtUsd(Number(w.value_usd), 2) : '–'}</span>
-                        </div>
-                        {held.length === 0 && <div className={s.muted}>Empty on every network.</div>}
-                        {held.map((h) => (
-                          <div key={`${h.network}-${h.symbol}-${h.kind}`} className={s.holding}>
-                            <span>
-                              {h.symbol} <span className={s.muted}>on {networkLabel(h.network)}</span>
-                            </span>
-                            <span>
-                              {Number(h.amount).toLocaleString('en-US', { maximumFractionDigits: 4 })}
-                              {h.value_usd ? ` · ${fmtUsd(Number(h.value_usd), 2)}` : ''}
-                            </span>
-                          </div>
-                        ))}
+                      <div className={s.field}>
+                        <span>USDC on Hyperliquid in it</span>
+                        <span>{fmtUsd(usdcHyper, 2)}</span>
                       </div>
-                      <p className={s.fine}>
-                        Two wallets: your MetaMask is where money starts; the agent wallet is where it trades. Circuit holds the agent wallet's key behind your passkey so the agent can sign on its own, which MetaMask never allows. Most agents here trade on Hyperliquid and start from USDC there.
-                      </p>
+                      <button type="button" className={s.linkBtn} style={{ alignSelf: 'flex-start', fontSize: 13 }} onClick={() => setShowFund((v) => !v)}>
+                        {showFund ? 'Hide funding' : usdcHyper > 0 ? 'Add funds or see everything it holds' : 'Fund it from MetaMask'}
+                      </button>
+                      {showFund && (
+                        <>
+                          <FundCircuit to={w.address as `0x${string}`} onSent={() => void account.refetch()} />
+                          <div className={s.holdings}>
+                            <div className={s.holdingsHead}>
+                              <span>Everything the agent wallet holds</span>
+                              <span>{w.value_usd ? fmtUsd(Number(w.value_usd), 2) : '–'}</span>
+                            </div>
+                            {held.length === 0 && <div className={s.muted}>Empty on every network.</div>}
+                            {held.map((h) => (
+                              <div key={`${h.network}-${h.symbol}-${h.kind}`} className={s.holding}>
+                                <span>
+                                  {h.symbol} <span className={s.muted}>on {networkLabel(h.network)}</span>
+                                </span>
+                                <span>
+                                  {Number(h.amount).toLocaleString('en-US', { maximumFractionDigits: 4 })}
+                                  {h.value_usd ? ` · ${fmtUsd(Number(h.value_usd), 2)}` : ''}
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                          <p className={s.fine}>Your MetaMask is where money starts; the agent wallet is where it trades. Circuit holds that wallet's key behind your passkey so the agent can sign on its own, which MetaMask never allows.</p>
+                        </>
+                      )}
                     </>
                   )
                 })()}
@@ -213,14 +224,10 @@ export default function RunAgent({ agent, mode: initialMode, onClose }: Props) {
               <span>{mode === 'paper' ? 'Start with (simulated)' : 'Allot'}</span>
               <input inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value.replace(/[^0-9.]/g, ''))} />
             </label>
-            <div className={s.field}>
-              <span>Subscription</span>
-              <span>Free until the $ORPH launch</span>
-            </div>
             <p className={s.fine}>
               {mode === 'paper'
-                ? 'Simulated money on live markets. Nothing real moves. Good for watching how it behaves.'
-                : 'The agent trades this wallet within its own rules and can never withdraw from it. Start small; you can top up later. Stop any time.'}
+                ? 'Simulated money on live markets. Nothing real moves. Free.'
+                : 'Trades the agent wallet within its rules, can never withdraw from it, stop any time. Free until the $ORPH launch.'}
             </p>
             <button type="button" className={s.primary} disabled={busy || !amount || (mode === 'live' && !wallet)} onClick={() => void go()}>
               {busy ? 'Starting…' : mode === 'paper' ? 'Start on paper money' : 'Run live'}
