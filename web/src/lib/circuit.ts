@@ -12,9 +12,11 @@ export const CIRCUIT_APP = 'https://app.circuit.org'
 export const ORPHIC_AGENT_IDS: Record<string, { slug: string; chain: string }> = {
   'agt_3c05032e-3df5-4454-aa3d-b25550f23f0d': { slug: 'orphic-rotator', chain: 'Elysium' },
   'agt_8bcba87d-fc43-49ef-9803-af3ac0d093f6': { slug: 'orphic-neutral', chain: 'Hyperliquid' },
+  'agt_68d25adc-ca1d-4e34-8d82-a17510e50360': { slug: 'orphic-sniper', chain: 'Elysium' },
 }
 export const ROTATOR_AGENT_ID = '3c05032e-3df5-4454-aa3d-b25550f23f0d'
 export const NEUTRAL_AGENT_ID = '8bcba87d-fc43-49ef-9803-af3ac0d093f6'
+export const SNIPER_AGENT_ID = '68d25adc-ca1d-4e34-8d82-a17510e50360'
 
 /**
  * Rough grouping of Circuit's catalogue by what an agent does, from its name and description. Circuit publishes no

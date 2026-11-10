@@ -172,10 +172,10 @@ export default function Agents() {
           <button type="button" className={`${s.mood} ${mood === 'orphic' ? s.moodOn : ''}`} onClick={() => setMood('orphic')}>
             <div className={s.moodTop}>
               <span className="label">Orphic's own</span>
-              <span className="label">2 agents</span>
+              <span className="label">3 agents</span>
             </div>
-            <h3>The ones running our vaults</h3>
-            <p>Rotator runs senior and junior. Neutral is on paper. Both decide publicly, every hour.</p>
+            <h3>The ones we run ourselves</h3>
+            <p>Rotator runs senior and junior. Neutral is on paper. Sniper buys Elysium launches. All decide publicly.</p>
           </button>
         </section>
 
@@ -259,6 +259,38 @@ export default function Agents() {
             </>
           )}
 
+          {(mood === 'orphic' || mood === 'bets') && (
+            <div className={s.row}>
+              <div>
+                <h2 className={s.name}>
+                  <Link to="/agents/orphic-sniper">Orphic Sniper</Link> <span className={s.tagMint}>Orphic</span>
+                </h2>
+                <div className={s.by}>
+                  <i className={`${s.skin} ${s.skinOn}`} />
+                  Orphic · live on its own wallet since 10 Nov · Elysium · every minute
+                </div>
+                <div className={s.one}>Buys new launches once they show $25k cap, 50 holders, $5k volume and a rehearsed sell. +30% out, -70% out, five slots.</div>
+              </div>
+              <div>
+                <div className={`${s.big} ${s.retNa}`}>new</div>
+                <div className={s.sm}>P&L on its page</div>
+              </div>
+              <div>
+                <div className={s.v}>1</div>
+                <div className={s.sm}>Orphic</div>
+              </div>
+              <div>
+                <div className={s.v}>no</div>
+                <div className={s.sm}>real HYPE only</div>
+              </div>
+              <div className={s.actions}>
+                <Link to="/agents/orphic-sniper" className={s.ghost}>
+                  See its snipes
+                </Link>
+              </div>
+            </div>
+          )}
+
           {mood !== 'orphic' &&
             visible.map((a) => (
               <div key={a.id} className={s.row}>
@@ -335,6 +367,14 @@ export default function Agents() {
                   <div className={s.sm}>{sess.pnl_usd ? `${Number(sess.pnl_usd) >= 0 ? '+' : ''}${fmtUsd(Number(sess.pnl_usd), 2)} since start` : ''}</div>
                 </div>
                 <div className={s.actions}>
+                  {(() => {
+                    const w = account.data?.wallets.find((x) => x.id === sess.wallet)
+                    return w ? (
+                      <Link to={`/agents/wallet/${w.address}`} className={s.ghost}>
+                        Trades
+                      </Link>
+                    ) : null
+                  })()}
                   {sess.status !== 'stopped' && (
                     <button type="button" className={s.ghost} onClick={() => void stop(sess.id)}>
                       Stop

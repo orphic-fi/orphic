@@ -1,0 +1,20 @@
+name = "orphic-sniper"
+tagline = "Snipes proven Elysium launches"
+category = "experimental"
+walletVmFamily = "evm"
+agentId = "68d25adc-ca1d-4e34-8d82-a17510e50360"
+continuous = true
+
+# Native HYPE on Elysium: Montra launches trade against it and the wallet pays gas with it.
+[startingAsset]
+network = "ethereum:99901"
+asset = "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+minimumAmount = "0.1"
+
+[settings]
+# Buys a launch once its market cap is at least this many dollars; lower buys earlier and riskier, higher waits for more proof.
+minMcapUsd = { type = "number", default = 25000, min = 5000, max = 500000 }
+# Sells a position once it is up this percent; lower takes profit sooner, higher lets winners run.
+takeProfitPct = { type = "number", default = 30, min = 5, max = 1000 }
+# Sells a position once it is down this percent; lower cuts losers sooner, higher gives them more room.
+stopLossPct = { type = "number", default = 70, min = 5, max = 95 }
