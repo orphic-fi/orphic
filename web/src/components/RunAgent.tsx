@@ -202,7 +202,7 @@ export default function RunAgent({ agent, mode: initialMode, onClose }: Props) {
             </button>
             {error && <div className={s.err}>{error}</div>}
             <div className={s.footnote}>
-              Linked to Circuit{days !== null ? `, ${days} days left on the permit` : ''}. Runs on Circuit's engine.{' '}
+              Linked to Circuit{account.data?.wallets[0] ? ` (${account.data.wallets[0].address.slice(0, 6)}…${account.data.wallets[0].address.slice(-4)})` : ''}{days !== null ? `, ${days} days left` : ''}. Runs on Circuit's engine.{' '}
               <button type="button" className={s.linkBtn} onClick={() => void unlink()}>
                 Unlink
               </button>

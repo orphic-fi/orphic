@@ -5,46 +5,69 @@
  */
 import { useCallback, useEffect, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useAccount } from 'wagmi'
 import { CircuitError, circuit, link, type Account, type Session } from './circuitClient'
 
 export const APP_ID = 'orphic'
-const STORE = 'orphic-circuit-permit'
+const STORE = 'orphic-circuit-permits' // { [connected wallet address or "anon"]: Stored }
 
 interface Stored {
   permit: string
   linkedAt: number
 }
 
-function readStored(): Stored | null {
+type Book = Record<string, Stored>
+
+function readBook(): Book {
   try {
     const raw = localStorage.getItem(STORE)
-    if (!raw) return null
-    const s = JSON.parse(raw) as Stored
-    return typeof s.permit === 'string' ? s : null
+    if (!raw) return {}
+    const b = JSON.parse(raw) as Book
+    return b && typeof b === 'object' ? b : {}
   } catch {
-    return null
+    return {}
   }
 }
 
-function writeStored(s: Stored | null) {
+function writeBook(b: Book) {
   try {
-    if (s) localStorage.setItem(STORE, JSON.stringify(s))
-    else localStorage.removeItem(STORE)
+    localStorage.setItem(STORE, JSON.stringify(b))
   } catch {
     /* private mode: the link lasts for this page only */
   }
 }
 
-let memory: Stored | null = readStored()
+/**
+ * Links follow the wallet connected to the site: switch MetaMask to another account and Orphic treats you as a
+ * new user with no Circuit link yet; switch back and the earlier link is there. Not connected: one shared slot.
+ */
+const book: Book = readBook()
+let currentKey = 'anon'
 const listeners = new Set<() => void>()
-function setPermit(s: Stored | null) {
-  memory = s
-  writeStored(s)
+function notify() {
   listeners.forEach((l) => l())
+}
+function setPermit(s: Stored | null) {
+  if (s) book[currentKey] = s
+  else delete book[currentKey]
+  writeBook(book)
+  notify()
+}
+export function setWalletScope(address: string | undefined) {
+  const k = address ? address.toLowerCase() : 'anon'
+  if (k !== currentKey) {
+    currentKey = k
+    notify()
+  }
+}
+function current(): Stored | null {
+  return book[currentKey] ?? null
 }
 
 export function usePermit(): string | null {
   const [, tick] = useState(0)
+  const { address } = useAccount()
+  setWalletScope(address)
   useEffect(() => {
     const l = () => tick((n) => n + 1)
     listeners.add(l)
@@ -52,7 +75,7 @@ export function usePermit(): string | null {
       listeners.delete(l)
     }
   }, [])
-  return memory?.permit ?? null
+  return current()?.permit ?? null
 }
 
 export type LinkState = { phase: 'idle' } | { phase: 'waiting'; url: string; via: 'frame' | 'popup' } | { phase: 'linked' } | { phase: 'failed'; message: string }
@@ -99,7 +122,7 @@ export function useCircuitLink() {
   }, [])
 
   const unlink = useCallback(async () => {
-    const p = memory?.permit
+    const p = current()?.permit
     setPermit(null)
     setState({ phase: 'idle' })
     if (p) {
@@ -126,7 +149,7 @@ export function useCircuitAccount() {
     retry: (count, err) => err.status !== 401 && count < 2,
   })
   // A 401 means the permit expired or was revoked on Circuit: forget it so the page offers to link again.
-  if (q.error && q.error.status === 401 && memory) setPermit(null)
+  if (q.error && q.error.status === 401 && current()) setPermit(null)
   return q
 }
 
