@@ -4,6 +4,7 @@ import AgentPage from './pages/AgentPage'
 import CircuitAgentPage from './pages/CircuitAgentPage'
 import RotatorPage from './pages/RotatorPage'
 import NeutralPage from './pages/NeutralPage'
+import Linked from './pages/Linked'
 import Agents from './pages/Agents'
 import Docs from './pages/Docs'
 import Home from './pages/Home'
@@ -26,6 +27,7 @@ export default function App() {
           <Route path="/agents/launch" element={<LaunchAgent />} />
           <Route path="/agents/orphic-rotator" element={<RotatorPage />} />
           <Route path="/agents/orphic-neutral" element={<NeutralPage />} />
+          <Route path="/linked" element={<Linked />} />
           <Route path="/agents/c/:id" element={<CircuitAgentPage />} />
           <Route path="/agents/:slug" element={<AgentPage />} />
           <Route path="/docs" element={<Docs />} />

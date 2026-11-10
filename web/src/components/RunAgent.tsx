@@ -1,0 +1,158 @@
+import { useEffect, useState } from 'react'
+import type { CircuitAgent } from '../lib/circuit'
+import { CircuitError, type Session } from '../lib/circuitClient'
+import { permitDaysLeft, useCircuitAccount, useCircuitActions, useCircuitLink, usePermit } from '../lib/circuitSession'
+import { fmtUsd } from '../lib/format'
+import s from './RunAgent.module.css'
+
+export type RunMode = 'paper' | 'live'
+
+interface Props {
+  agent: Pick<CircuitAgent, 'id' | 'name' | 'paper'>
+  mode: RunMode
+  onClose: () => void
+}
+
+/**
+ * Start an agent from Orphic. Paper runs on simulated money; live runs on one of the user's Circuit wallets. The
+ * agent trades that wallet and can never withdraw from it; the user can stop it here or on Circuit at any time.
+ */
+export default function RunAgent({ agent, mode: initialMode, onClose }: Props) {
+  const permit = usePermit()
+  const { state, begin } = useCircuitLink()
+  const account = useCircuitAccount()
+  const { start } = useCircuitActions()
+  const [mode, setMode] = useState<RunMode>(initialMode)
+  const [amount, setAmount] = useState(initialMode === 'paper' ? '1000' : '100')
+  const [chosenWallet, setWallet] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
+  const [result, setResult] = useState<Session | null>(null)
+  const [error, setError] = useState<string | null>(null)
+
+  // Default to the first wallet without an effect: derived, so it follows the account read.
+  const wallet = chosenWallet ?? account.data?.wallets[0]?.id ?? null
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose()
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [onClose])
+
+  const go = async () => {
+    setBusy(true)
+    setError(null)
+    try {
+      const sess = await start(agent.id, mode === 'paper' ? null : wallet, amount)
+      setResult(sess)
+    } catch (err) {
+      setError(err instanceof CircuitError ? `${err.message}${err.code ? ` (${err.code})` : ''}` : 'Could not start the agent')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const days = permitDaysLeft(account.data)
+  const wallets = account.data?.wallets ?? []
+
+  return (
+    <div className={s.backdrop} onClick={onClose} role="presentation">
+      <div className={s.sheet} onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-label={`Run ${agent.name}`}>
+        <div className={s.head}>
+          <div>
+            <div className="label">Run</div>
+            <h2 className={s.h2}>{agent.name}</h2>
+          </div>
+          <button type="button" className={s.x} onClick={onClose} aria-label="Close">
+            ×
+          </button>
+        </div>
+
+        {result ? (
+          <div className={s.done}>
+            <div className={s.doneBig}>{result.status === 'running' ? 'Running' : result.status === 'needs_user' ? 'One step on Circuit' : 'Stopped'}</div>
+            <p className={s.fine}>
+              {result.status === 'running'
+                ? `${agent.name} is running ${mode === 'paper' ? 'on paper money' : 'on your wallet'}. It checks in on its own schedule; you can stop it from My agents or on Circuit.`
+                : result.status === 'needs_user'
+                  ? 'Circuit wants you to confirm this start in its own app, a passkey tap. The session shows here once you have.'
+                  : 'The session did not start. Try again or check Circuit.'}
+            </p>
+            {result.status === 'needs_user' && (
+              <a href="https://app.circuit.org" target="_blank" rel="noreferrer" className={s.primary}>
+                Open Circuit
+              </a>
+            )}
+            <button type="button" className={s.secondary} onClick={onClose}>
+              Done
+            </button>
+          </div>
+        ) : !permit ? (
+          <div className={s.link}>
+            <p className={s.fine}>
+              One passkey links your Circuit account to Orphic for 30 days. Orphic can then start and stop agents for you; it can never withdraw from your wallets, and the link is revocable any time. Your key stays in this browser.
+            </p>
+            {state.phase === 'waiting' ? (
+              <>
+                <div className={s.waiting}>Waiting for your passkey in the Circuit tab…</div>
+                <a href={state.url} target="_blank" rel="noreferrer" className={s.secondary}>
+                  Reopen the Circuit tab
+                </a>
+              </>
+            ) : (
+              <button type="button" className={s.primary} onClick={() => void begin()}>
+                Link Circuit with a passkey
+              </button>
+            )}
+            {state.phase === 'failed' && <div className={s.err}>{state.message}</div>}
+          </div>
+        ) : (
+          <div className={s.form}>
+            <div className={s.seg}>
+              <button type="button" className={mode === 'paper' ? s.segOn : ''} onClick={() => setMode('paper')} disabled={agent.paper === false}>
+                Paper money
+              </button>
+              <button type="button" className={mode === 'live' ? s.segOn : ''} onClick={() => setMode('live')}>
+                Live wallet
+              </button>
+            </div>
+            {mode === 'live' && (
+              <label className={s.field}>
+                <span>Wallet</span>
+                {wallets.length ? (
+                  <select value={wallet ?? ''} onChange={(e) => setWallet(e.target.value)}>
+                    {wallets.map((w) => (
+                      <option key={w.id} value={w.id}>
+                        {w.name} · {w.address.slice(0, 6)}…{w.address.slice(-4)} · {w.value_usd ? fmtUsd(Number(w.value_usd)) : '–'}
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <span className={s.muted}>{account.isLoading ? 'loading' : 'no wallets on this account yet'}</span>
+                )}
+              </label>
+            )}
+            <label className={s.field}>
+              <span>{mode === 'paper' ? 'Start with (simulated)' : 'Allot'}</span>
+              <input inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value.replace(/[^0-9.]/g, ''))} />
+            </label>
+            <div className={s.field}>
+              <span>Subscription</span>
+              <span>Free until the $ORPH launch</span>
+            </div>
+            <p className={s.fine}>
+              {mode === 'paper'
+                ? 'Simulated money on live markets. Nothing real moves. Good for watching how it behaves.'
+                : 'The agent trades this wallet within its own rules and can never withdraw from it. Start small; you can top up later. Stop any time.'}
+            </p>
+            <button type="button" className={s.primary} disabled={busy || !amount || (mode === 'live' && !wallet)} onClick={() => void go()}>
+              {busy ? 'Starting…' : mode === 'paper' ? 'Start on paper money' : 'Run live'}
+            </button>
+            {error && <div className={s.err}>{error}</div>}
+            <div className={s.footnote}>
+              Linked to Circuit{days !== null ? `, ${days} days left on the permit` : ''}. Runs on Circuit's engine.
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}

@@ -1,4 +1,6 @@
+import { useState } from 'react'
 import { Link, Navigate, useParams } from 'react-router-dom'
+import RunAgent, { type RunMode } from '../components/RunAgent'
 import { GROUP_BLURB, circuitAgentUrl, groupOf, shortId, useCircuitAgents, type AgentGroup, type CircuitAgent } from '../lib/circuit'
 import { fmtNum } from '../lib/format'
 import { ReturnValue } from './Agents'
@@ -25,6 +27,7 @@ function pctLabel(v: string | null): string {
 export default function CircuitAgentPage() {
   const { id } = useParams()
   const agents = useCircuitAgents()
+  const [run, setRun] = useState<RunMode | null>(null)
   if (agents.isLoading) {
     return (
       <div className={`wrap ${s.page}`}>
@@ -107,14 +110,16 @@ export default function CircuitAgentPage() {
         </div>
 
         <aside className={s.side}>
-          <a href={circuitAgentUrl(agent.id)} target="_blank" rel="noreferrer" className={s.primary}>
-            Run on Circuit
-          </a>
-          <button type="button" className={s.secondary} disabled>
-            Subscribe with $ORPH · at launch
+          {agent.paper && (
+            <button type="button" className={s.primary} onClick={() => setRun('paper')}>
+              Start on paper money
+            </button>
+          )}
+          <button type="button" className={agent.paper ? s.secondary : s.primary} onClick={() => setRun('live')}>
+            Run live
           </button>
           <p className={s.fine}>
-            On Circuit you sign in with a passkey, pick a wallet{agent.paper ? ' or paper money' : ''}, and start it. The agent trades that wallet and can never withdraw from it. Stop it any time.
+            Free until the $ORPH launch. One passkey links your Circuit account for 30 days; after that, starts and stops happen here. The agent trades your wallet and can never withdraw from it. Stop any time.
           </p>
           <dl className={s.facts}>
             <div>
@@ -130,12 +135,17 @@ export default function CircuitAgentPage() {
               <dd>{agent.paper ? 'Yes' : 'No'}</dd>
             </div>
             <div>
-              <dt>Agent id</dt>
-              <dd className={s.mono}>{shortId(agent.id).slice(0, 8)}</dd>
+              <dt>On Circuit</dt>
+              <dd>
+                <a href={circuitAgentUrl(agent.id)} target="_blank" rel="noreferrer">
+                  agent page ↗
+                </a>
+              </dd>
             </div>
           </dl>
         </aside>
       </section>
+      {run && <RunAgent agent={agent} mode={run} onClose={() => setRun(null)} />}
     </div>
   )
 }

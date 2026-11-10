@@ -1,10 +1,27 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
+import RunAgent, { type RunMode } from '../components/RunAgent'
 import { AGENTS } from '../lib/agents'
-import { GROUPS, GROUP_BLURB, NEUTRAL_AGENT_ID, ORPHIC_AGENT_IDS, ROTATOR_AGENT_ID, circuitAgentUrl, groupOf, shortId, useCircuitAgents, useRotator, type AgentGroup, type CircuitAgent } from '../lib/circuit'
+import { ORPHIC_AGENT_IDS, groupOf, shortId, useCircuitAgents, useRotator, type AgentGroup, type CircuitAgent } from '../lib/circuit'
+import { permitDaysLeft, useCircuitAccount, useCircuitActions, useCircuitLink, usePermit } from '../lib/circuitSession'
 import { fmtNum, fmtPct, fmtUsd } from '../lib/format'
-import { Mark } from '../components/Layout'
-import s from './Agents.module.css'
+import { useFunding } from '../lib/hyperliquid'
+import s from './AgentsV2.module.css'
+
+type Mood = 'steady' | 'bets' | 'orphic'
+const STEADY: AgentGroup[] = ['Yield', 'Neutral', 'Liquidity']
+const BETS: AgentGroup[] = ['Long', 'Short', 'Copy', 'Other']
+
+export function ReturnValue({ value, className = '' }: { value: string | null; className?: string }) {
+  if (value === null || value === undefined || value === '') return <span className={`${s.ret} ${s.retNa} ${className}`}>n/a</span>
+  const n = Number(value)
+  return (
+    <span className={`${s.ret} ${n < 0 ? s.retNeg : n > 0 ? s.retPos : s.retNa} ${className}`}>
+      {n > 0 ? '+' : ''}
+      {fmtNum(n, 1)}%
+    </span>
+  )
+}
 
 export function AgentIcon({ d, size = 16 }: { d: string; size?: number }) {
   return (
@@ -14,282 +31,365 @@ export function AgentIcon({ d, size = 16 }: { d: string; size?: number }) {
   )
 }
 
-/** 30-day return as Circuit reports it: signed, two decimals, or n/a. */
-export function ReturnValue({ value, className = '' }: { value: string | null; className?: string }) {
-  if (value === null || value === undefined || value === '') return <span className={`${s.roi} ${s.roiNa} ${className}`}>n/a</span>
-  const n = Number(value)
-  const tone = n < 0 ? s.roiNeg : n > 0 ? s.roiPos : s.roiNa
-  return (
-    <span className={`${s.roi} ${tone} ${className}`}>
-      {n > 0 ? '+' : ''}
-      {fmtNum(n, 2)}%
-    </span>
-  )
-}
-
-function agentPath(a: CircuitAgent): string {
-  const own = ORPHIC_AGENT_IDS[a.id]
-  return own ? `/agents/${own.slug}` : `/agents/c/${shortId(a.id)}`
-}
+const ret = (a: CircuitAgent) => (a.return_percent === null ? Number.NEGATIVE_INFINITY : Number(a.return_percent))
 
 export default function Agents() {
   const agents = useCircuitAgents()
   const rotator = useRotator()
-  const [group, setGroup] = useState<'All' | AgentGroup>('All')
-  const [showFarming, setShowFarming] = useState(false)
-  const [sort, setSort] = useState<'return' | 'people'>('return')
+  const funding = useFunding('HYPE')
+  const permit = usePermit()
+  const account = useCircuitAccount()
+  const { begin, state: linkState } = useCircuitLink()
+  const { stop } = useCircuitActions()
+  const [mood, setMood] = useState<Mood>('steady')
+  const [showAll, setShowAll] = useState(false)
+  const [run, setRun] = useState<{ agent: CircuitAgent; mode: RunMode } | null>(null)
 
-  const all = agents.data ?? []
-  const catalogue = all.filter((a) => !ORPHIC_AGENT_IDS[a.id])
-  // Default order: best 30-day return first, as Circuit reports it, with agents that have no figure yet after those that
-  // do. "Most run" orders by people instead. Points-farming experiments are hidden unless asked for.
-  const ret = (a: CircuitAgent) => (a.return_percent === null ? Number.NEGATIVE_INFINITY : Number(a.return_percent))
-  const ranked = [...catalogue].sort((x, y) => (sort === 'return' ? ret(y) - ret(x) || y.people - x.people : y.people - x.people || ret(y) - ret(x)))
-  const visible = ranked.filter((a) => (group === 'All' ? groupOf(a) !== 'Farming' || showFarming : groupOf(a) === group))
-  const counts = GROUPS.reduce((m, g) => ({ ...m, [g]: catalogue.filter((a) => groupOf(a) === g).length }), {} as Record<AgentGroup, number>)
+  const all = useMemo(() => agents.data ?? [], [agents.data])
+  const catalogue = useMemo(() => all.filter((a) => !ORPHIC_AGENT_IDS[a.id] && groupOf(a) !== 'Farming'), [all])
+  const steady = useMemo(() => catalogue.filter((a) => STEADY.includes(groupOf(a))).sort((x, y) => ret(y) - ret(x) || y.people - x.people), [catalogue])
+  const bets = useMemo(() => catalogue.filter((a) => BETS.includes(groupOf(a))).sort((x, y) => ret(y) - ret(x) || y.people - x.people), [catalogue])
+  const leaders = useMemo(() => [...catalogue].sort((x, y) => ret(y) - ret(x)).filter((a) => a.return_percent !== null).slice(0, 5), [catalogue])
   const people = all.reduce((n, a) => n + (a.people || 0), 0)
   const rot = rotator.data
+  const f = funding.data
+  const best = (xs: CircuitAgent[]) => xs.find((a) => a.return_percent !== null)
+  const rows = mood === 'steady' ? steady : mood === 'bets' ? bets : []
+  const visible = showAll ? rows : rows.slice(0, 6)
+  const sessions = account.data?.sessions ?? []
+  const days = permitDaysLeft(account.data)
 
   return (
-    <div className={`wrap ${s.page}`}>
-      <section className={s.hero}>
-        <div className={s.heroText}>
-          <div className="label">Agent marketplace</div>
-          <h1 className={s.h1}>Agents that run strategies for you.</h1>
-          <p className={s.lead}>
-            Orphic's own agents run the vaults. The rest of the catalogue is live on Circuit today: each agent runs on a wallet only you can withdraw from. Subscribing through Orphic, paid in $ORPH, opens with the token launch.
-          </p>
-        </div>
-        <div className={s.heroRight}>
-          <div className={s.kpis}>
-            <div>
-              <div className="label">Agents live</div>
-              <div className={s.kpi}>{agents.data ? all.length : '–'}</div>
-            </div>
-            <div>
-              <div className="label">People running them</div>
-              <div className={s.kpi}>{agents.data ? people.toLocaleString('en-US') : '–'}</div>
-            </div>
-            <div>
-              <div className="label">Orphic agents</div>
-              <div className={s.kpi}>{Object.keys(ORPHIC_AGENT_IDS).length}</div>
-            </div>
-          </div>
-          <Link to="/agents/launch" className={s.launch}>
-            Launch an agent
-          </Link>
-        </div>
-      </section>
-
-      {agents.isError && <div className={s.notice}>Circuit's catalogue is unreachable right now; the Orphic agent below reads from our own hourly report.</div>}
-
-      {/* Orphic's agent: the Rotator, live on Circuit, with the last decision from the keeper report. */}
-      <section className={s.feature}>
-        <div className={s.featureHead}>
-          <div className={s.identity}>
-            <span className={s.orbLg}>
-              <Mark size={22} />
+    <div className={s.page}>
+      {/* Live strip */}
+      <div className={s.strip}>
+        <div className={`wrap ${s.stripInner}`}>
+          <span>
+            <i className={s.dot} />
+            <b>Rotator</b> {rot ? `${rot.decision.move ? 'rebalanced' : 'held'} at ${new Date(rot.runAt).toUTCString().slice(17, 22)} UTC` : 'hourly'}
+            {rot?.vaultUsd != null ? ` · ${fmtUsd(rot.vaultUsd)} in the vault` : ''}
+          </span>
+          <span>
+            <i className={`${s.dot} ${s.dotAmber}`} />
+            <b>Neutral</b> {f ? (f.apy8 > 5 ? 'in position' : 'waiting') : 'paper'} · $HYPE funding {f ? `${f.apy8 > 0 ? '+' : ''}${fmtNum(f.apy8, 1)}% ann.` : '…'}
+          </span>
+          {leaders.slice(0, 2).map((a) => (
+            <span key={a.id}>
+              <b>{a.name}</b> <ReturnValue value={a.return_percent} className={s.stripRet} /> 30d · {a.people} running
             </span>
+          ))}
+          <span>
+            <b>{people.toLocaleString('en-US')}</b> people running agents on Circuit
+          </span>
+        </div>
+      </div>
+
+      <div className={`wrap ${s.body}`}>
+        {/* Hero + leaders */}
+        <section className={s.hero}>
+          <div className={s.heroText}>
             <div>
-              <h2 className={s.featureName}>
-                <Link to="/agents/orphic-rotator">Orphic Rotator</Link>
-              </h2>
-              <div className="label" style={{ marginTop: 8 }}>
-                Orphic · Elysium · runs the vaults hourly
-              </div>
+              <div className="label">Agents</div>
+              <h1 className={s.h1}>
+                Pick an agent.
+                <br />
+                It trades your wallet.
+                <br />
+                You can stop it any time.
+              </h1>
+              <p className={s.lead}>Start on paper money, go live with a cap when you trust it. Every number here is from real sessions, never a forecast.</p>
+            </div>
+            <div className={s.heroActions}>
+              {permit ? (
+                <>
+                  <a href="#my-agents" className={s.cta}>
+                    My agents{sessions.length ? ` · ${sessions.length}` : ''}
+                  </a>
+                  <span className={s.linked}>
+                    <i className={s.dot} /> Linked to Circuit{days !== null ? ` · ${days} days left` : ''}
+                  </span>
+                </>
+              ) : (
+                <>
+                  <button type="button" className={s.cta} onClick={() => void begin()}>
+                    {linkState.phase === 'waiting' ? 'Waiting for your passkey…' : 'Link Circuit and start on paper'}
+                  </button>
+                  <Link to="/how-it-works" className={s.ghost}>
+                    How agents work
+                  </Link>
+                </>
+              )}
             </div>
           </div>
-          <div className={s.featureActions}>
-            <a href={circuitAgentUrl(ROTATOR_AGENT_ID)} target="_blank" rel="noreferrer" className={s.ghostBtn}>
-              View on Circuit
-            </a>
-            <Link to="/agents/orphic-rotator" className={s.subscribe}>
-              Details
-            </Link>
-          </div>
-        </div>
-        <p className={s.rule}>
-          Reads the vaults and Morpho rates every hour, moves senior between allowlisted venues only when the gain clears gas, keeps junior's spare USDC earning and settles junior weekly. It cannot move funds anywhere but the vaults.
-        </p>
-        <div className={s.featureStats}>
-          <div>
-            <div className="label">Vault it runs</div>
-            <div className={s.stat}>{rot?.vaultUsd != null ? fmtUsd(rot.vaultUsd) : '–'}</div>
-          </div>
-          <div>
-            <div className="label">Book rate now</div>
-            <div className={s.stat}>{rot?.bookApy != null ? fmtPct(rot.bookApy) : '–'}</div>
-            <div className={s.perfNote}>est. from venue rates</div>
-          </div>
-          <div>
-            <div className="label">Last decision</div>
-            <div className={s.stat}>{rot ? (rot.decision.move ? 'Rebalance' : 'Hold') : '–'}</div>
-            <div className={s.perfNote}>{rot ? rot.decision.reason : 'waiting for the hourly report'}</div>
-          </div>
-          <div>
-            <div className="label">Junior idle</div>
-            <div className={s.stat}>{rot?.juniorIdle ? rot.juniorIdle.action : '–'}</div>
-            <div className={s.perfNote}>{rot?.juniorIdle?.felixUsdc != null ? `${fmtUsd(rot.juniorIdle.felixUsdc)} earning in Felix` : ''}</div>
-          </div>
-          <div>
-            <div className="label">Last run</div>
-            <div className={s.stat}>{rot ? new Date(rot.runAt).toUTCString().slice(17, 22) + ' UTC' : '–'}</div>
-            <div className={s.perfNote}>{rot?.alerts.length ? `${rot.alerts.length} alert(s)` : 'no alerts'}</div>
-          </div>
-        </div>
-      </section>
 
-      {/* Orphic's second agent: the funding-capture test, on paper money. */}
-      <section className={s.twin}>
-        <article className={s.card}>
-          <div className={s.cardTop}>
-            <span className={s.orb}>
-              <Mark size={16} />
-            </span>
-            <span className="label">Orphic · paper test</span>
-          </div>
-          <div>
-            <h2 className={s.name}>
-              <Link to="/agents/orphic-neutral">Orphic Neutral</Link>
-            </h2>
-            <div className="label" style={{ marginTop: 8 }}>
-              Hyperliquid · funding capture · hourly
-            </div>
-          </div>
-          <p className={s.rule}>Holds spot $HYPE and an equal perp short so price cancels out, and collects the funding longs pay shorts while it is worth it. Running on simulated money since 9 Nov to see how it behaves before it is offered.</p>
-          <div className={s.cardFoot}>
-            <a href={circuitAgentUrl(NEUTRAL_AGENT_ID)} target="_blank" rel="noreferrer" className={s.ghostBtn}>
-              View on Circuit
-            </a>
-            <Link to="/agents/orphic-neutral" className={s.subscribe}>
-              Details
-            </Link>
-          </div>
-        </article>
-        <div className={s.twinNote}>
-          <div className="label">How Orphic agents reach the marketplace</div>
-          <p>Every Orphic agent runs on simulated money first, then with our own capital, and only then becomes something you can subscribe to. The Rotator has passed that bar and runs the vaults. Neutral is at step one. Agents we are still designing are listed at the bottom of this page.</p>
-        </div>
-      </section>
-
-      <section>
-        <div className={s.sectionHead}>
-          <div>
-            <h2 className={s.h2}>Run today on Circuit</h2>
-            <p className={s.sectionLead}>The live catalogue, best recent results first. Returns are the last 30 days of live sessions as Circuit reports them; a good month is not a forecast of the next one.</p>
-          </div>
-        </div>
-        <div className={s.filters}>
-          <div className={s.chips}>
-            <button type="button" className={`${s.chip} ${group === 'All' ? s.chipOn : ''}`} onClick={() => setGroup('All')}>
-              All
-            </button>
-            {GROUPS.filter((g) => counts[g] > 0).map((g) => (
-              <button key={g} type="button" className={`${s.chip} ${group === g ? s.chipOn : ''}`} onClick={() => setGroup(g)}>
-                {g} <span className={s.chipCount}>{counts[g]}</span>
-              </button>
-            ))}
-          </div>
-          <div className={s.sort}>
-            <span className="label">Sort</span>
-            <button type="button" className={`${s.chip} ${sort === 'return' ? s.chipOn : ''}`} onClick={() => setSort('return')}>
-              Best 30d return
-            </button>
-            <button type="button" className={`${s.chip} ${sort === 'people' ? s.chipOn : ''}`} onClick={() => setSort('people')}>
-              Most run
-            </button>
-            {group === 'All' && counts.Farming > 0 && (
-              <button type="button" className={s.chip} onClick={() => setShowFarming((v) => !v)}>
-                {showFarming ? 'Hide farming' : `Farming (${counts.Farming})`}
-              </button>
-            )}
-          </div>
-        </div>
-        {group !== 'All' && <p className={s.groupBlurb}>{GROUP_BLURB[group]}</p>}
-        {agents.isLoading && <div className={s.notice}>Loading the live catalogue from Circuit.</div>}
-        <div className={s.grid}>
-          {visible.map((a) => (
-            <article key={a.id} className={s.card}>
-              <div className={s.cardTop}>
-                <span className={s.orb}>
-                  <AgentIcon d="M3 11l3-4 3 3 2-2 2 3" />
-                </span>
-                <span className="label">
-                  {groupOf(a)} · {a.official ? 'Circuit' : 'Community'}
-                </span>
-              </div>
+          <aside className={s.leaders}>
+            <div className={s.leadersHead}>
               <div>
-                <h2 className={s.name}>
-                  <Link to={agentPath(a)}>{a.name}</Link>
-                </h2>
-                <div className="label" style={{ marginTop: 8 }}>
-                  {a.paper ? 'paper money available' : 'real wallets only'}
-                </div>
+                <div className="label">Leaders · last 30 days · live sessions</div>
+                <div className={s.leadersTitle}>Leaderboard</div>
               </div>
-              <p className={s.rule}>{a.description}</p>
-              <div className={s.perf}>
-                <div>
-                  <div className="label">30d return</div>
-                  <ReturnValue value={a.return_percent} />
-                  <div className={s.perfNote}>{a.return_percent === null ? 'no 30d figure yet' : 'live sessions, per Circuit'}</div>
-                </div>
-                <div style={{ textAlign: 'right' }}>
-                  <div className="label">Running it</div>
-                  <div className={s.subs}>{a.people.toLocaleString('en-US')}</div>
-                </div>
-              </div>
-              <div className={s.cardFoot}>
-                <a href={circuitAgentUrl(a.id)} target="_blank" rel="noreferrer" className={s.ghostBtn}>
-                  Run on Circuit
-                </a>
-                <button type="button" className={s.subscribe} disabled title="Opens with the $ORPH launch">
-                  Subscribe
+              <span className="label">per Circuit</span>
+            </div>
+            {leaders.length === 0 && <div className={s.muted}>{agents.isLoading ? 'Loading from Circuit.' : 'No figures yet.'}</div>}
+            {leaders.map((a, i) => (
+              <div key={a.id} className={s.leadRow}>
+                <span className="label">{i + 1}</span>
+                <span className={s.leadName}>
+                  <Link to={`/agents/c/${shortId(a.id)}`}>{a.name}</Link>
+                  <span className={s.leadSub}>
+                    {a.official ? 'Circuit' : 'Community'} · {a.people} running · {groupOf(a)}
+                  </span>
+                </span>
+                <ReturnValue value={a.return_percent} className={s.leadRet} />
+                <button type="button" className={s.mini} onClick={() => setRun({ agent: a, mode: a.paper ? 'paper' : 'live' })}>
+                  {a.paper ? 'Paper' : 'Run'}
                 </button>
               </div>
-            </article>
-          ))}
-        </div>
-        {!agents.isLoading && visible.length === 0 && <div className={s.notice}>No agents in this group right now.</div>}
-      </section>
+            ))}
+            <p className={s.leadersNote}>Season 1 scoring (net live return over drawdown, 90 days) starts once Orphic indexes fills itself. Until then this is Circuit's 30-day figure, unchanged.</p>
+          </aside>
+        </section>
 
-      <section>
-        <div className={s.sectionHead}>
-          <div>
-            <h2 className={s.h2}>Orphic strategies in design</h2>
-            <p className={s.sectionLead}>Agents we are building for the marketplace. Rules are final; they list with their own token paired against $ORPH at launch.</p>
+        {/* Three moods */}
+        <section className={s.moods}>
+          <button type="button" className={`${s.mood} ${mood === 'steady' ? s.moodOn : ''}`} onClick={() => setMood('steady')}>
+            <div className={s.moodTop}>
+              <span className="label">Steady</span>
+              <span className="label">{steady.length} agents</span>
+            </div>
+            <h3>Earn a rate, keep your money</h3>
+            <p>Lending and hedged books. No price view.{best(steady) ? ` Best this month: ${best(steady)!.name}.` : ''}</p>
+          </button>
+          <button type="button" className={`${s.mood} ${mood === 'bets' ? s.moodOn : ''}`} onClick={() => setMood('bets')}>
+            <div className={s.moodTop}>
+              <span className="label">Bets</span>
+              <span className="label">{bets.length} agents</span>
+            </div>
+            <h3>Take a side, with a stop</h3>
+            <p>Long, short and copy agents. Pays in the right market, bleeds in the wrong one.{best(bets) ? ` Best this month: ${best(bets)!.name}.` : ''}</p>
+          </button>
+          <button type="button" className={`${s.mood} ${mood === 'orphic' ? s.moodOn : ''}`} onClick={() => setMood('orphic')}>
+            <div className={s.moodTop}>
+              <span className="label">Orphic's own</span>
+              <span className="label">2 agents</span>
+            </div>
+            <h3>The ones running our vaults</h3>
+            <p>Rotator runs senior and junior. Neutral is on paper. Both decide publicly, every hour.</p>
+          </button>
+        </section>
+
+        {/* Rows */}
+        <section>
+          <div className={s.listHead}>
+            <span className="label">
+              {mood === 'orphic' ? "Orphic's own" : mood === 'steady' ? 'Steady' : 'Bets'} · {mood === 'orphic' ? 'live decisions' : 'best 30-day return first · as Circuit reports it'}
+            </span>
           </div>
-        </div>
-        <div className={s.rows}>
-          {AGENTS.map((a) => (
-            <Link key={a.slug} to={`/agents/${a.slug}`} className={s.row}>
-              <span className={s.orb}>
-                <AgentIcon d={a.icon} />
-              </span>
-              <span className={s.rowName}>{a.name}</span>
-              <span className={s.rowRole}>
-                {a.role} · {a.market}
-              </span>
-              <span className={s.rowRule}>{a.rule}</span>
-              <span className="label">${a.symbol}</span>
-            </Link>
-          ))}
-        </div>
-      </section>
+          <div className={`${s.row} ${s.rowHead}`}>
+            <span className="label">Agent</span>
+            <span className="label">30d return</span>
+            <span className="label">Running</span>
+            <span className="label">Paper</span>
+            <span className={`label ${s.right}`}>Run</span>
+          </div>
 
-      <section className={s.foot}>
-        <div>
-          <div className="label">How it works</div>
-          <p>An agent runs on Circuit's engine against a wallet you control: it can trade and allocate, never withdraw. Orphic's Rotator runs the vaults the same way. Subscribing through Orphic adds $ORPH payment and, for launched agents, a token paired with $ORPH.</p>
-        </div>
-        <div>
-          <div className="label">What return means here</div>
-          <p>Circuit's figure: realised result of the agent's live sessions over the last 30 days. Negative numbers show as they are. Nothing here is backfilled from backtests, and nothing is a forecast.</p>
-        </div>
-        <div>
-          <div className="label">Risk</div>
-          <p>Leveraged agents can lose most of an allotment quickly; many of the community agents are high-leverage experiments. Read the agent's page on Circuit before running one. Nothing here is advice.</p>
-        </div>
-      </section>
+          {mood === 'orphic' && (
+            <>
+              <div className={s.row}>
+                <div>
+                  <h2 className={s.name}>
+                    <Link to="/agents/orphic-rotator">Orphic Rotator</Link> <span className={s.tagMint}>Orphic</span>
+                  </h2>
+                  <div className={s.by}>
+                    <i className={`${s.skin} ${s.skinOn}`} />
+                    Orphic runs {rot?.vaultUsd != null ? fmtUsd(rot.vaultUsd) : 'its own capital'} · Elysium · hourly
+                  </div>
+                  <div className={s.one}>Keeps senior in the best Morpho venues and junior's spare USDC earning. Cannot move funds anywhere but the vaults.</div>
+                </div>
+                <div>
+                  <div className={`${s.big} ${s.retPos}`}>{rot?.bookApy != null ? fmtPct(rot.bookApy) : '–'}</div>
+                  <div className={s.sm}>book rate · est.</div>
+                </div>
+                <div>
+                  <div className={s.v}>vault</div>
+                  <div className={s.sm}>all depositors</div>
+                </div>
+                <div>
+                  <div className={s.v}>n/a</div>
+                  <div className={s.sm}>{rot ? (rot.decision.move ? 'rebalanced' : 'held') : ''}</div>
+                </div>
+                <div className={s.actions}>
+                  <Link to="/vaults" className={s.cta}>
+                    Deposit
+                  </Link>
+                </div>
+              </div>
+              <div className={s.row}>
+                <div>
+                  <h2 className={s.name}>
+                    <Link to="/agents/orphic-neutral">Orphic Neutral</Link> <span className={s.tagAmber}>Paper</span>
+                  </h2>
+                  <div className={s.by}>
+                    <i className={`${s.skin} ${s.skinAmber}`} />
+                    Orphic · simulated money since 9 Nov · Hyperliquid
+                  </div>
+                  <div className={s.one}>
+                    Holds spot $HYPE and an equal short, collects funding while longs pay.{f ? (f.apy8 > 5 ? ' Funding is above its bar.' : ' Waiting: funding is below its bar today.') : ''}
+                  </div>
+                </div>
+                <div>
+                  <div className={`${s.big} ${s.retNa}`}>{f ? `${f.apy8 > 0 ? '+' : ''}${fmtNum(f.apy8, 1)}%` : '–'}</div>
+                  <div className={s.sm}>$HYPE funding · 8h ann.</div>
+                </div>
+                <div>
+                  <div className={s.v}>1</div>
+                  <div className={s.sm}>Orphic</div>
+                </div>
+                <div>
+                  <div className={s.v}>yes</div>
+                  <div className={s.sm}>1,000 simulated</div>
+                </div>
+                <div className={s.actions}>
+                  <Link to="/agents/orphic-neutral" className={s.ghost}>
+                    Watch it decide
+                  </Link>
+                </div>
+              </div>
+            </>
+          )}
+
+          {mood !== 'orphic' &&
+            visible.map((a) => (
+              <div key={a.id} className={s.row}>
+                <div>
+                  <h2 className={s.name}>
+                    <Link to={`/agents/c/${shortId(a.id)}`}>{a.name}</Link>
+                  </h2>
+                  <div className={s.by}>
+                    <i className={`${s.skin} ${a.official ? s.skinOn : ''}`} />
+                    {a.official ? 'Circuit' : 'Community'} · {groupOf(a)}
+                  </div>
+                  <div className={s.one}>{a.description}</div>
+                </div>
+                <div>
+                  <ReturnValue value={a.return_percent} className={s.big} />
+                  <div className={s.sm}>{a.return_percent === null ? 'no 30d figure yet' : '30d · live, per Circuit'}</div>
+                </div>
+                <div>
+                  <div className={s.v}>{a.people.toLocaleString('en-US')}</div>
+                  <div className={s.sm}>people</div>
+                </div>
+                <div>
+                  <div className={s.v}>{a.paper ? 'yes' : 'no'}</div>
+                  <div className={s.sm}>{a.paper ? 'free to try' : 'real wallets only'}</div>
+                </div>
+                <div className={s.actions}>
+                  {a.paper && (
+                    <button type="button" className={s.ghost} onClick={() => setRun({ agent: a, mode: 'paper' })}>
+                      Paper
+                    </button>
+                  )}
+                  <button type="button" className={s.cta} onClick={() => setRun({ agent: a, mode: 'live' })}>
+                    Run live
+                  </button>
+                </div>
+              </div>
+            ))}
+          {mood !== 'orphic' && agents.isLoading && <div className={s.muted}>Loading the live catalogue from Circuit.</div>}
+          {mood !== 'orphic' && rows.length > 6 && (
+            <div className={s.more}>
+              <button type="button" className={s.ghost} onClick={() => setShowAll((v) => !v)}>
+                {showAll ? 'Show fewer' : `Show all ${rows.length} ${mood === 'steady' ? 'Steady' : 'Bets'} agents`}
+              </button>
+            </div>
+          )}
+        </section>
+
+        {/* My agents */}
+        {permit && (
+          <section id="my-agents" className={s.mine}>
+            <div className={s.listHead}>
+              <span className="label">My agents · from your Circuit account</span>
+              <span className="label">{account.isFetching ? 'refreshing' : ''}</span>
+            </div>
+            {sessions.length === 0 && <div className={s.muted}>{account.isLoading ? 'Loading your account.' : 'Nothing running yet. Pick an agent above and start it on paper money.'}</div>}
+            {sessions.map((sess) => (
+              <div key={sess.id} className={s.mineRow}>
+                <div>
+                  <div className={s.name}>{sess.name}</div>
+                  <div className={s.sm}>
+                    {sess.wallet ? 'live wallet' : 'paper money'} · since {new Date(sess.started_at).toUTCString().slice(5, 16)} · {sess.status === 'running' ? 'running' : sess.status === 'needs_user' ? 'needs a tap on Circuit' : 'stopped'}
+                    {sess.error ? ` · ${sess.error}` : ''}
+                  </div>
+                </div>
+                <div>
+                  <div className={s.v}>{sess.value_usd ? fmtUsd(Number(sess.value_usd), 2) : '–'}</div>
+                  <div className={s.sm}>{sess.pnl_usd ? `${Number(sess.pnl_usd) >= 0 ? '+' : ''}${fmtUsd(Number(sess.pnl_usd), 2)} since start` : ''}</div>
+                </div>
+                <div className={s.actions}>
+                  {sess.status !== 'stopped' && (
+                    <button type="button" className={s.ghost} onClick={() => void stop(sess.id)}>
+                      Stop
+                    </button>
+                  )}
+                </div>
+              </div>
+            ))}
+          </section>
+        )}
+
+        {/* In design */}
+        <section>
+          <div className={s.listHead}>
+            <span className="label">Orphic strategies in design</span>
+            <Link to="/agents/launch" className="label">
+              Launch an agent →
+            </Link>
+          </div>
+          <div className={s.design}>
+            {AGENTS.slice(0, 4).map((a) => (
+              <Link key={a.slug} to={`/agents/${a.slug}`} className={s.designItem}>
+                <span className={s.orb}>
+                  <AgentIcon d={a.icon} />
+                </span>
+                <span>
+                  <span className={s.designName}>{a.name}</span>
+                  <span className={s.sm}>
+                    {a.role} · {a.market}
+                  </span>
+                </span>
+              </Link>
+            ))}
+          </div>
+        </section>
+
+        {/* Ladder */}
+        <section className={s.ladder}>
+          <div className={s.step}>
+            <span className={s.c}>1</span>
+            <div>
+              <div className={s.stepTitle}>Paper first</div>
+              <p>Every agent runs on simulated money before it is offered. You can too, free.</p>
+            </div>
+          </div>
+          <div className={s.step}>
+            <span className={s.c}>2</span>
+            <div>
+              <div className={s.stepTitle}>Live with a cap</div>
+              <p>Start small on the first live run. The agent trades your wallet within its rules and can never withdraw from it. Stop any time.</p>
+            </div>
+          </div>
+          <div className={s.step}>
+            <span className={s.c}>3</span>
+            <div>
+              <div className={s.stepTitle}>Pay in $ORPH</div>
+              <p>Free until launch. Then subscriptions priced in dollars and settled in $ORPH, bought at the moment you pay. Stake $ORPH and they are free.</p>
+            </div>
+          </div>
+        </section>
+      </div>
+
+      {run && <RunAgent agent={run.agent} mode={run.mode} onClose={() => setRun(null)} />}
     </div>
   )
 }
