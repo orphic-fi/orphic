@@ -245,3 +245,8 @@
   font-size: 13px;
   color: var(--sen);
 }
+
+.secondary:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}

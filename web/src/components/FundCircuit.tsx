@@ -55,6 +55,10 @@ export default function FundCircuit({ to, onSent }: { to: Address; onSent?: () =
           </div>
           {receipt.isSuccess ? (
             <div className={s.ok}>Sent. It shows in the agent wallet within a minute.</div>
+          ) : balance !== null && balance <= 0 ? (
+            <div className={s.muted}>This wallet has no USDC on HyperEVM. Get some there first (bridge from Arbitrum or Ethereum, or buy on Hyperliquid and withdraw to HyperEVM), then send it here.</div>
+          ) : balance !== null && Number(amount) > balance ? (
+            <div className={s.muted}>That is more than the {fmtUsd(balance, 2)} USDC this wallet holds on HyperEVM.</div>
           ) : !onHyperEvm ? (
             <button type="button" className={s.secondary} onClick={() => switchChain({ chainId: hyperEvm.id })}>
               Switch to HyperEVM to send
