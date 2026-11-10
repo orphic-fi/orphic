@@ -55,7 +55,10 @@ export function usePermit(): string | null {
   return memory?.permit ?? null
 }
 
-export type LinkState = { phase: 'idle' } | { phase: 'waiting'; url: string } | { phase: 'linked' } | { phase: 'failed'; message: string }
+export type LinkState = { phase: 'idle' } | { phase: 'waiting'; url: string; via: 'frame' | 'popup' } | { phase: 'linked' } | { phase: 'failed'; message: string }
+
+/** Does Circuit let orphic.fi frame its sign-in? Flipped to true once their headers allow it; the popup is the fallback. */
+export const CIRCUIT_FRAME_ALLOWED = false
 
 /** Start the link flow: opens Circuit in a new tab, polls until the user approves with a passkey, stores the permit. */
 export function useCircuitLink() {
@@ -70,12 +73,18 @@ export function useCircuitLink() {
       const { url, permit: pending } = await link(APP_ID, undefined, returnUrl)
       // A small window over Orphic rather than a new tab: the passkey has to happen on Circuit's own page (passkeys
       // are bound to the site that made them), but the user never loses this page. The popup closes itself from /linked.
-      const w = Math.min(520, window.screen.availWidth)
-      const h = Math.min(760, window.screen.availHeight)
-      const left = Math.max(0, (window.screen.availWidth - w) / 2)
-      const top = Math.max(0, (window.screen.availHeight - h) / 2)
-      const popup = window.open(url, 'orphic-circuit-link', `popup=yes,width=${w},height=${h},left=${left},top=${top}`)
-      setState({ phase: 'waiting', url })
+      let popup: Window | null = null
+      if (CIRCUIT_FRAME_ALLOWED) {
+        // In-page: the sheet renders an iframe of Circuit's page with passkeys delegated to it.
+        setState({ phase: 'waiting', url, via: 'frame' })
+      } else {
+        const w = Math.min(520, window.screen.availWidth)
+        const h = Math.min(760, window.screen.availHeight)
+        const left = Math.max(0, (window.screen.availWidth - w) / 2)
+        const top = Math.max(0, (window.screen.availHeight - h) / 2)
+        popup = window.open(url, 'orphic-circuit-link', `popup=yes,width=${w},height=${h},left=${left},top=${top}`)
+        setState({ phase: 'waiting', url, via: 'popup' })
+      }
       const p = await pending
       setPermit({ permit: p, linkedAt: Date.now() })
       setState({ phase: 'linked' })

@@ -90,7 +90,15 @@ export default function RunAgent({ agent, mode: initialMode, onClose }: Props) {
             <p className={s.fine}>
               One passkey links your Circuit account to Orphic for 30 days. Orphic can then start and stop agents for you; it can never withdraw from your wallets, and the link is revocable any time. Your key stays in this browser.
             </p>
-            {state.phase === 'waiting' ? (
+            {state.phase === 'waiting' && state.via === 'frame' ? (
+              <iframe
+                src={state.url}
+                title="Link Circuit"
+                className={s.frame}
+                allow="publickey-credentials-get; publickey-credentials-create"
+                sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
+              />
+            ) : state.phase === 'waiting' ? (
               <>
                 <div className={s.waiting}>Waiting for your passkey in the Circuit window. This page stays put; the window closes on its own.</div>
                 <a href={state.url} target="_blank" rel="noreferrer" className={s.secondary}>
