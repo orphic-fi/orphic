@@ -115,7 +115,7 @@ export default function RunAgent({ agent, mode: initialMode, onClose }: Props) {
         ) : !permit ? (
           <div className={s.link}>
             <p className={s.fine}>
-              One passkey links your Circuit account to Orphic for 30 days. Orphic can then start and stop agents for you; it can never withdraw from your wallets, and the link is revocable any time. Your key stays in this browser.
+              Agents run on Circuit's engine, so Orphic needs a Circuit account to run them for you. New to Circuit? In the window, pick a username, make a passkey, and approve Orphic. Twenty seconds, once. Already have one? One passkey tap. Orphic can then start and stop agents for you for 30 days; it can never withdraw from your wallets, and you can unlink any time.
             </p>
             {state.phase === 'waiting' && state.via === 'frame' ? (
               <iframe
@@ -134,7 +134,7 @@ export default function RunAgent({ agent, mode: initialMode, onClose }: Props) {
               </>
             ) : (
               <button type="button" className={s.primary} onClick={() => void begin()}>
-                Link Circuit with a passkey
+                Create or link a Circuit account
               </button>
             )}
             {state.phase === 'failed' && <div className={s.err}>{state.message}</div>}
