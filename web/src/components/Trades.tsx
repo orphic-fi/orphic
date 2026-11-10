@@ -24,7 +24,7 @@ export default function Trades({ wallet, title = 'Tokens sniped' }: { wallet: Ad
             <a href={`${ELYSIUM_EXPLORER}/address/${wallet}`} target="_blank" rel="noreferrer" className={s.mono}>
               {wallet.slice(0, 6)}…{wallet.slice(-4)}
             </a>
-            . Open positions are marked by a real sell simulated from this wallet, fees included.
+            . Open positions are marked by a real sell simulated from this wallet, fees included (≈ means the price feed less fees, until the wallet approves the router).
           </div>
         </div>
         {L && L.positions.length > 0 && (
@@ -76,7 +76,7 @@ export default function Trades({ wallet, title = 'Tokens sniped' }: { wallet: Ad
                   <div className={s.nm}>
                     {p.meta?.name ?? 'Unknown token'}
                     {p.meta?.marketCapUsd ? ` · ${fmtUsd(p.meta.marketCapUsd)} cap now` : ''}
-                    {p.meta?.holders ? ` · ${p.meta.holders.toLocaleString()} holders` : ''}
+                    {p.meta?.holders ? ` · ${p.meta.holders.toLocaleString()} holder${p.meta.holders === 1 ? '' : 's'}` : ''}
                   </div>
                 </div>
               </div>
@@ -88,8 +88,8 @@ export default function Trades({ wallet, title = 'Tokens sniped' }: { wallet: Ad
                 </div>
                 <div>
                   <div className={s.k}>{open ? 'Worth now' : 'Out'}</div>
-                  <div className={s.v}>{outWei === null ? 'n/a' : `${hypeFmt(outWei)} HYPE`}</div>
-                  <div className={s.k2}>{outWei !== null ? (usd(outWei) ?? '') : 'sell quote refused'}</div>
+                  <div className={s.v}>{outWei === null ? 'n/a' : `${open && p.markEstimated ? '≈ ' : ''}${hypeFmt(outWei)} HYPE`}</div>
+                  <div className={s.k2}>{outWei === null ? 'no quote' : `${usd(outWei) ?? ''}${open && p.markEstimated ? ' · est. from price' : ''}`}</div>
                 </div>
                 <div>
                   <div className={s.k}>P&L</div>
