@@ -33,6 +33,10 @@ export function groupOf(a: CircuitAgent): AgentGroup {
   if (/\blong\b|buys|ride|trend|momentum|breakout|basket|index|dip/.test(t)) return 'Long'
   return 'Other'
 }
+/** Agents whose venue is outside the Hyperliquid and Elysium world (Robinhood Chain stock tokens and the like). Hidden by default. */
+export function offEcosystem(a: CircuitAgent): boolean {
+  return /robinhood|stock token|stock tokens|pelosi|wall street|equity|stocks?\b/i.test(`${a.name} ${a.description}`)
+}
 export const GROUPS: AgentGroup[] = ['Yield', 'Neutral', 'Liquidity', 'Long', 'Short', 'Copy', 'Farming', 'Other']
 export const GROUP_BLURB: Record<AgentGroup, string> = {
   Yield: 'Lends or parks stablecoins and stock tokens for rates. No price view.',

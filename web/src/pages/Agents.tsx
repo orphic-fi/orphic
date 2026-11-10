@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import RunAgent, { type RunMode } from '../components/RunAgent'
 import { AGENTS } from '../lib/agents'
-import { ORPHIC_AGENT_IDS, groupOf, shortId, useCircuitAgents, useRotator, type AgentGroup, type CircuitAgent } from '../lib/circuit'
+import { ORPHIC_AGENT_IDS, groupOf, offEcosystem, shortId, useCircuitAgents, useRotator, type AgentGroup, type CircuitAgent } from '../lib/circuit'
 import { permitDaysLeft, useCircuitAccount, useCircuitActions, useCircuitLink, usePermit } from '../lib/circuitSession'
 import { fmtNum, fmtPct, fmtUsd } from '../lib/format'
 import { useFunding } from '../lib/hyperliquid'
@@ -46,7 +46,8 @@ export default function Agents() {
   const [run, setRun] = useState<{ agent: CircuitAgent; mode: RunMode } | null>(null)
 
   const all = useMemo(() => agents.data ?? [], [agents.data])
-  const catalogue = useMemo(() => all.filter((a) => !ORPHIC_AGENT_IDS[a.id] && groupOf(a) !== 'Farming'), [all])
+  // Hyperliquid and Elysium only: agents on other chains (Robinhood Chain stock tokens) do not belong on this page.
+  const catalogue = useMemo(() => all.filter((a) => !ORPHIC_AGENT_IDS[a.id] && groupOf(a) !== 'Farming' && !offEcosystem(a)), [all])
   const steady = useMemo(() => catalogue.filter((a) => STEADY.includes(groupOf(a))).sort((x, y) => ret(y) - ret(x) || y.people - x.people), [catalogue])
   const bets = useMemo(() => catalogue.filter((a) => BETS.includes(groupOf(a))).sort((x, y) => ret(y) - ret(x) || y.people - x.people), [catalogue])
   const leaders = useMemo(() => [...catalogue].sort((x, y) => ret(y) - ret(x)).filter((a) => a.return_percent !== null).slice(0, 5), [catalogue])
@@ -182,7 +183,7 @@ export default function Agents() {
         <section>
           <div className={s.listHead}>
             <span className="label">
-              {mood === 'orphic' ? "Orphic's own" : mood === 'steady' ? 'Steady' : 'Bets'} · {mood === 'orphic' ? 'live decisions' : 'best 30-day return first · as Circuit reports it'}
+              {mood === 'orphic' ? "Orphic's own" : mood === 'steady' ? 'Steady · Orphic first, then best 30-day return' : 'Bets · best 30-day return first'}{mood !== 'orphic' ? ' · as Circuit reports it' : ''}
             </span>
           </div>
           <div className={`${s.row} ${s.rowHead}`}>
@@ -193,7 +194,7 @@ export default function Agents() {
             <span className={`label ${s.right}`}>Run</span>
           </div>
 
-          {mood === 'orphic' && (
+          {(mood === 'orphic' || mood === 'steady') && (
             <>
               <div className={s.row}>
                 <div>
