@@ -699,6 +699,7 @@ contract JuniorVault is ERC20, Ownable2Step, ReentrancyGuard, Multicall {
             revert WrongAsset();
         }
         stakeToken = token;
+        VenueAdmin.revokeAllowances(token, vaults, address(morpho));
         stakePerAsset = stakePerAsset_;
         emit StakeTokenSet(address(token), stakePerAsset_);
     }

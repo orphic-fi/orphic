@@ -179,4 +179,36 @@ contract ExitsDepositsTest is Base {
         junior.proposeStakePerAsset(0.8e18);
         vm.stopPrank();
     }
+
+    /* O7(e): becoming the stake token clears the token's allowance to Morpho and every registered vault */
+
+    function test_FIXED_O7_e_setStakeTokenZeroesAllowancesToVenues() public {
+        // before it is the stake token the token is an ordinary approvable asset: the agent can approve it to the venues
+        vm.startPrank(owner);
+        junior.setApprovalRule(address(orph), address(MORPHO), true);
+        junior.setApprovalRule(address(orph), FELIX_USDC_V1, true);
+        junior.setApprovalRule(address(orph), address(senior), true);
+        vm.stopPrank();
+        vm.startPrank(agent);
+        junior.execute(address(orph), abi.encodeCall(IERC20.approve, (address(MORPHO), 5e18)));
+        junior.execute(address(orph), abi.encodeCall(IERC20.approve, (FELIX_USDC_V1, 6e18)));
+        junior.execute(address(orph), abi.encodeCall(IERC20.approve, (address(senior), 7e18)));
+        vm.stopPrank();
+        assertEq(orph.allowance(address(junior), address(MORPHO)), 5e18);
+        vm.prank(owner);
+        junior.setStakeToken(IERC20(address(orph)), 0.2e18);
+        assertEq(orph.allowance(address(junior), address(MORPHO)), 0, "morpho");
+        assertEq(orph.allowance(address(junior), FELIX_USDC_V1), 0, "felix");
+        assertEq(orph.allowance(address(junior), address(senior)), 0, "senior");
+        // and it stays that way: no new rule, no agent call on the stake token
+        vm.prank(owner);
+        vm.expectRevert(JuniorVault.NotAllowed.selector);
+        junior.setApprovalRule(address(orph), address(MORPHO), true);
+        vm.prank(agent);
+        vm.expectRevert(JuniorVault.NotAllowed.selector);
+        junior.execute(address(orph), abi.encodeCall(IERC20.approve, (address(MORPHO), 1)));
+        // staking still works
+        _juniorDeposit(alice, 1_000e6);
+        assertEq(junior.stakeOf(alice), 200e18);
+    }
 }

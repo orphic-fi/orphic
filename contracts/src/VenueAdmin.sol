@@ -132,6 +132,16 @@ library VenueAdmin {
         emit VaultRemoved(vault);
     }
 
+    /// @dev When a token becomes the stake token, any allowance this contract gave it to a venue is cleared: the stake is
+    ///      held here and must never be spendable by Morpho or a listed vault.
+    function revokeAllowances(IERC20 token, address[] storage vaults, address morpho) public {
+        token.forceApprove(morpho, 0);
+        uint256 n = vaults.length;
+        for (uint256 i = 0; i < n; i++) {
+            token.forceApprove(vaults[i], 0);
+        }
+    }
+
     function setRule(
         mapping(address => mapping(bytes4 => Rule)) storage rules,
         mapping(address => bool) storage isVault,
