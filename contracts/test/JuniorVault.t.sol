@@ -285,6 +285,7 @@ contract JuniorVaultTest is Base {
         vm.startPrank(owner);
         router.setRouter(address(dex), true);
         router.setFloor(address(tok), IOracle(address(oracle)), 100); // 1% slippage
+        router.seedPrice(address(tok), 2e24); // the sweep band needs a reference price (audit F2)
         vm.stopPrank();
         tok.mint(address(router), 1_000e18);
         deal(address(USDC), address(dex), 10_000e6);

@@ -6,7 +6,7 @@ pragma solidity 0.8.28;
 //    senior / junior / treasury (default 50 / 25 / 25). Senior is paid by transferring USDC to the senior vault,
 //    which raises its share price on the next accrual with no fee switch.
 //  - burn-split tokens (ORPH creation fees, school tuition): a fixed share burned, the rest to treasury.
-// Controls, in order of importance: the floor, the router allowlist, the keeper role. A failed send never reverts
+// Controls, in order of importance: the floor (with its price band), the router allowlist, the keeper role. A failed send never reverts
 // the sweep; the amount is parked in `owed` and can be pulled later.
 
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
@@ -40,6 +40,8 @@ contract FeeRouter is Ownable2Step, ReentrancyGuard {
         uint16 maxSlippageBps; // how far below oracle a swap may land
     }
     mapping(address => Floor) public floors;
+    mapping(address => uint256) public lastPrice; // token => oracle price (1e36 scale) of the last accepted sweep, or the owner's seed
+    uint16 public maxPriceMoveBps = 1_000; // how far the oracle may sit from `lastPrice`, either way, for a sweep to run
     mapping(address => uint16) public burnBps; // token => share burned instead of swapped (0 = swap path)
     mapping(address => mapping(address => uint256)) public owed; // recipient => token => parked amount
     mapping(address => uint256) public totalParked; // token => sum of owed, whoever the recipients were
@@ -56,6 +58,8 @@ contract FeeRouter is Ownable2Step, ReentrancyGuard {
     event SplitSet(uint16 seniorBps, uint16 juniorBps);
     event KeeperSet(address keeper);
     event MaxSweepSet(uint256 max);
+    event PriceSeeded(address token, uint256 price);
+    event MaxPriceMoveSet(uint16 bps);
 
     error NotKeeper();
     error RouterNotAllowed();
@@ -65,6 +69,9 @@ contract FeeRouter is Ownable2Step, ReentrancyGuard {
     error BadSplit();
     error BadToken();
     error SweepTooLarge(uint256 value, uint256 max);
+    error PriceNotSeeded();
+    error PriceOutsideBand(uint256 price, uint256 lastPrice);
+    error BadPrice();
 
     constructor(IERC20 usdc_, address owner_, address senior_, address junior_, address treasury_) Ownable(owner_) {
         usdc = usdc_;
@@ -83,8 +90,13 @@ contract FeeRouter is Ownable2Step, ReentrancyGuard {
 
     /// @notice Swap `amountIn` of `token` to USDC through `router` with `swapData`, then split everything.
     /// @dev Deltas are measured, never trusted from the router. The floor is computed from the oracle, so a bad
-    ///      `swapData` can only fail, not leak. One sweep is capped at `maxSweepUsdc` of oracle value, so a keeper
-    ///      with a stale oracle can lose at most maxSlippageBps of that per call.
+    ///      `swapData` can only fail, not leak. `maxSweepUsdc` bounds the USDC that comes OUT of one sweep (the oracle
+    ///      value of `amountIn` and the measured `got` are both capped), not the value of the tokens that go in: with
+    ///      a stale-low oracle one sweep can move far more token value than the cap. What bounds a stale or moved
+    ///      oracle is the price band: the sweep refuses while the token is unseeded and when the oracle price is more
+    ///      than `maxPriceMoveBps` away, either way, from `lastPrice` (the owner's seed, then the last accepted
+    ///      sweep's price). A real move beyond the band needs the owner's `seedPrice`. The band limits each step
+    ///      (and a drift of at most `maxPriceMoveBps` per sweep is still accepted), it is not a price source.
     function sweep(address token, address router, bytes calldata swapData, uint256 amountIn)
         external
         onlyKeeper
@@ -92,17 +104,13 @@ contract FeeRouter is Ownable2Step, ReentrancyGuard {
     {
         if (!isRouter[router]) revert RouterNotAllowed();
         if (token == address(usdc) || burnBps[token] != 0) revert BadToken();
-        Floor memory f = floors[token];
-        if (address(f.oracle) == address(0)) revert NoFloor();
+        uint256 price = _bandedPrice(token);
         IERC20 t = IERC20(token);
-        uint256 bal = t.balanceOf(address(this));
-        uint256 parked = totalParked[token];
-        // parked amounts are already assigned to a recipient (`pullOwed`), never sellable
-        if (amountIn == 0 || bal <= parked || amountIn > bal - parked) revert NothingToDo();
+        if (amountIn == 0 || amountIn > _unparked(t)) revert NothingToDo();
 
-        uint256 value = amountIn * f.oracle.price() / ORACLE_SCALE; // USDC units for amountIn token units
+        uint256 value = amountIn * price / ORACLE_SCALE; // USDC units for amountIn token units
         if (value > maxSweepUsdc) revert SweepTooLarge(value, maxSweepUsdc);
-        uint256 floor = value * (BPS - f.maxSlippageBps) / BPS;
+        uint256 floor = value * (BPS - floors[token].maxSlippageBps) / BPS;
 
         uint256 before = usdc.balanceOf(address(this));
         uint256 tokenBefore = t.balanceOf(address(this));
@@ -111,8 +119,10 @@ contract FeeRouter is Ownable2Step, ReentrancyGuard {
         t.forceApprove(router, 0);
         uint256 got = usdc.balanceOf(address(this)) - before;
         if (got < floor) revert BelowFloor(got, floor);
+        if (got > maxSweepUsdc) revert SweepTooLarge(got, maxSweepUsdc); // the cap also binds the measured USDC out
         uint256 spent = tokenBefore - t.balanceOf(address(this)); // measured, never trusted from the router
         if (spent > amountIn) revert BadToken(); // the approval bounds it; belt and braces
+        lastPrice[token] = price;
         // Anything left of `token` (partial fill) simply waits for the next sweep.
         emit Swept(token, spent, got, floor);
         _split();
@@ -128,14 +138,32 @@ contract FeeRouter is Ownable2Step, ReentrancyGuard {
         uint16 bps = burnBps[token];
         if (bps == 0) revert BadToken();
         IERC20 t = IERC20(token);
-        uint256 bal = t.balanceOf(address(this));
-        uint256 parked = totalParked[token];
-        if (bal <= parked) revert NothingToDo();
-        bal -= parked; // parked amounts are already assigned to a recipient
+        uint256 bal = _unparked(t);
+        if (bal == 0) revert NothingToDo();
         uint256 burn = bal * bps / BPS;
         _send(t, BURN, burn);
         _send(t, treasury, bal - burn);
         emit Burned(token, burn, bal - burn);
+    }
+
+    /// @dev Balance minus what is parked for recipients: parked amounts are already assigned (`pullOwed`), never
+    ///      sold or burned. Zero when a rebase left the balance under `totalParked`.
+    function _unparked(IERC20 t) internal view returns (uint256) {
+        uint256 bal = t.balanceOf(address(this));
+        uint256 parked = totalParked[address(t)];
+        return bal > parked ? bal - parked : 0;
+    }
+
+    /// @dev The oracle price of `token`; refuses without a floor, while `token` is unseeded, and when the price is
+    ///      more than `maxPriceMoveBps` from `lastPrice`.
+    function _bandedPrice(address token) internal view returns (uint256 price) {
+        IOracle oracle = floors[token].oracle;
+        if (address(oracle) == address(0)) revert NoFloor();
+        price = oracle.price();
+        uint256 last = lastPrice[token];
+        if (last == 0) revert PriceNotSeeded();
+        uint256 diff = price > last ? price - last : last - price;
+        if (diff * BPS > last * maxPriceMoveBps) revert PriceOutsideBand(price, last);
     }
 
     function _split() internal {
@@ -180,10 +208,30 @@ contract FeeRouter is Ownable2Step, ReentrancyGuard {
         emit RouterSet(router, allowed);
     }
 
+    /// @dev The oracle must never read the venue the token is swapped on: no spot price of the swap pool (an
+    ///      outsider moves it around the sweep and the floor moves with it). ORPH's only market is the seeded v4 pool,
+    ///      which has no on-chain TWAP, so ORPH needs an oracle that does not read that pool. The cap on a sweep
+    ///      bounds USDC out, not token value; a stale oracle is bounded only by the band against `lastPrice`.
+    ///      Pointing `token` at a different oracle clears `lastPrice`: the owner re-seeds it (`seedPrice`) after
+    ///      checking the new oracle. Changing only `maxSlippageBps` keeps it.
     function setFloor(address token, IOracle oracle, uint16 maxSlippageBps) external onlyOwner {
         if (maxSlippageBps > 1000) revert BadSplit(); // never accept more than 10% below oracle
+        if (floors[token].oracle != oracle) delete lastPrice[token];
         floors[token] = Floor(oracle, maxSlippageBps);
         emit FloorSet(token, address(oracle), maxSlippageBps);
+    }
+
+    /// @notice Set the reference price the sweep band is measured from (also the escape after a real price move).
+    function seedPrice(address token, uint256 price) external onlyOwner {
+        if (price == 0) revert BadPrice();
+        lastPrice[token] = price;
+        emit PriceSeeded(token, price);
+    }
+
+    function setMaxPriceMoveBps(uint16 bps) external onlyOwner {
+        if (bps > 5_000) revert BadSplit(); // a band wider than 50% is no band
+        maxPriceMoveBps = bps;
+        emit MaxPriceMoveSet(bps);
     }
 
     function setBurn(address token, uint16 bps) external onlyOwner {

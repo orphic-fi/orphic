@@ -55,6 +55,46 @@ contract FxOracle {
     }
 }
 
+/// @dev Constant-product pool (no fee) that is BOTH the swap router and the price oracle (spot, 1e36 scale): the
+///      owner's misconfiguration the band must defeat. `swapTokenForUsdc` is what the router calls; `sell`/`buy`
+///      are an outsider's front and back run.
+contract FxPool {
+    IERC20 immutable tok;
+    IERC20 immutable usd;
+    uint256 public rT;
+    uint256 public rU;
+
+    constructor(IERC20 t, IERC20 u) {
+        tok = t;
+        usd = u;
+    }
+
+    function init(uint256 t, uint256 u) external {
+        rT = t;
+        rU = u;
+    }
+
+    function price() external view returns (uint256) {
+        return rU * 1e36 / rT;
+    }
+
+    function swapTokenForUsdc(uint256 tIn) public returns (uint256 out) {
+        tok.transferFrom(msg.sender, address(this), tIn);
+        out = rU * tIn / (rT + tIn);
+        rT += tIn;
+        rU -= out;
+        usd.transfer(msg.sender, out);
+    }
+
+    function buyExactToken(uint256 tOut) external returns (uint256 cost) {
+        cost = rU * tOut / (rT - tOut) + 1;
+        usd.transferFrom(msg.sender, address(this), cost);
+        rU += cost;
+        rT -= tOut;
+        tok.transfer(msg.sender, tOut);
+    }
+}
+
 contract FeeRouterFixesTest is Test {
     FxToken usdc;
     FxToken tok;
@@ -149,6 +189,7 @@ contract FeeRouterFixesTest is Test {
         r.setBurn(address(tok), 0);
         r.setRouter(address(dex), true);
         r.setFloor(address(tok), IOracle(address(new FxOracle(1e36))), 100); // $1
+        r.seedPrice(address(tok), 1e36);
         vm.stopPrank();
         // the whole 500 on hand is parked: nothing to sell
         vm.prank(owner);
@@ -186,5 +227,199 @@ contract FeeRouterFixesTest is Test {
         r.pullOwed(junior, address(usdc));
         assertEq(usdc.balanceOf(junior), 350e6);
         assertEq(usdc.balanceOf(address(r)), 0);
+    }
+
+    /* F2 ------------------------------------------------------------------------------------------------ */
+
+    function _configure(uint256 oraclePrice, uint256 seed) internal returns (FxOracle o) {
+        o = new FxOracle(oraclePrice);
+        vm.startPrank(owner);
+        r.setRouter(address(dex), true);
+        r.setFloor(address(tok), IOracle(address(o)), 100); // 1% slippage
+        if (seed != 0) r.seedPrice(address(tok), seed);
+        vm.stopPrank();
+    }
+
+    function _sweep(uint256 amountIn, uint256 out) internal {
+        vm.prank(owner);
+        r.sweep(address(tok), address(dex), _swapData(amountIn, out), amountIn);
+    }
+
+    function _expectBand(uint256 price, uint256 last) internal {
+        vm.expectRevert(abi.encodeWithSelector(FeeRouter.PriceOutsideBand.selector, price, last));
+    }
+
+    /// (d) unseeded refuses
+    function test_FIXED_F2_anUnseededTokenRefusesToSweep() public {
+        _configure(1e36, 0);
+        tok.mint(address(r), 1_000e6);
+        vm.expectRevert(FeeRouter.PriceNotSeeded.selector);
+        _sweep(1_000e6, 1_000e6);
+    }
+
+    /// (f) an honest sweep within the band passes and moves the reference
+    function test_FIXED_F2_anHonestSweepWithinTheBandPassesAndUpdatesLastPrice() public {
+        FxOracle o = _configure(1e36, 1e36);
+        tok.mint(address(r), 3_000e6);
+        o.set(1.05e36); // +5%
+        _sweep(1_000e6, 1_050e6);
+        assertEq(r.lastPrice(address(tok)), 1.05e36);
+        assertEq(usdc.balanceOf(senior), 525e6);
+        o.set(1.15e36); // +9.5% from the NEW reference, inside the band
+        _sweep(1_000e6, 1_150e6);
+        assertEq(r.lastPrice(address(tok)), 1.15e36);
+    }
+
+    /// the band is symmetric and its edge is inclusive
+    function test_FIXED_F2_bandEdgeIsInclusiveBothWays() public {
+        FxOracle o = _configure(1e36, 1e36);
+        tok.mint(address(r), 10_000e6);
+        o.set(1.1e36 + 1);
+        _expectBand(1.1e36 + 1, 1e36);
+        _sweep(100e6, 110e6);
+        o.set(0.9e36 - 1);
+        _expectBand(0.9e36 - 1, 1e36);
+        _sweep(100e6, 90e6);
+        o.set(0.9e36);
+        _sweep(100e6, 90e6); // exactly -10% passes
+        assertEq(r.lastPrice(address(tok)), 0.9e36);
+    }
+
+    /// (b) a stale-LOW oracle (frozen at 1% of the seeded reference) is refused
+    function test_FIXED_F2_aStaleLowOracleIsRefusedByTheBand() public {
+        _configure(0.01e36, 1e36); // oracle froze at $0.01, the market (the seed) is $1.00
+        tok.mint(address(r), 2_500_000e6);
+        // oracle value of 2.5M T is 25,000 (cap and floor pass); the router would pay 24,750 for tokens worth 2.5M
+        _expectBand(0.01e36, 1e36);
+        _sweep(2_500_000e6, 24_750e6);
+        assertEq(tok.balanceOf(address(r)), 2_500_000e6, "nothing left the router");
+    }
+
+    /// (c) a real 15% move is refused; the owner's seedPrice lets the sweep through
+    function test_FIXED_F2_aRealMoveBeyondTheBandNeedsTheOwnersSeed() public {
+        _configure(1.15e36, 1e36);
+        tok.mint(address(r), 1_000e6);
+        _expectBand(1.15e36, 1e36);
+        _sweep(1_000e6, 1_150e6);
+        vm.expectEmit(address(r));
+        emit FeeRouter.PriceSeeded(address(tok), 1.15e36);
+        vm.prank(owner);
+        r.seedPrice(address(tok), 1.15e36);
+        _sweep(1_000e6, 1_150e6);
+        assertEq(usdc.balanceOf(senior), 575e6);
+    }
+
+    /// (e) the measured USDC out is capped too
+    function test_FIXED_F2_theMeasuredUsdcOutIsCappedAtMaxSweepUsdc() public {
+        _configure(1e36, 1e36);
+        tok.mint(address(r), 20_000e6);
+        // 20,000 T is 20,000 of oracle value (under the 25,000 cap) but the router pays 30,000
+        vm.expectRevert(abi.encodeWithSelector(FeeRouter.SweepTooLarge.selector, 30_000e6, 25_000e6));
+        _sweep(20_000e6, 30_000e6);
+        _sweep(20_000e6, 25_000e6); // at the cap it passes
+        assertEq(usdc.balanceOf(senior), 12_500e6);
+    }
+
+    /// (a) a spot-oracle sandwich of an honest sweep is refused by the band
+    function test_FIXED_F2_theSpotOracleSandwichOfAnHonestSweepIsRefused() public {
+        FxPool pool = new FxPool(IERC20(address(tok)), IERC20(address(usdc)));
+        tok.mint(address(pool), 1_000_000e6);
+        usdc.mint(address(pool), 1_000_000e6);
+        pool.init(1_000_000e6, 1_000_000e6); // $1.00
+        // the owner's misconfiguration: the pool is both the allowlisted router and the floor oracle
+        vm.startPrank(owner);
+        r.setRouter(address(pool), true);
+        r.setFloor(address(tok), IOracle(address(pool)), 300);
+        r.seedPrice(address(tok), 1e36);
+        vm.stopPrank();
+        tok.mint(address(r), 10_000e6);
+        // the outsider sells 100,000 T into the pool first: the spot the floor reads drops to ~0.83
+        address mal = address(0xBAD);
+        tok.mint(mal, 100_000e6);
+        vm.startPrank(mal);
+        tok.approve(address(pool), type(uint256).max);
+        pool.swapTokenForUsdc(100_000e6);
+        vm.stopPrank();
+        uint256 spot = pool.price();
+        assertLt(spot, 0.84e36);
+        vm.prank(owner);
+        _expectBand(spot, 1e36);
+        r.sweep(address(tok), address(pool), abi.encodeCall(FxPool.swapTokenForUsdc, (10_000e6)), 10_000e6);
+        assertEq(tok.balanceOf(address(r)), 10_000e6, "the honest sweep did not run");
+    }
+
+    /// residual, stated: a move INSIDE the band is not refused (the band bounds a step, it is not a price source)
+    function test_RESIDUAL_F2_aSandwichInsideTheBandStillRuns() public {
+        FxPool pool = new FxPool(IERC20(address(tok)), IERC20(address(usdc)));
+        tok.mint(address(pool), 1_000_000e6);
+        usdc.mint(address(pool), 1_000_000e6);
+        pool.init(1_000_000e6, 1_000_000e6);
+        vm.startPrank(owner);
+        r.setRouter(address(pool), true);
+        r.setFloor(address(tok), IOracle(address(pool)), 300);
+        r.seedPrice(address(tok), 1e36);
+        vm.stopPrank();
+        tok.mint(address(r), 10_000e6);
+        address mal = address(0xBAD);
+        tok.mint(mal, 50_000e6);
+        vm.startPrank(mal);
+        tok.approve(address(pool), type(uint256).max);
+        pool.swapTokenForUsdc(50_000e6); // ~9% below the reference
+        vm.stopPrank();
+        assertGt(pool.price(), 0.9e36);
+        vm.prank(owner);
+        r.sweep(address(tok), address(pool), abi.encodeCall(FxPool.swapTokenForUsdc, (10_000e6)), 10_000e6);
+        emit log_named_uint("recipients got (USDC, 6dp)", usdc.balanceOf(senior) + usdc.balanceOf(junior) + usdc.balanceOf(treasury));
+    }
+
+    /// setFloor to a different oracle clears the reference; the same oracle with a new slippage keeps it
+    function test_FIXED_F2_setFloorClearsLastPriceOnlyForANewOracle() public {
+        _configure(1e36, 1e36);
+        (IOracle cur,) = r.floors(address(tok));
+        vm.prank(owner);
+        r.setFloor(address(tok), cur, 200);
+        assertEq(r.lastPrice(address(tok)), 1e36, "same oracle keeps the reference");
+        FxOracle o = new FxOracle(1e36);
+        vm.prank(owner);
+        r.setFloor(address(tok), IOracle(address(o)), 200);
+        assertEq(r.lastPrice(address(tok)), 0, "a new oracle must be re-seeded");
+        tok.mint(address(r), 100e6);
+        vm.expectRevert(FeeRouter.PriceNotSeeded.selector);
+        _sweep(100e6, 100e6);
+    }
+
+    function test_FIXED_F2_seedAndBandAreOwnerOnlyAndBounded() public {
+        address keeper = address(0x4B);
+        vm.startPrank(owner);
+        r.setKeeper(keeper);
+        vm.stopPrank();
+        vm.startPrank(keeper);
+        vm.expectRevert();
+        r.seedPrice(address(tok), 1e36);
+        vm.expectRevert();
+        r.setMaxPriceMoveBps(2_000);
+        vm.stopPrank();
+        vm.startPrank(owner);
+        vm.expectRevert(FeeRouter.BadPrice.selector);
+        r.seedPrice(address(tok), 0);
+        vm.expectRevert(FeeRouter.BadSplit.selector);
+        r.setMaxPriceMoveBps(5_001);
+        vm.expectEmit(address(r));
+        emit FeeRouter.MaxPriceMoveSet(5_000);
+        r.setMaxPriceMoveBps(5_000);
+        vm.stopPrank();
+        assertEq(r.maxPriceMoveBps(), 5_000);
+        assertEq(new FeeRouter(IERC20(address(usdc)), owner, senior, junior, treasury).maxPriceMoveBps(), 1_000);
+    }
+
+    /// a widened band is honoured
+    function test_FIXED_F2_aWiderBandLetsALargerMoveThrough() public {
+        FxOracle o = _configure(1.15e36, 1e36);
+        o.set(1.15e36);
+        vm.prank(owner);
+        r.setMaxPriceMoveBps(2_000);
+        tok.mint(address(r), 1_000e6);
+        _sweep(1_000e6, 1_150e6);
+        assertEq(r.lastPrice(address(tok)), 1.15e36);
     }
 }
