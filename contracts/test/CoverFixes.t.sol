@@ -7,8 +7,18 @@ pragma solidity 0.8.28;
 import "./Base.t.sol";
 import {Vm} from "forge-std/Vm.sol";
 import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
+import {IOracle} from "morpho-blue/interfaces/IOracle.sol";
+import {MorphoBalancesLib} from "morpho-blue/libraries/periphery/MorphoBalancesLib.sol";
+
+interface IFelixLike is IERC4626 {
+    function withdrawQueue(uint256) external view returns (bytes32);
+    function withdrawQueueLength() external view returns (uint256);
+    function lostAssets() external view returns (uint256);
+}
 
 contract CoverFixesTest is Base {
+    using MorphoBalancesLib for IMorpho;
+
     address carol = makeAddr("carol");
 
     /* helpers */
@@ -254,5 +264,154 @@ contract CoverFixesTest is Base {
         _seniorDeposit(carol, 10_000e6);
         junior.observeSenior();
         assertEq(junior.seniorSupplyMin(), low, "a larger supply never raises the minimum");
+    }
+
+    /* T003, C9: Felix bad debt reaches the cover */
+
+    struct BadDebt {
+        MarketParams mp;
+        address borrower;
+        uint256 collateral;
+        uint256 debt;
+        uint256 price;
+    }
+
+    BadDebt internal bd;
+
+    /// @dev A real position in the Felix-supplied USDC market where Felix's supply is largest (oracle fresh, as at the fork
+    ///      block): collateral dealt to a borrower, `supplyCollateral`, `borrow`. Same mechanism as the audit's C9 test.
+    function _openFelixBorrower(uint256 maxDebt) internal {
+        IFelixLike felix = IFelixLike(FELIX_USDC_V1);
+        Id best;
+        uint256 bestSupply;
+        for (uint256 i = 0; i < felix.withdrawQueueLength(); i++) {
+            Id id = Id.wrap(felix.withdrawQueue(i));
+            MarketParams memory q = MORPHO.idToMarketParams(id);
+            if (q.loanToken != address(USDC) || q.collateralToken == address(0) || q.oracle == address(0)) continue;
+            (bool ok,) = q.oracle.staticcall(abi.encodeCall(IOracle.price, ()));
+            if (!ok) continue;
+            uint256 mine = MORPHO.expectedSupplyAssets(q, FELIX_USDC_V1);
+            if (mine > bestSupply) {
+                bestSupply = mine;
+                best = id;
+            }
+        }
+        require(bestSupply != 0, "no Felix USDC market with collateral");
+        MarketParams memory mp = MORPHO.idToMarketParams(best);
+        MORPHO.accrueInterest(mp);
+        uint256 free = MORPHO.market(best).totalSupplyAssets - MORPHO.market(best).totalBorrowAssets;
+        uint256 debt = maxDebt < free * 8 / 10 ? maxDebt : free * 8 / 10;
+        uint256 price = IOracle(mp.oracle).price();
+        uint256 collateral = debt * 1e36 / price * 1e18 / mp.lltv * 102 / 100 + 1;
+        address borrower = makeAddr("badDebtBorrower");
+        deal(mp.collateralToken, borrower, collateral);
+        vm.startPrank(borrower);
+        IERC20(mp.collateralToken).approve(address(MORPHO), collateral);
+        MORPHO.supplyCollateral(mp, collateral, borrower, "");
+        MORPHO.borrow(mp, debt, 0, borrower, borrower);
+        vm.stopPrank();
+        bd = BadDebt(mp, borrower, collateral, debt, price);
+    }
+
+    /// @dev Another Felix depositor touches Felix, which books its accrued interest and (after a bad debt) `lostAssets`.
+    function _felixTouch() internal {
+        address t = makeAddr("felixToucher");
+        deal(address(USDC), t, 1e6);
+        vm.startPrank(t);
+        USDC.approve(FELIX_USDC_V1, 1e6);
+        IERC4626(FELIX_USDC_V1).deposit(1e6, t);
+        vm.stopPrank();
+    }
+
+    /// @dev The oracle price is ASSUMED to fall 99%; the liquidation itself is the real `Morpho.liquidate`, and Morpho
+    ///      socialises the rest of the debt over the suppliers.
+    function _liquidateWithBadDebt() internal returns (uint256 badDebt) {
+        MORPHO.accrueInterest(bd.mp);
+        uint256 supply0 = MORPHO.market(Id.wrap(keccak256(abi.encode(bd.mp)))).totalSupplyAssets;
+        vm.mockCall(bd.mp.oracle, abi.encodeCall(IOracle.price, ()), abi.encode(bd.price / 100));
+        address liq = makeAddr("badDebtLiquidator");
+        deal(address(USDC), liq, bd.debt);
+        vm.startPrank(liq);
+        USDC.approve(address(MORPHO), bd.debt);
+        MORPHO.liquidate(bd.mp, bd.borrower, bd.collateral, 0, "");
+        vm.stopPrank();
+        vm.clearMockedCalls();
+        badDebt = supply0 - MORPHO.market(Id.wrap(keccak256(abi.encode(bd.mp)))).totalSupplyAssets;
+    }
+
+    uint256 internal constant SENIOR_SIZE = 1_000_000e6;
+
+    /// @dev Senior 1M (all in Felix), junior 50k, borrower in Felix's largest USDC market; a week later: Felix touch, optional
+    ///      bad debt, Felix touch (books lostAssets), settle. Returns what the settle billed and the latent senior deficit.
+    function _felixWeek(bool bad)
+        internal
+        returns (bool covered, uint256 shortfall, uint256 paid, uint256 deficit, uint256 badDebt)
+    {
+        vm.warp(block.timestamp + 7 days - 3 hours);
+        junior.syncSenior();
+        _felixTouch(); // books Felix's interest first, so it cannot absorb the bad debt
+        if (bad) badDebt = _liquidateWithBadDebt();
+        _felixTouch();
+        vm.warp(block.timestamp + 3 hours);
+        IFelixLike f = IFelixLike(FELIX_USDC_V1);
+        uint256 seniorFelix = f.convertToAssets(f.balanceOf(felixAdapter));
+        deficit = f.totalAssets() == 0 ? 0 : f.lostAssets() * seniorFelix / f.totalAssets();
+        senior.accrueInterest();
+        (covered, shortfall, paid,) = _settle();
+    }
+
+    function _felixSetup() internal {
+        _seniorDeposit(alice, SENIOR_SIZE);
+        _juniorDeposit(bob, 50_000e6);
+        junior.syncSenior();
+        _openFelixBorrower(1_000_000e6);
+    }
+
+    /// Tolerance: the bill differs from the pro rata deficit by at most 1% of it plus 1 USDC (Felix yield accrued between
+    /// the two touches and 1 ppm guard); measured against the same week without the bad debt.
+    function test_C9_felixBadDebtReachesTheCover() public {
+        _felixSetup();
+        uint256 snap = vm.snapshotState();
+        (bool cCtl, uint256 shortCtl,,,) = _felixWeek(false);
+        vm.revertToState(snap);
+        (bool covered, uint256 shortfall, uint256 paid, uint256 deficit, uint256 badDebt) = _felixWeek(true);
+        console2.log("bad debt booked by Morpho", badDebt);
+        console2.log("senior pro rata Felix deficit", deficit);
+        console2.log("control shortfall (no bad debt, covered?)", shortCtl, cCtl ? 1 : 0);
+        console2.log("shortfall / paid with bad debt", shortfall, paid);
+        assertGt(badDebt, 100_000e6, "scenario: a real bad debt");
+        assertGt(deficit, 1_000e6, "scenario: senior carries a measurable share");
+        assertTrue(covered);
+        assertGt(paid, 0);
+        uint256 idle = 50_001e6;
+        uint256 expected = deficit < idle ? deficit : idle;
+        assertEq(paid, shortfall < idle ? shortfall : idle);
+        assertApproxEqAbs(paid, expected, expected / 100 + 1e6);
+    }
+
+    /// Recovery: after the cover, a later settle with no new loss bills 0 more; a later "recovery" (assets flowing back
+    /// into senior, simulated by a USDC transfer) lifts the price above the baseline and still bills nothing.
+    function test_C9_laterSettleBillsNothingMoreAndRecoveryDoesNotDoubleBill() public {
+        _felixSetup();
+        (bool c2,, uint256 paid2,,) = _felixWeek(true);
+        assertTrue(c2);
+        assertGt(paid2, 0);
+        uint256 seniorUsdc = USDC.balanceOf(address(senior));
+        _nextSettle();
+        (bool c3,, uint256 paid3,) = _settle();
+        console2.log("covered at settle 2 / bills at settle 3", paid2, paid3);
+        assertFalse(c3, "no Cover event at the next settle");
+        deal(address(USDC), address(senior), USDC.balanceOf(address(senior)) + paid2); // a recovery of the booked deficit
+        _nextSettle();
+        (bool c4,,,) = _settle();
+        assertFalse(c4, "a recovery never reads as a loss");
+        assertGe(USDC.balanceOf(address(senior)), seniorUsdc);
+    }
+
+    /// Control: the same week without the bad debt bills nothing (no Cover event).
+    function test_C9_controlWithoutBadDebtBillsNothing() public {
+        _felixSetup();
+        (bool covered,,,,) = _felixWeek(false);
+        assertFalse(covered, "a Cover event without any loss");
     }
 }

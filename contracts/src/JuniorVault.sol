@@ -18,6 +18,16 @@ import {MorphoBalancesLib} from "morpho-blue/libraries/periphery/MorphoBalancesL
 import {IVaultV2} from "vault-v2/interfaces/IVaultV2.sol";
 import {IAdapter} from "vault-v2/interfaces/IAdapter.sol";
 
+/// @dev Probes for a MetaMorpho v1.1 vault behind a Vault V2 adapter; any other adapter simply fails them.
+interface IMorphoVaultV1AdapterLike {
+    function morphoVaultV1() external view returns (address);
+}
+
+interface IMetaMorphoLostLike {
+    function lostAssets() external view returns (uint256);
+    function totalAssets() external view returns (uint256);
+}
+
 /// @title JuniorVault
 /// @notice First-loss tranche for Orphic. ERC-20 share token over USDC.
 ///  - deposit: pulls USDC, and (once the stake token is set) a stake of `stakePerAsset` ORPH per USDC, held here and
@@ -360,15 +370,36 @@ contract JuniorVault is ERC20, Ownable2Step, ReentrancyGuard, Multicall {
         return seniorPriceBase - seniorPriceBase * senior.managementFee() * elapsed / WAD - seniorPriceBase / 1e6;
     }
 
-    /// @dev Senior real assets per PRICE_UNIT shares, Vault V2 convention (virtual shares, +1 asset).
+    /// @dev Senior real assets per PRICE_UNIT shares, Vault V2 convention (virtual shares, +1 asset). A MetaMorpho v1.1
+    ///      adapter's assets are read net of that vault's booked bad debt (see _felixDeficit), so a Felix loss reaches the
+    ///      cover even though Felix's own share price does not move. Policy: junior pays for the booked deficit even though
+    ///      Felix may later recover it or other depositors may bear it. `lostAssets` never decreases in v1.1 and real
+    ///      assets regrow on recovery, so a recovery shows as senior's price rising above the baseline: no shortfall, no
+    ///      double bill. Lost assets are only booked on Felix's next touch (any deposit, withdraw or accrual), which on
+    ///      the live chain happens many times a day.
     function _seniorRealPrice() internal view returns (uint256) {
         uint256 real = asset.balanceOf(address(senior));
         uint256 n = senior.adaptersLength();
         for (uint256 i = 0; i < n; i++) {
-            real += IAdapter(senior.adapters(i)).realAssets();
+            address adapter = senior.adapters(i);
+            uint256 assets = IAdapter(adapter).realAssets();
+            real += assets - _felixDeficit(adapter, assets);
         }
         (,, uint256 pendingFeeShares) = senior.accrueInterestView(); // fee shares owed to us but not yet minted
         return PRICE_UNIT * (real + 1) / (senior.totalSupply() + pendingFeeShares + senior.virtualShares());
+    }
+
+    /// @dev The part of an adapter's `assets` that sits in a MetaMorpho v1.1 vault's `lostAssets`: assets * lost / total.
+    ///      Any adapter that is not a MetaMorpho wrapper, or any probe that reverts, counts as no loss: never brick the view.
+    function _felixDeficit(address adapter, uint256 assets) internal view returns (uint256 deficit) {
+        try IMorphoVaultV1AdapterLike(adapter).morphoVaultV1() returns (address vault) {
+            try IMetaMorphoLostLike(vault).lostAssets() returns (uint256 lost) {
+                try IMetaMorphoLostLike(vault).totalAssets() returns (uint256 total) {
+                    if (total != 0) deficit = assets * lost / total;
+                } catch {}
+            } catch {}
+        } catch {}
+        if (deficit > assets) deficit = assets;
     }
 
     /// @notice USDC that senior's share price still has to recognise from the last cover. For the front end.
