@@ -14,6 +14,7 @@ interface IFelixLike is IERC4626 {
     function withdrawQueue(uint256) external view returns (bytes32);
     function withdrawQueueLength() external view returns (uint256);
     function lostAssets() external view returns (uint256);
+    function lastTotalAssets() external view returns (uint256);
 }
 
 contract CoverFixesTest is Base {
@@ -281,7 +282,6 @@ contract CoverFixesTest is Base {
     /// @dev A real position in the Felix-supplied USDC market where Felix's supply is largest (oracle fresh, as at the fork
     ///      block): collateral dealt to a borrower, `supplyCollateral`, `borrow`. Same mechanism as the audit's C9 test.
     function _openFelixBorrower(uint256 maxDebt) internal {
-        IFelixLike felix = IFelixLike(FELIX_USDC_V1);
         Id best;
         uint256 bestSupply;
         for (uint256 i = 0; i < felix.withdrawQueueLength(); i++) {
@@ -340,22 +340,32 @@ contract CoverFixesTest is Base {
     }
 
     uint256 internal constant SENIOR_SIZE = 1_000_000e6;
+    IFelixLike internal felix = IFelixLike(FELIX_USDC_V1);
 
-    /// @dev Senior 1M (all in Felix), junior 50k, borrower in Felix's largest USDC market; a week later: Felix touch, optional
-    ///      bad debt, Felix touch (books lostAssets), settle. Returns what the settle billed and the latent senior deficit.
+    function _felixAssetsOfSenior() internal view returns (uint256) {
+        return felix.convertToAssets(felix.balanceOf(felixAdapter));
+    }
+
+    /// @dev Senior's share of the Felix losses booked between `lost0` and now: what the cover is meant to bill.
+    function _newDeficit(uint256 lost0) internal view returns (uint256) {
+        uint256 lost = felix.lostAssets();
+        return lost <= lost0 ? 0 : (lost - lost0) * _felixAssetsOfSenior() / felix.lastTotalAssets();
+    }
+
+    /// @dev A week with the optional bad debt: sync, Felix touch (books interest first so it cannot absorb the loss),
+    ///      liquidation, Felix touch (books `lostAssets`), settle. Returns the settle's Cover and the NEW deficit.
     function _felixWeek(bool bad)
         internal
         returns (bool covered, uint256 shortfall, uint256 paid, uint256 deficit, uint256 badDebt)
     {
         vm.warp(block.timestamp + 7 days - 3 hours);
         junior.syncSenior();
-        _felixTouch(); // books Felix's interest first, so it cannot absorb the bad debt
+        _felixTouch();
+        uint256 lost0 = felix.lostAssets();
         if (bad) badDebt = _liquidateWithBadDebt();
         _felixTouch();
         vm.warp(block.timestamp + 3 hours);
-        IFelixLike f = IFelixLike(FELIX_USDC_V1);
-        uint256 seniorFelix = f.convertToAssets(f.balanceOf(felixAdapter));
-        deficit = f.totalAssets() == 0 ? 0 : f.lostAssets() * seniorFelix / f.totalAssets();
+        deficit = _newDeficit(lost0);
         senior.accrueInterest();
         (covered, shortfall, paid,) = _settle();
     }
@@ -367,51 +377,170 @@ contract CoverFixesTest is Base {
         _openFelixBorrower(1_000_000e6);
     }
 
-    /// Tolerance: the bill differs from the pro rata deficit by at most 1% of it plus 1 USDC (Felix yield accrued between
-    /// the two touches and 1 ppm guard); measured against the same week without the bad debt.
+    /// (1) Cover paid = min(senior's share of the NEW Felix deficit, idle). Tolerance: 1% of the deficit plus 1 USDC
+    ///     (Felix yield between the touches, 1 ppm guard, share rounding); the same week without bad debt bills nothing.
     function test_C9_felixBadDebtReachesTheCover() public {
         _felixSetup();
         uint256 snap = vm.snapshotState();
-        (bool cCtl, uint256 shortCtl,,,) = _felixWeek(false);
+        (bool cCtl,,,,) = _felixWeek(false);
+        assertFalse(cCtl, "control: a Cover event without any loss");
         vm.revertToState(snap);
         (bool covered, uint256 shortfall, uint256 paid, uint256 deficit, uint256 badDebt) = _felixWeek(true);
         console2.log("bad debt booked by Morpho", badDebt);
-        console2.log("senior pro rata Felix deficit", deficit);
-        console2.log("control shortfall (no bad debt, covered?)", shortCtl, cCtl ? 1 : 0);
-        console2.log("shortfall / paid with bad debt", shortfall, paid);
+        console2.log("senior share of the new Felix deficit", deficit);
+        console2.log("shortfall / paid", shortfall, paid);
         assertGt(badDebt, 100_000e6, "scenario: a real bad debt");
         assertGt(deficit, 1_000e6, "scenario: senior carries a measurable share");
         assertTrue(covered);
-        assertGt(paid, 0);
         uint256 idle = 50_001e6;
         uint256 expected = deficit < idle ? deficit : idle;
         assertEq(paid, shortfall < idle ? shortfall : idle);
         assertApproxEqAbs(paid, expected, expected / 100 + 1e6);
+        assertEq(junior.felixLostBase(felixAdapter), felix.lostAssets() + 1, "baseline re-took lostAssets");
     }
 
-    /// Recovery: after the cover, a later settle with no new loss bills 0 more; a later "recovery" (assets flowing back
-    /// into senior, simulated by a USDC transfer) lifts the price above the baseline and still bills nothing.
-    function test_C9_laterSettleBillsNothingMoreAndRecoveryDoesNotDoubleBill() public {
+    /// (2) B1: after the Felix cover half of senior exits (redeems at gross); the later settle bills nothing more.
+    function test_C9_exitsAfterTheCoverAreNotBilledAgain() public {
         _felixSetup();
         (bool c2,, uint256 paid2,,) = _felixWeek(true);
         assertTrue(c2);
-        assertGt(paid2, 0);
-        uint256 seniorUsdc = USDC.balanceOf(address(senior));
+        uint256 half = senior.balanceOf(alice) / 2;
+        vm.prank(alice);
+        senior.redeem(half, alice, alice);
         _nextSettle();
         (bool c3,, uint256 paid3,) = _settle();
-        console2.log("covered at settle 2 / bills at settle 3", paid2, paid3);
-        assertFalse(c3, "no Cover event at the next settle");
-        deal(address(USDC), address(senior), USDC.balanceOf(address(senior)) + paid2); // a recovery of the booked deficit
+        console2.log("covered / billed after half of senior exited", paid2, paid3);
+        assertFalse(c3, "no Cover event: the paid deficit never comes back");
         _nextSettle();
         (bool c4,,,) = _settle();
-        assertFalse(c4, "a recovery never reads as a loss");
-        assertGe(USDC.balanceOf(address(senior)), seniorUsdc);
+        assertFalse(c4);
     }
 
-    /// Control: the same week without the bad debt bills nothing (no Cover event).
-    function test_C9_controlWithoutBadDebtBillsNothing() public {
+    /// (3) B2: with Felix already carrying a booked loss (covered, baseline re-taken), neither a flash-sized deposit into
+    ///     senior right before settle, nor a reallocation out of and back into Felix, bills anything.
+    function test_C9_flowsDoNotBillAfterAFelixLoss() public {
         _felixSetup();
-        (bool covered,,,,) = _felixWeek(false);
-        assertFalse(covered, "a Cover event without any loss");
+        _felixWeek(true);
+        assertGt(felix.lostAssets(), 0);
+        // let senior's price recognise the 48k transfer under maxRate (0.55% a day: about 9 days) so the flow test sees
+        // only the C9 term, not the recognition-lag dilution of LIMITATIONS L1
+        for (uint256 w = 0; w < 2; w++) {
+            _nextSettle();
+            _settle();
+        }
+        // outsider: flash-sized deposit into senior (lands in Felix, the liquidity adapter) right before the settle, then out
+        vm.warp(block.timestamp + 7 days - 1 hours);
+        deal(address(USDC), carol, 5_000_000e6);
+        _seniorDeposit(carol, 5_000_000e6);
+        vm.warp(block.timestamp + 1 hours);
+        (bool c1,,,) = _settle();
+        assertFalse(c1, "flash deposit into senior bills nothing");
+        uint256 carolShares = senior.balanceOf(carol);
+        vm.prank(carol);
+        senior.redeem(carolShares, carol, carol);
+        // curator reallocation: out of Felix into senior idle, settle, back into Felix, settle
+        vm.startPrank(owner);
+        senior.deallocate(felixAdapter, "", 400_000e6);
+        vm.stopPrank();
+        _nextSettle();
+        (bool c2,,,) = _settle();
+        assertFalse(c2, "deallocating out of Felix bills nothing");
+        vm.startPrank(owner);
+        senior.allocate(felixAdapter, "", 400_000e6);
+        vm.stopPrank();
+        _nextSettle();
+        (bool c3,,,) = _settle();
+        assertFalse(c3, "allocating back into Felix bills nothing");
+    }
+
+    /// (4) Fraction falling: a large third-party deposit into Felix (the deficit per Felix asset shrinks) bills nothing and
+    ///     does not revert. Also the grief sequence the design must survive: deposit big into Felix, syncSenior, withdraw
+    ///     from Felix, settle. A baseline on a flow-moved ratio would bill the swing; the absolute lostAssets baseline cannot.
+    function test_C9_fallingFractionAndFelixFlowGriefBillNothing() public {
+        _felixSetup();
+        _felixWeek(true);
+        address whale = makeAddr("felixWhale");
+        deal(address(USDC), whale, 10_000_000e6);
+        vm.startPrank(whale);
+        USDC.approve(FELIX_USDC_V1, type(uint256).max);
+        uint256 sh = felix.deposit(10_000_000e6, whale);
+        vm.stopPrank();
+        vm.warp(block.timestamp + 1 hours);
+        junior.syncSenior(); // baseline taken while Felix is swollen
+        vm.startPrank(whale);
+        felix.redeem(sh, whale, whale);
+        vm.stopPrank();
+        _nextSettle();
+        (bool c,, uint256 paid,) = _settle();
+        console2.log("whale deposit, sync, withdraw, settle: billed", paid);
+        assertFalse(c, "Felix flows never bill");
+        // falling fraction: whale again, no sync, settle
+        vm.startPrank(whale);
+        felix.deposit(10_000_000e6, whale);
+        vm.stopPrank();
+        _nextSettle();
+        (bool c2,,,) = _settle();
+        assertFalse(c2);
+    }
+
+    /// (5) Hostile or odd adapters on the senior (a codeless adapter address cannot be installed: Vault V2's own accrueInterest would revert on it): settle, deposit and sync never revert, a real loss is still covered.
+    function test_C9_garbageAdaptersNeverBrickSettleDepositOrSync() public {
+        for (uint8 mode = 0; mode < 6; mode++) {
+            uint256 snap = vm.snapshotState();
+            _seniorDeposit(alice, 100_000e6);
+            _juniorDeposit(bob, 20_000e6);
+            vm.startPrank(owner);
+            _curate(abi.encodeCall(IVaultV2.addAdapter, (address(new GarbageAdapter(mode)))));
+            vm.stopPrank();
+            junior.syncSenior();
+            _juniorDeposit(bob, 1_000e6);
+            _forceSeniorLoss(1_000e6);
+            _nextSettle();
+            (bool c,, uint256 paid,) = _settle();
+            _juniorDeposit(bob, 1_000e6);
+            junior.syncSenior();
+            console2.log("garbage adapter mode / loss covered", mode, paid);
+            assertTrue(c, "the real loss is still covered");
+            assertApproxEqAbs(paid, 1_000e6, 150e6); // loss less a week of Felix yield (about 120)
+            vm.revertToState(snap);
+        }
+    }
+}
+
+/// @dev A senior adapter that is wrong in one of several ways. modes: 0 short data for every call, 1 codeless vault,
+///      2 dirty address word, 3 vault answering a 31-byte lostAssets, 4 vault answering max / max, 5 vault that burns gas.
+contract GarbageAdapter {
+    uint8 internal mode;
+    address internal vault;
+
+    constructor(uint8 mode_) {
+        mode = mode_;
+        vault = address(new GarbageVault(mode_));
+    }
+
+    function realAssets() external pure returns (uint256) {
+        return 0;
+    }
+
+    fallback(bytes calldata) external returns (bytes memory) {
+        if (mode == 0) return hex"ff";
+        if (mode == 1) return abi.encode(address(0xBEEF));
+        if (mode == 2) return abi.encode(type(uint256).max);
+        return abi.encode(vault);
+    }
+}
+
+contract GarbageVault {
+    uint8 internal mode;
+
+    constructor(uint8 mode_) {
+        mode = mode_;
+    }
+
+    fallback(bytes calldata) external returns (bytes memory) {
+        if (mode == 3) return new bytes(31);
+        if (mode == 4) return abi.encode(type(uint256).max);
+        while (true) {} // mode 5
+        return "";
     }
 }
