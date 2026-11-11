@@ -107,4 +107,35 @@ contract ExitsDepositsTest is Base {
         vm.expectRevert(JuniorVault.NotAllowed.selector);
         junior.execute(address(USDC), abi.encodeCall(IERC20.approve, (address(MORPHO), 1))); // no rule: grant refused
     }
+
+    /* A7: a forced removal pauses deposits */
+
+    function test_FIXED_A7_forceRemoveVaultPausesDeposits() public {
+        _juniorDeposit(alice, 1_000e6);
+        vm.expectEmit(false, false, false, true, address(junior));
+        emit JuniorVault.DepositsPaused(true);
+        vm.prank(owner);
+        junior.forceRemoveVault(0);
+        assertTrue(junior.depositsPaused());
+        vm.startPrank(alice);
+        USDC.approve(address(junior), 1e6);
+        vm.expectRevert(JuniorVault.Paused.selector);
+        junior.deposit(1e6, alice);
+        vm.stopPrank();
+        vm.prank(owner);
+        junior.setDepositsPaused(false); // the owner unpauses after re-listing
+        _juniorDeposit(alice, 1e6);
+    }
+
+    function test_FIXED_A7_forceRemoveMarketPausesDeposits() public {
+        vm.prank(owner);
+        junior.forceRemoveMarket(0);
+        assertTrue(junior.depositsPaused());
+    }
+
+    function test_A7_plainRemoveDoesNotPause() public {
+        vm.prank(owner);
+        junior.removeVault(0);
+        assertFalse(junior.depositsPaused());
+    }
 }

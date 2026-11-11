@@ -679,10 +679,12 @@ contract JuniorVault is ERC20, Ownable2Step, ReentrancyGuard, Multicall {
     ///         from the valuation on purpose; the agent can still not reach it afterwards.
     function forceRemoveMarket(uint256 i) external onlyOwner {
         VenueAdmin.forceRemoveMarket(markets, isMarket, i, address(morpho), address(asset));
+        _pauseDeposits();
     }
 
     function forceRemoveVault(uint256 i) external onlyOwner {
         VenueAdmin.forceRemoveVault(vaults, isVault, i, address(asset));
+        _pauseDeposits();
     }
 
     function addVault(address vault) external onlyOwner {
@@ -734,5 +736,12 @@ contract JuniorVault is ERC20, Ownable2Step, ReentrancyGuard, Multicall {
     function setDepositsPaused(bool paused) external onlyOwner {
         depositsPaused = paused;
         emit DepositsPaused(paused);
+    }
+
+    /// @dev A forced removal abandons a position from the valuation: deposits stop until the owner re-lists and unpauses,
+    ///      so nobody buys in at a NAV that no longer counts it.
+    function _pauseDeposits() internal {
+        depositsPaused = true;
+        emit DepositsPaused(true);
     }
 }
