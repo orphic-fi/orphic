@@ -128,8 +128,11 @@ contract FeeRouter is Ownable2Step, ReentrancyGuard {
         _split();
     }
 
-    /// @notice Split USDC that arrived directly (no swap needed).
-    function distribute() external onlyKeeper nonReentrant {
+    /// @notice Split USDC that arrived directly (no swap needed). Permissionless: it only splits USDC already held
+    ///         (net of what is parked) to the recipients the owner set, so a caller cannot redirect anything.
+    /// @dev Alone this does not stop a junior-deposit snipe (deposit, then flush, in one tx); the bound is the keeper
+    ///      calling it every tick.
+    function distribute() external nonReentrant {
         _split();
     }
 

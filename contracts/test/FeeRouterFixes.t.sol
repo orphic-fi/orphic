@@ -422,4 +422,49 @@ contract FeeRouterFixesTest is Test {
         _sweep(1_000e6, 1_150e6);
         assertEq(r.lastPrice(address(tok)), 1.15e36);
     }
+
+    /* F6(a) --------------------------------------------------------------------------------------------- */
+
+    /// an outsider can flush; it only splits the unparked USDC to the owner-set recipients
+    function test_FIXED_F6a_anOutsiderCanDistributeAndOnlyTheRecipientsAreFunded() public {
+        usdc.mint(address(r), 1_000e6);
+        address mal = address(0xBAD);
+        vm.prank(mal);
+        r.distribute();
+        assertEq(usdc.balanceOf(senior), 500e6);
+        assertEq(usdc.balanceOf(junior), 250e6);
+        assertEq(usdc.balanceOf(treasury), 250e6);
+        assertEq(usdc.balanceOf(mal), 0);
+        assertEq(usdc.balanceOf(address(r)), 0);
+        vm.prank(mal);
+        vm.expectRevert(FeeRouter.NothingToDo.selector);
+        r.distribute();
+    }
+
+    /// parked USDC is not re-split by an outsider's flush, and recipients follow setRecipients
+    function test_FIXED_F6a_anOutsidersFlushLeavesParkedUsdcAndFollowsTheOwnerSetRecipients() public {
+        usdc.setReject(junior, true);
+        usdc.mint(address(r), 1_000e6);
+        vm.prank(address(0xBAD));
+        r.distribute();
+        assertEq(r.owed(junior, address(usdc)), 250e6);
+        address newTreasury = address(0x99);
+        vm.prank(owner);
+        r.setRecipients(senior, junior, newTreasury);
+        usdc.mint(address(r), 400e6);
+        vm.prank(address(0xBAD));
+        r.distribute();
+        assertEq(usdc.balanceOf(newTreasury), 100e6);
+        assertEq(usdc.balanceOf(address(r)), r.totalParked(address(usdc)));
+    }
+
+    /// the other keeper-gated entry points stay gated
+    function test_HOLD_F6a_sweepAndSweepBurnStayKeeperOnly() public {
+        vm.startPrank(address(0xBAD));
+        vm.expectRevert(FeeRouter.NotKeeper.selector);
+        r.sweep(address(tok), address(dex), "", 1);
+        vm.expectRevert(FeeRouter.NotKeeper.selector);
+        r.sweepBurn(address(tok));
+        vm.stopPrank();
+    }
 }
