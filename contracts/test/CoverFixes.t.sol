@@ -180,4 +180,79 @@ contract CoverFixesTest is Base {
         (bool c5,,,) = _settle();
         assertFalse(c5);
     }
+
+    /* T002, C3b: exposure is the minimum senior supply seen since the baseline */
+
+    enum Watch {
+        NONE, // nobody observes between the exit and the buy: the documented residual
+        OBSERVE, // the keeper's observeSenior() lands between exit and buy
+        NO_BUYER // control: the same exit, no buyer
+    }
+
+    /// @dev Senior loss, a holder exits half of senior, a buyer enters with the same USDC, settle. Returns the Cover shortfall.
+    function _exitThenBuy(Watch w) internal returns (uint256 shortfall, uint256 paid) {
+        _seniorDeposit(alice, 100_000e6);
+        _juniorDeposit(bob, 20_000e6);
+        junior.syncSenior();
+        _forceSeniorLoss(2_000e6);
+        vm.warp(block.timestamp + 1 hours);
+        vm.startPrank(alice);
+        uint256 out = senior.redeem(senior.balanceOf(alice) / 2, alice, alice);
+        vm.stopPrank();
+        if (w == Watch.OBSERVE) junior.observeSenior();
+        if (w != Watch.NO_BUYER) {
+            deal(address(USDC), carol, out);
+            _seniorDeposit(carol, out);
+        }
+        _nextSettle();
+        (, shortfall, paid,) = _settle();
+    }
+
+    /// Tolerance: the buyer's presence may move the bill by at most 1 USDC (fee-share and rounding noise) vs the control.
+    function test_C3b_observeBetweenExitAndBuyKeepsCoverAtControl() public {
+        uint256 snap = vm.snapshotState();
+        (uint256 ctlShort, uint256 ctlPaid) = _exitThenBuy(Watch.NO_BUYER);
+        vm.revertToState(snap);
+        (uint256 obsShort, uint256 obsPaid) = _exitThenBuy(Watch.OBSERVE);
+        console2.log("control (no buyer) shortfall / paid", ctlShort, ctlPaid);
+        console2.log("observed exit-then-buy shortfall / paid", obsShort, obsPaid);
+        assertGt(ctlShort, 500e6, "the control really bills the loss on the remaining half");
+        assertApproxEqAbs(obsShort, ctlShort, 1e6);
+        assertApproxEqAbs(obsPaid, ctlPaid, 1e6);
+    }
+
+    /// The residual, still landing: no observation between the exit and the buy, so the bill covers the exited shares too.
+    /// Printed so it is documented; closed later by the senior receive-shares gate.
+    function test_C3b_residualWithoutObservationStillOverBills() public {
+        uint256 snap = vm.snapshotState();
+        (uint256 ctlShort,) = _exitThenBuy(Watch.NO_BUYER);
+        vm.revertToState(snap);
+        (uint256 noObsShort, uint256 noObsPaid) = _exitThenBuy(Watch.NONE);
+        console2.log("residual: control shortfall", ctlShort);
+        console2.log("residual: shortfall / paid without observation", noObsShort, noObsPaid);
+        console2.log("residual: extra cover vs control", noObsShort - ctlShort);
+        assertGt(noObsShort, ctlShort + 500e6, "residual: exited shares still billed when nobody observed");
+    }
+
+    /// observeSenior only ever lowers the minimum; syncSenior also observes while senior sits below its baseline.
+    function test_C3b_observeOnlyLowersAndSyncObservesBelowBaseline() public {
+        _seniorDeposit(alice, 100_000e6);
+        _juniorDeposit(bob, 20_000e6);
+        junior.syncSenior();
+        uint256 full = senior.totalSupply();
+        assertEq(junior.seniorSupplyMin(), full);
+        _forceSeniorLoss(2_000e6);
+        vm.warp(block.timestamp + 1 hours);
+        uint256 half = senior.balanceOf(alice) / 2;
+        vm.prank(alice);
+        senior.redeem(half, alice, alice);
+        junior.syncSenior(); // below baseline: baseline stays, minimum is lowered
+        assertEq(junior.seniorSupplyBase(), full);
+        assertEq(junior.seniorSupplyMin(), senior.totalSupply());
+        uint256 low = senior.totalSupply();
+        deal(address(USDC), carol, 10_000e6);
+        _seniorDeposit(carol, 10_000e6);
+        junior.observeSenior();
+        assertEq(junior.seniorSupplyMin(), low, "a larger supply never raises the minimum");
+    }
 }

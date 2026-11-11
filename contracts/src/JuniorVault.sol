@@ -81,6 +81,7 @@ contract JuniorVault is ERC20, Ownable2Step, ReentrancyGuard, Multicall {
     uint256 public lastMaturedDay; // last day bucket folded into pricedExitShares by settle
     uint256 public seniorPriceBase; // senior real assets per PRICE_UNIT shares at the last settle, after any cover
     uint256 public seniorSupplyBase; // senior share supply at the last sync: only these shares were exposed to a loss
+    uint256 public seniorSupplyMin; // lowest senior share supply observed since the baseline: exits before a late buy still count
     uint256 public seniorBaseTime; // when the baseline was taken, for the management fee drift
     uint256 public pendingExitShares; // shares locked and not yet priced, still part of the live supply
     uint256 public pricedExitShares; // shares priced at a past settle, excluded from the live supply
@@ -156,6 +157,7 @@ contract JuniorVault is ERC20, Ownable2Step, ReentrancyGuard, Multicall {
         settles.push(Settle(uint64(block.timestamp), uint192(WAD)));
         seniorPriceBase = _seniorRealPrice();
         seniorSupplyBase = senior_.totalSupply();
+        seniorSupplyMin = seniorSupplyBase;
         seniorBaseTime = block.timestamp;
     }
 
@@ -284,6 +286,10 @@ contract JuniorVault is ERC20, Ownable2Step, ReentrancyGuard, Multicall {
     ///      never paid twice. "Should be" is last settle's level less the management fee dilution since then (that
     ///      fee is ours, not a loss). Only shares that existed at the last settle are billed: senior deposits made
     ///      after the loss bought in at the depressed price and are not owed anything.
+    ///      Exposure is the smallest senior supply seen since the baseline (current supply, baseline supply, and the
+    ///      minimum recorded at every observation), so shares that left and were replaced by a buyer after the loss are
+    ///      not billed as if they still held it. Residual: an exit and a buy that both fall between two observations
+    ///      stay invisible (closed by the senior receive-shares gate, a later change).
     ///      Partial cover: when idle cannot pay the whole shortfall, the unpaid part is carried. The new baseline is
     ///      raised by unpaid / exposed, so the next settle sees it as a loss again and bills it (still capped at idle,
     ///      no venue pull), and the baseline supply stays at `exposed` so senior bought after the loss cannot enlarge
@@ -297,6 +303,7 @@ contract JuniorVault is ERC20, Ownable2Step, ReentrancyGuard, Multicall {
         uint256 baseSupply = supply;
         if (price < expected && supply != 0) {
             uint256 exposed = supply < seniorSupplyBase ? supply : seniorSupplyBase;
+            if (seniorSupplyMin < exposed) exposed = seniorSupplyMin;
             uint256 shortfall = (expected - price) * exposed / PRICE_UNIT;
             uint256 idle = asset.balanceOf(address(this));
             idle = idle > reservedAssets ? idle - reservedAssets : 0; // priced exits are fixed claims, not first loss
@@ -314,22 +321,37 @@ contract JuniorVault is ERC20, Ownable2Step, ReentrancyGuard, Multicall {
         }
         seniorPriceBase = price;
         seniorSupplyBase = baseSupply;
+        seniorSupplyMin = baseSupply;
         seniorBaseTime = block.timestamp;
     }
 
     /// @notice Refresh the senior baseline while no loss is outstanding, so shares deposited since the last settle
-    ///         become covered. Permissionless; the keeper calls it hourly. Does nothing if senior is below baseline,
-    ///         so it can never be used after a loss to enlarge the bill.
+    ///         become covered. Permissionless; the keeper calls it hourly. Below baseline it only lowers the observed
+    ///         minimum supply, so it can never be used after a loss to enlarge the bill.
     function syncSenior() external {
         _syncSenior();
     }
 
     function _syncSenior() internal {
+        uint256 supply = _observeSenior();
         uint256 price = _seniorRealPrice();
         if (price < _expectedSeniorPrice()) return;
         seniorPriceBase = price;
-        seniorSupplyBase = senior.totalSupply();
+        seniorSupplyBase = supply;
+        seniorSupplyMin = supply;
         seniorBaseTime = block.timestamp;
+    }
+
+    /// @notice Record senior's current share supply if it is the lowest since the baseline, so an exit followed by a
+    ///         buy cannot be billed as one exposure. Permissionless, only ever lowers `seniorSupplyMin`; the keeper
+    ///         calls it hourly. Every sync, deposit and settle observes as well.
+    function observeSenior() external {
+        _observeSenior();
+    }
+
+    function _observeSenior() internal returns (uint256 supply) {
+        supply = senior.totalSupply();
+        if (supply < seniorSupplyMin) seniorSupplyMin = supply;
     }
 
     /// @dev Baseline less the management fee drift, less 1 ppm so Vault V2 rounding never reads as a loss.
