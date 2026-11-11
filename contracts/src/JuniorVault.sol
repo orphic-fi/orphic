@@ -108,6 +108,7 @@ contract JuniorVault is ERC20, Ownable2Step, ReentrancyGuard, Multicall {
     event ExitClaimed(address indexed owner, uint256 shares, uint256 assets, uint256 price);
     event Settled(uint256 indexed index, uint256 nav, uint256 supply, uint256 price, uint256 cover);
     event Cover(uint256 shortfall, uint256 paid);
+    event CoverShortfallCarried(uint256 unpaid); // part of a shortfall idle USDC could not pay, billed at the next settle
     event AgentCall(address indexed target, bytes4 indexed selector, uint256 value);
     event RuleSet(address indexed target, bytes4 indexed selector, bool allowed, uint256 receiverOffset);
     event ApprovalRuleSet(address indexed token, address indexed spender, bool allowed);
@@ -283,10 +284,17 @@ contract JuniorVault is ERC20, Ownable2Step, ReentrancyGuard, Multicall {
     ///      never paid twice. "Should be" is last settle's level less the management fee dilution since then (that
     ///      fee is ours, not a loss). Only shares that existed at the last settle are billed: senior deposits made
     ///      after the loss bought in at the depressed price and are not owed anything.
+    ///      Partial cover: when idle cannot pay the whole shortfall, the unpaid part is carried. The new baseline is
+    ///      raised by unpaid / exposed, so the next settle sees it as a loss again and bills it (still capped at idle,
+    ///      no venue pull), and the baseline supply stays at `exposed` so senior bought after the loss cannot enlarge
+    ///      the bill; those newcomers are covered again after the first loss-free sync. With nothing exposed there is
+    ///      nothing to carry (the event still reports the unpaid amount). This path never reverts: idle 0 pays 0 and
+    ///      carries it all.
     function _coverSenior() internal returns (uint256 paid) {
         uint256 price = _seniorRealPrice();
         uint256 supply = senior.totalSupply();
         uint256 expected = _expectedSeniorPrice();
+        uint256 baseSupply = supply;
         if (price < expected && supply != 0) {
             uint256 exposed = supply < seniorSupplyBase ? supply : seniorSupplyBase;
             uint256 shortfall = (expected - price) * exposed / PRICE_UNIT;
@@ -296,9 +304,16 @@ contract JuniorVault is ERC20, Ownable2Step, ReentrancyGuard, Multicall {
             if (paid != 0) asset.safeTransfer(address(senior), paid);
             emit Cover(shortfall, paid);
             price = _seniorRealPrice(); // includes what we just paid
+            if (paid < shortfall) {
+                emit CoverShortfallCarried(shortfall - paid);
+                if (exposed != 0) {
+                    price += (shortfall - paid) * PRICE_UNIT / exposed; // billed again at the next settle
+                    baseSupply = exposed;
+                }
+            }
         }
         seniorPriceBase = price;
-        seniorSupplyBase = supply;
+        seniorSupplyBase = baseSupply;
         seniorBaseTime = block.timestamp;
     }
 

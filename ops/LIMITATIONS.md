@@ -20,6 +20,7 @@ No ORPH price source exists on launch day. `stakePerAsset` is set by the owner a
 
 ## L4. Senior shares deposited since the last sync are uncovered until the next sync
 Cover is billed only for senior shares that existed at the last `syncSenior()` (otherwise anyone could buy senior after a loss and have junior pay them). The keeper syncs hourly and every junior deposit syncs, so the uncovered window is about an hour. Double payment under maxRate lag is fixed (real-asset measurement).
+After an uncovered loss (a settle that could not pay the whole shortfall, see L9) the window stays open: `syncSenior()` refuses to move the baseline while senior sits below it, so senior shares bought after that loss are not covered until the first loss-free sync, which comes once the carried remainder is paid or senior's price recovers.
 
 ## L5. Junior exits need idle USDC
 `claimExit` pays only from the contract's USDC balance. The Rotator must return reserved assets to idle before maturities; if it does not, claims revert until it does. No user funds are at risk, only delayed.
@@ -33,5 +34,5 @@ Principal comes from the hourly index; a deposit made in the last hour shows und
 ## L8. Senior APY shows n/a until Morpho indexes the vault
 The Morpho API does not list the new Vault V2 yet; ask Morpho to index 0x3F7382bd8BFC6C548CAa2D7B4dfCe628B12A9759. Until then the senior card shows n/a with a note pointing at the Felix rate. The junior projected APY stays n/a until that input exists.
 
-## L9. Junior cover is paid from idle only
-`_coverSenior` pays from junior's idle USDC; it does not pull from venues. The keeper's settle-day recall exists for this reason. If Felix were illiquid on settle day, cover would be capped at idle (the 1% buffer plus whatever is idle) and the rest recognised at the next settle. Minted ERC-4626 positions in junior should stay small relative to the buffer until a permissionless cover path exists (v1).
+## L9. Junior cover is paid from idle only; an unpaid remainder is carried
+`_coverSenior` pays from junior's idle USDC (net of assets reserved for priced exits); it does not pull from venues. The keeper's settle-day recall exists for this reason. If idle is short on settle day, cover is capped at idle and the unpaid part is carried: the new senior baseline is raised by `unpaid / exposed`, so the next settle sees it as a loss again and bills it (event `CoverShortfallCarried(unpaid)`), again capped at idle at that settle. The remainder is billed exactly once, and only on the shares that were exposed to the loss (the baseline supply stays at those shares): senior shares bought after an uncovered loss are not covered until the next loss-free sync (see L4). With junior idle at 0 the settle still goes through, paying 0 and carrying all of it, every week, until idle returns (measured: carried twice, then paid in full). The carry shrinks by the Felix yield senior earns meanwhile and by the 1 ppm rounding guard. Minted ERC-4626 positions in junior should stay small relative to the buffer until a permissionless cover path exists (v1).
