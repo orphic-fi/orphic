@@ -162,6 +162,7 @@ contract JuniorVault is ERC20, Ownable2Step, ReentrancyGuard, Multicall {
     error WrongAsset();
     error VenueBroken();
     error ZeroPrice();
+    error Insolvent();
     error StakeRateOutOfBounds();
 
     constructor(IERC20 asset_, IVaultV2 senior_, IMorpho morpho_, address owner_, uint256 depositCap_)
@@ -198,8 +199,12 @@ contract JuniorVault is ERC20, Ownable2Step, ReentrancyGuard, Multicall {
         if (depositsPaused || !seeded) revert Paused();
         if (assets == 0) revert ZeroAmount();
         _syncSenior(); // every junior deposit also refreshes what senior exposure we stand behind
-        (uint256 nav, bool complete) = _navComplete(); // one valuation prices both the cap and the shares
+        (uint256 net, bool complete) = _netHoldings(); // one valuation prices the solvency check, the cap and the shares
         if (!complete) revert VenueBroken();
+        // priced exits are fixed claims: while holdings cannot cover them NAV is 0 and a newcomer would mint at the
+        // stale frozen price and fill the hole with their own USDC
+        if (net < reservedAssets) revert Insolvent();
+        uint256 nav = net - reservedAssets;
         if (nav + assets > depositCap) revert CapExceeded();
         if (walletCap != 0) {
             uint256 held = balanceOf(receiver) + exitOf[receiver].shares;
@@ -245,11 +250,24 @@ contract JuniorVault is ERC20, Ownable2Step, ReentrancyGuard, Multicall {
         ExitRequest memory r = exitOf[msg.sender];
         if (r.shares == 0) revert NothingToClaim();
         uint256 price = _priceAtOrAfter(r.readyAt, r.settleHint);
-        uint256 assets = uint256(r.shares) * price / WAD / assetScale;
-        if (asset.balanceOf(address(this)) < assets) revert InsufficientLiquidity();
+        uint256 owed = uint256(r.shares) * price / WAD / assetScale;
+        uint256 assets = owed;
+        uint256 idle = asset.balanceOf(address(this));
+        if (idle < reservedAssets + carryOwed()) {
+            // idle alone does not prove junior can honour every priced claim: value everything. Holdings short of the
+            // reserve (a venue loss after pricing) are shared pro rata, so the first claimant takes no more than the
+            // last. Each claim leaves the ratio unchanged (net and reserve both fall in proportion).
+            (uint256 net, bool complete) = _netHoldings();
+            if (net < reservedAssets) {
+                // a venue view that reverts counts as 0 above: a shortfall is only provable when every view answers
+                if (!complete) revert VenueBroken();
+                assets = owed * net / reservedAssets;
+            }
+        }
+        if (idle < assets) revert InsufficientLiquidity();
         delete exitOf[msg.sender];
         pricedExitShares -= r.shares;
-        reservedAssets = reservedAssets >= assets ? reservedAssets - assets : 0;
+        reservedAssets = reservedAssets >= owed ? reservedAssets - owed : 0; // the full claim leaves the reserve
         _burn(address(this), r.shares);
         // Release stake pro rata to the staked shares leaving; a full exit releases everything.
         uint256 stake = stakeOf[msg.sender];
@@ -548,7 +566,9 @@ contract JuniorVault is ERC20, Ownable2Step, ReentrancyGuard, Multicall {
         (total,) = _navComplete();
     }
 
-    function _navComplete() internal view returns (uint256 total, bool complete) {
+    /// @dev Idle USDC plus every allowlisted position, net of the cover junior still owes senior, BEFORE the reserve for
+    ///      priced exits is taken out. `complete` is false when a venue view reverted (it then counts as 0).
+    function _netHoldings() internal view returns (uint256 total, bool complete) {
         complete = true;
         total = asset.balanceOf(address(this));
         for (uint256 i = 0; i < markets.length; i++) {
@@ -565,9 +585,13 @@ contract JuniorVault is ERC20, Ownable2Step, ReentrancyGuard, Multicall {
                 complete = false;
             }
         }
-        total = total > reservedAssets ? total - reservedAssets : 0;
         uint256 owedToSenior = carryOwed(); // cover junior still owes is not junior's money
         total = total > owedToSenior ? total - owedToSenior : 0;
+    }
+
+    function _navComplete() internal view returns (uint256 total, bool complete) {
+        (total, complete) = _netHoldings();
+        total = total > reservedAssets ? total - reservedAssets : 0;
     }
 
     function marketAssets(uint256 i) external view returns (uint256) {

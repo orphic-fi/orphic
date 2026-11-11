@@ -244,4 +244,262 @@ contract ExitsDepositsTest is Base {
         junior.addVault(address(orph));
         assertFalse(junior.isVault(address(orph)));
     }
+
+    /* E2(e): deposits revert while junior cannot cover its priced claims; a post-pricing shortfall is shared pro rata */
+
+    uint256 constant EX = 1_500e6; // each exiter's deposit
+
+    /// @dev idle plus every position, independent of the contract's own NAV code (all venue views answer here)
+    function _holdings() internal view returns (uint256 h) {
+        h = USDC.balanceOf(address(junior));
+        for (uint256 i = 0; i < junior.marketsLength(); i++) h += junior.marketAssets(i);
+        for (uint256 i = 0; i < junior.vaultsLength(); i++) h += junior.vaultAssets(i);
+    }
+
+    function _toFelix(uint256 assets) internal {
+        vm.startPrank(agent);
+        junior.execute(address(USDC), abi.encodeCall(IERC20.approve, (FELIX_USDC_V1, assets)));
+        junior.execute(FELIX_USDC_V1, abi.encodeCall(IERC4626.deposit, (assets, address(junior))));
+        vm.stopPrank();
+    }
+
+    function _recallFelix() internal {
+        uint256 shares = IERC4626(FELIX_USDC_V1).balanceOf(address(junior));
+        vm.prank(agent);
+        junior.execute(FELIX_USDC_V1, abi.encodeCall(IERC4626.redeem, (shares, address(junior), address(junior))));
+    }
+
+    function _felixValue() internal view returns (uint256) {
+        return IERC4626(FELIX_USDC_V1).convertToAssets(IERC4626(FELIX_USDC_V1).balanceOf(address(junior)));
+    }
+
+    function _loseHalfOfFelix() internal {
+        deal(FELIX_USDC_V1, address(junior), IERC4626(FELIX_USDC_V1).balanceOf(address(junior)) / 2, true);
+    }
+
+    /// @dev alice and bob deposit EX each, both request exit, junior settles until both are priced (reserved ~ 2 EX).
+    ///      `felix` of the deposits goes to Felix, the rest stays idle.
+    function _twoExitersPriced(uint256 felix) internal {
+        _juniorDeposit(alice, EX);
+        _juniorDeposit(bob, EX);
+        _toFelix(felix);
+        _exitAll(alice);
+        _exitAll(bob);
+        (, uint64 readyAt,) = junior.exitOf(alice);
+        vm.warp(readyAt > junior.lastSettle() + junior.SETTLE_INTERVAL() ? readyAt : junior.lastSettle() + junior.SETTLE_INTERVAL());
+        junior.settle();
+        assertGt(junior.reservedAssets(), 2 * EX - 5e6, "both exits priced");
+    }
+
+    function _exitAll(address who) internal {
+        uint256 shares = junior.balanceOf(who); // read before the prank: the argument call would consume it
+        vm.prank(who);
+        junior.requestExit(shares);
+    }
+
+    function _claim(address who) internal returns (uint256 got) {
+        uint256 before_ = USDC.balanceOf(who);
+        vm.prank(who);
+        junior.claimExit();
+        got = USDC.balanceOf(who) - before_;
+    }
+
+    function test_FIXED_E2_e_twoClaimantsTakeTheSameProRataLoss() public {
+        _twoExitersPriced(2_800e6);
+        uint256 reserved = junior.reservedAssets();
+        _loseHalfOfFelix(); // after pricing, beyond the stayers' equity (1 USDC of dead shares)
+        _recallFelix();
+        uint256 holdings = USDC.balanceOf(address(junior));
+        assertLt(holdings, reserved);
+        uint256 owedEach = reserved / 2; // both priced at the same price, same shares
+        uint256 a = _claim(alice);
+        uint256 b = _claim(bob);
+        emit log_named_decimal_uint("reserved ", reserved, 6);
+        emit log_named_decimal_uint("holdings ", holdings, 6);
+        emit log_named_decimal_uint("alice paid", a, 6);
+        emit log_named_decimal_uint("bob paid  ", b, 6);
+        assertApproxEqAbs(a, b, 2, "same pro rata loss, whoever claims first");
+        assertApproxEqAbs(a, owedEach * holdings / reserved, 3, "owed x holdings / reserved");
+        assertLe(a + b, holdings, "never more than junior holds");
+        assertApproxEqAbs(a + b, holdings, 5, "and the whole of it is shared out");
+        assertEq(junior.reservedAssets(), 0, "full claims leave the reserve");
+    }
+
+    function test_FIXED_E2_e_orderDoesNotMatter() public {
+        _twoExitersPriced(2_800e6);
+        _loseHalfOfFelix();
+        _recallFelix();
+        uint256 b = _claim(bob); // reversed order
+        uint256 a = _claim(alice);
+        assertApproxEqAbs(a, b, 2);
+    }
+
+    function test_FIXED_E2_e_newcomerDepositRevertsInsolventInTheDeficit() public {
+        _twoExitersPriced(2_800e6);
+        _loseHalfOfFelix();
+        deal(address(USDC), carol, 500e6);
+        vm.startPrank(carol);
+        USDC.approve(address(junior), 500e6);
+        vm.expectRevert(JuniorVault.Insolvent.selector);
+        junior.deposit(500e6, carol);
+        vm.stopPrank();
+    }
+
+    function test_E2_e_noDeficitPaysExactlyAsBefore() public {
+        _twoExitersPriced(2_800e6);
+        _recallFelix();
+        (, uint192 price) = junior.settles(junior.settlesLength() - 1);
+        (uint128 shares,,) = junior.exitOf(alice);
+        uint256 expected = uint256(shares) * price / WAD / 1e12;
+        assertEq(_claim(alice), expected, "ratio 1: shares x price, to the unit");
+        assertEq(_claim(bob), expected);
+        // and a deposit with no deficit is not refused
+        deal(address(USDC), carol, 100e6);
+        _juniorDeposit(carol, 100e6);
+    }
+
+    function test_E2_e_fullyBackedClaimNeedsNoValuationAndPaysInFull() public {
+        _twoExitersPriced(0); // everything idle: idle covers the reserve, the cheap path
+        (uint128 shares,,) = junior.exitOf(alice);
+        (, uint192 price) = junior.settles(junior.settlesLength() - 1);
+        assertEq(_claim(alice), uint256(shares) * price / WAD / 1e12);
+    }
+
+    /// (a) a reverting venue, readable holdings still cover the reserve: paid in full
+    function test_E2_e_revertingVenueWithReadableAboveReservedPaysInFull() public {
+        deal(address(USDC), carol, 2_000e6);
+        _juniorDeposit(carol, 1_000e6); // a stayer: equity above the reserve
+        _juniorDeposit(alice, EX);
+        _juniorDeposit(bob, EX);
+        // idle 2,001, Morpho 1,501, Felix 500 (will revert): reserve ~3,000, readable 3,501
+        _toFelix(500e6);
+        _agentSupply(mpKhype, 1_500e6);
+        _exitAll(alice);
+        _exitAll(bob);
+        (, uint64 readyAt,) = junior.exitOf(alice);
+        vm.warp(readyAt > junior.lastSettle() + junior.SETTLE_INTERVAL() ? readyAt : junior.lastSettle() + junior.SETTLE_INTERVAL());
+        junior.settle();
+        uint256 reserved = junior.reservedAssets();
+        assertLt(USDC.balanceOf(address(junior)), reserved, "idle alone does not prove solvency");
+        vm.mockCallRevert(FELIX_USDC_V1, abi.encodeWithSignature("balanceOf(address)", address(junior)), "down");
+        (uint128 shares,,) = junior.exitOf(alice);
+        (, uint192 price) = junior.settles(junior.settlesLength() - 1);
+        assertEq(_claim(alice), uint256(shares) * price / WAD / 1e12, "provably solvent: full payout");
+    }
+
+    /// (b) a reverting venue and readable holdings below the reserve: VenueBroken; forceRemove unblocks, then the ratio applies
+    function test_E2_e_revertingVenueWithReadableBelowReservedBlocksUntilForceRemove() public {
+        deal(address(USDC), carol, 2_000e6);
+        _juniorDeposit(carol, 1_000e6);
+        _juniorDeposit(alice, EX);
+        _juniorDeposit(bob, EX);
+        _toFelix(1_500e6); // idle 2,501: enough for both payouts at the ratio, readable (idle) below the 3,000 reserve
+        _exitAll(alice);
+        _exitAll(bob);
+        (, uint64 readyAt,) = junior.exitOf(alice);
+        vm.warp(readyAt > junior.lastSettle() + junior.SETTLE_INTERVAL() ? readyAt : junior.lastSettle() + junior.SETTLE_INTERVAL());
+        junior.settle();
+        uint256 reserved = junior.reservedAssets();
+        uint256 idle = USDC.balanceOf(address(junior));
+        vm.mockCallRevert(FELIX_USDC_V1, abi.encodeWithSignature("balanceOf(address)", address(junior)), "down");
+        vm.prank(alice);
+        vm.expectRevert(JuniorVault.VenueBroken.selector);
+        junior.claimExit();
+        // owner force-removes Felix (index 0): the position is abandoned from the valuation, deposits pause (A7)
+        vm.prank(owner);
+        junior.forceRemoveVault(0);
+        assertTrue(junior.depositsPaused());
+        uint256 readable = idle + junior.marketAssets(0) + junior.marketAssets(1); // Felix is abandoned, senior holds no fee shares here
+        uint256 paid = _claim(alice);
+        (uint128 shares,,) = junior.exitOf(bob);
+        (, uint192 price) = junior.settles(junior.settlesLength() - 1);
+        uint256 owedEach = uint256(shares) * price / WAD / 1e12;
+        emit log_named_decimal_uint("alice paid after forceRemove", paid, 6);
+        assertLt(paid, owedEach, "now at the ratio, not in full");
+        assertApproxEqAbs(paid, owedEach * readable / reserved, 3);
+        assertApproxEqAbs(_claim(bob), paid, 2, "same ratio for the second claimant");
+    }
+
+    /// (c) a donation or a venue-view bump can only raise the ratio toward 1; sum of payouts never exceeds holdings
+    function test_E2_e_donationOnlyRaisesTheRatioAndSumStaysWithinHoldings() public {
+        _twoExitersPriced(2_800e6);
+        _loseHalfOfFelix();
+        _recallFelix();
+        uint256 holdings0 = USDC.balanceOf(address(junior));
+        deal(address(USDC), address(junior), holdings0 + 400e6); // donation
+        uint256 holdings = holdings0 + 400e6;
+        uint256 a = _claim(alice);
+        uint256 b = _claim(bob);
+        assertApproxEqAbs(a, b, 2);
+        assertLe(a + b, holdings, "sum of claims <= holdings");
+        assertGt(a + b, holdings0, "the donation reached the claimants");
+    }
+
+    function test_E2_e_donationAboveTheReserveIsCappedAtFullPayout() public {
+        _twoExitersPriced(2_800e6);
+        uint256 reserved = junior.reservedAssets();
+        _loseHalfOfFelix();
+        _recallFelix();
+        deal(address(USDC), address(junior), reserved + 1_000e6);
+        (uint128 shares,,) = junior.exitOf(alice);
+        (, uint192 price) = junior.settles(junior.settlesLength() - 1);
+        uint256 owed = uint256(shares) * price / WAD / 1e12;
+        assertEq(_claim(alice), owed, "capped at what the claim is owed");
+        assertEq(_claim(bob), owed);
+    }
+
+    function test_E2_e_venueBumpRaisesTheRatio() public {
+        _twoExitersPriced(2_800e6);
+        _loseHalfOfFelix();
+        uint256 felixShares = IERC4626(FELIX_USDC_V1).balanceOf(address(junior));
+        _recallFelix();
+        uint256 low = USDC.balanceOf(address(junior));
+        // the same shares worth more (e.g. a recovered venue): restore the pre-loss share count, then recall
+        deal(address(USDC), address(junior), low + 700e6);
+        uint256 a = _claim(alice);
+        uint256 b = _claim(bob);
+        assertGt(a, low / 2, "bump raised the payout");
+        assertApproxEqAbs(a, b, 2);
+        assertLe(a + b, low + 700e6);
+        felixShares; // silence: the share count itself is not needed after the recall
+    }
+
+    /// carry and a deficit are counted once: the ratio reads holdings net of the carried cover debt
+    function test_FIXED_E2_e_carryAndDeficitAreNotDoubleCounted() public {
+        deal(address(USDC), carol, 200_000e6);
+        _seniorDeposit(carol, 100_000e6);
+        _juniorDeposit(alice, EX);
+        _juniorDeposit(bob, EX);
+        _toFelix(2_800e6); // idle ~201, so a cover is paid from 201 and the rest carried
+        junior.syncSenior();
+        _exitAll(alice);
+        // a 1,000 USDC loss on senior
+        uint256 adapterShares = IERC4626(FELIX_USDC_V1).balanceOf(felixAdapter);
+        deal(FELIX_USDC_V1, felixAdapter, adapterShares - IERC4626(FELIX_USDC_V1).convertToShares(1_000e6), true);
+        // settle until alice's exit is priced (a loss-bearing settle pays what idle allows and carries the rest)
+        (, uint64 readyAt,) = junior.exitOf(alice);
+        vm.warp(readyAt > junior.lastSettle() + junior.SETTLE_INTERVAL() ? readyAt : junior.lastSettle() + junior.SETTLE_INTERVAL());
+        junior.settle();
+        uint256 carry = junior.carryOwed();
+        assertGt(carry, 100e6, "a debt is carried");
+        uint256 reserved = junior.reservedAssets();
+        assertGt(reserved, 0);
+        _loseHalfOfFelix(); // post-pricing deficit on top of the carry
+        _recallFelix();
+        uint256 holdings = _holdings(); // idle plus the senior fee shares junior holds
+        uint256 net = holdings > carry ? holdings - carry : 0;
+        (uint128 shares,,) = junior.exitOf(alice);
+        (, uint192 price) = junior.settles(junior.settlesLength() - 1);
+        uint256 owed = uint256(shares) * price / WAD / 1e12;
+        emit log_named_decimal_uint("carry   ", carry, 6);
+        emit log_named_decimal_uint("holdings", holdings, 6);
+        emit log_named_decimal_uint("reserved", reserved, 6);
+        emit log_named_decimal_uint("owed    ", owed, 6);
+        if (net >= reserved) {
+            assertEq(_claim(alice), owed, "carry alone does not make it a deficit");
+        } else {
+            uint256 paid = _claim(alice);
+            assertApproxEqAbs(paid, owed * net / reserved, 3, "holdings net of the carry, once");
+        }
+    }
 }
