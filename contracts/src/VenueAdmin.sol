@@ -7,12 +7,14 @@ pragma solidity 0.8.28;
 // library directly only touches the library's own (empty) storage and holds nothing.
 
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
 import {IMorpho, MarketParams, Id} from "morpho-blue/interfaces/IMorpho.sol";
 import {MarketParamsLib} from "morpho-blue/libraries/MarketParamsLib.sol";
 import {MorphoBalancesLib} from "morpho-blue/libraries/periphery/MorphoBalancesLib.sol";
 
 library VenueAdmin {
+    using SafeERC20 for IERC20;
     using MarketParamsLib for MarketParams;
     using MorphoBalancesLib for IMorpho;
 
@@ -56,23 +58,37 @@ library VenueAdmin {
         MarketParams[] storage markets,
         mapping(Id => bool) storage isMarket,
         uint256 i,
-        IMorpho morpho
+        IMorpho morpho,
+        address asset
     ) public {
         if (morpho.expectedSupplyAssets(markets[i], address(this)) != 0) revert NotAllowed(); // exit first
-        Id id = markets[i].id();
-        isMarket[id] = false;
-        markets[i] = markets[markets.length - 1];
-        markets.pop();
-        emit MarketRemoved(id);
+        _dropMarket(markets, isMarket, i, address(morpho), asset);
     }
 
-    function forceRemoveMarket(MarketParams[] storage markets, mapping(Id => bool) storage isMarket, uint256 i)
-        public
-    {
+    function forceRemoveMarket(
+        MarketParams[] storage markets,
+        mapping(Id => bool) storage isMarket,
+        uint256 i,
+        address morpho,
+        address asset
+    ) public {
+        _dropMarket(markets, isMarket, i, morpho, asset);
+    }
+
+    /// @dev Morpho serves every market, so its USDC allowance is zeroed only when the last market is gone; a removed
+    ///      market is already dead for the agent (`isMarket`), the allowance only matters once none is left.
+    function _dropMarket(
+        MarketParams[] storage markets,
+        mapping(Id => bool) storage isMarket,
+        uint256 i,
+        address morpho,
+        address asset
+    ) private {
         Id id = markets[i].id();
         isMarket[id] = false;
         markets[i] = markets[markets.length - 1];
         markets.pop();
+        if (markets.length == 0) IERC20(asset).forceApprove(morpho, 0);
         emit MarketRemoved(id);
     }
 
@@ -88,20 +104,31 @@ library VenueAdmin {
         emit VaultAdded(vault);
     }
 
-    function removeVault(address[] storage vaults, mapping(address => bool) storage isVault, uint256 i) public {
-        address vault = vaults[i];
-        if (IERC4626(vault).balanceOf(address(this)) != 0) revert NotAllowed(); // exit first
-        isVault[vault] = false;
-        vaults[i] = vaults[vaults.length - 1];
-        vaults.pop();
-        emit VaultRemoved(vault);
+    function removeVault(address[] storage vaults, mapping(address => bool) storage isVault, uint256 i, address asset)
+        public
+    {
+        if (IERC4626(vaults[i]).balanceOf(address(this)) != 0) revert NotAllowed(); // exit first
+        _dropVault(vaults, isVault, i, asset);
     }
 
-    function forceRemoveVault(address[] storage vaults, mapping(address => bool) storage isVault, uint256 i) public {
+    function forceRemoveVault(
+        address[] storage vaults,
+        mapping(address => bool) storage isVault,
+        uint256 i,
+        address asset
+    ) public {
+        _dropVault(vaults, isVault, i, asset);
+    }
+
+    /// @dev The USDC allowance this contract gave the vault is zeroed with it, so a re-listed or hostile vault finds none.
+    function _dropVault(address[] storage vaults, mapping(address => bool) storage isVault, uint256 i, address asset)
+        private
+    {
         address vault = vaults[i];
         isVault[vault] = false;
         vaults[i] = vaults[vaults.length - 1];
         vaults.pop();
+        IERC20(asset).forceApprove(vault, 0);
         emit VaultRemoved(vault);
     }
 

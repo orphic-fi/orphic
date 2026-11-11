@@ -615,9 +615,12 @@ contract JuniorVault is ERC20, Ownable2Step, ReentrancyGuard, Multicall {
         if (target == address(stakeToken) && target != address(0)) revert NotAllowed();
         bytes4 selector = bytes4(data[:4]);
         if (selector == IERC20.approve.selector) {
-            (address spender,) = abi.decode(data[4:], (address, uint256));
-            if (!approvals[target][spender]) revert NotAllowed();
-            if (spender != address(morpho) && !isVault[spender]) revert NotAllowed(); // removed venues die at once
+            (address spender, uint256 amount) = abi.decode(data[4:], (address, uint256));
+            // revoking is always allowed (a removed venue's allowance must be clearable); granting needs the rule
+            if (amount != 0) {
+                if (!approvals[target][spender]) revert NotAllowed();
+                if (spender != address(morpho) && !isVault[spender]) revert NotAllowed(); // removed venues die at once
+            }
         } else {
             VenueAdmin.Rule memory rule = rules[target][selector];
             if (!rule.allowed) revert NotAllowed();
@@ -665,21 +668,21 @@ contract JuniorVault is ERC20, Ownable2Step, ReentrancyGuard, Multicall {
     }
 
     function removeMarket(uint256 i) external onlyOwner {
-        VenueAdmin.removeMarket(markets, isMarket, i, morpho);
+        VenueAdmin.removeMarket(markets, isMarket, i, morpho, address(asset));
     }
 
     function removeVault(uint256 i) external onlyOwner {
-        VenueAdmin.removeVault(vaults, isVault, i);
+        VenueAdmin.removeVault(vaults, isVault, i, address(asset));
     }
 
     /// @notice Drop a venue without calling it, for one whose view reverts. Any position there is abandoned
     ///         from the valuation on purpose; the agent can still not reach it afterwards.
     function forceRemoveMarket(uint256 i) external onlyOwner {
-        VenueAdmin.forceRemoveMarket(markets, isMarket, i);
+        VenueAdmin.forceRemoveMarket(markets, isMarket, i, address(morpho), address(asset));
     }
 
     function forceRemoveVault(uint256 i) external onlyOwner {
-        VenueAdmin.forceRemoveVault(vaults, isVault, i);
+        VenueAdmin.forceRemoveVault(vaults, isVault, i, address(asset));
     }
 
     function addVault(address vault) external onlyOwner {

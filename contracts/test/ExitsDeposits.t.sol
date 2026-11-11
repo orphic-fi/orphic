@@ -47,4 +47,64 @@ contract ExitsDepositsTest is Base {
         assertLe(value, 40_000e6 + 1e6, "no gain from the pending fee");
         assertGe(value, 40_000e6 - 1e6);
     }
+
+    /* A4: revoking is always allowed; removing a venue zeroes junior's USDC allowance to it */
+
+    function _approveAsAgent(address spender, uint256 amount) internal {
+        vm.prank(agent);
+        junior.execute(address(USDC), abi.encodeCall(IERC20.approve, (spender, amount)));
+    }
+
+    function test_FIXED_A4_removeVaultZeroesItsAllowance() public {
+        _approveAsAgent(FELIX_USDC_V1, 1_000e6);
+        assertEq(USDC.allowance(address(junior), FELIX_USDC_V1), 1_000e6);
+        vm.prank(owner);
+        junior.removeVault(0); // Felix holds nothing
+        assertEq(USDC.allowance(address(junior), FELIX_USDC_V1), 0, "allowance zeroed with the vault");
+        assertFalse(junior.isVault(FELIX_USDC_V1));
+    }
+
+    function test_FIXED_A4_forceRemoveVaultZeroesItsAllowance() public {
+        _approveAsAgent(FELIX_USDC_V1, 1_000e6);
+        vm.prank(owner);
+        junior.forceRemoveVault(0);
+        assertEq(USDC.allowance(address(junior), FELIX_USDC_V1), 0);
+    }
+
+    function test_FIXED_A4_morphoAllowanceZeroedOnlyWhenTheLastMarketGoes() public {
+        _approveAsAgent(address(MORPHO), 1_000e6);
+        vm.prank(owner);
+        junior.removeMarket(0);
+        assertEq(USDC.allowance(address(junior), address(MORPHO)), 1_000e6, "one market left: Morpho allowance stays");
+        vm.prank(owner);
+        junior.removeMarket(0);
+        assertEq(junior.marketsLength(), 0);
+        assertEq(USDC.allowance(address(junior), address(MORPHO)), 0, "last market gone: allowance zeroed");
+    }
+
+    function test_FIXED_A4_forceRemoveMarketZeroesMorphoAllowanceWithTheLastMarket() public {
+        _approveAsAgent(address(MORPHO), 1_000e6);
+        vm.startPrank(owner);
+        junior.forceRemoveMarket(0);
+        assertEq(USDC.allowance(address(junior), address(MORPHO)), 1_000e6);
+        junior.forceRemoveMarket(0);
+        vm.stopPrank();
+        assertEq(USDC.allowance(address(junior), address(MORPHO)), 0);
+    }
+
+    function test_FIXED_A4_agentCanAlwaysRevokeButNotGrantToARemovedVenue() public {
+        _approveAsAgent(FELIX_USDC_V1, 1_000e6);
+        vm.prank(owner);
+        junior.forceRemoveVault(0);
+        _approveAsAgent(FELIX_USDC_V1, 0); // allowed although the venue is gone and its rule may be off
+        vm.prank(owner);
+        junior.setApprovalRule(address(USDC), address(MORPHO), false);
+        _approveAsAgent(address(MORPHO), 0); // revoke without a rule: allowed
+        vm.prank(agent);
+        vm.expectRevert(JuniorVault.NotAllowed.selector);
+        junior.execute(address(USDC), abi.encodeCall(IERC20.approve, (FELIX_USDC_V1, 1)));
+        vm.prank(agent);
+        vm.expectRevert(JuniorVault.NotAllowed.selector);
+        junior.execute(address(USDC), abi.encodeCall(IERC20.approve, (address(MORPHO), 1))); // no rule: grant refused
+    }
 }
