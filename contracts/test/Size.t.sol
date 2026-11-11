@@ -39,6 +39,10 @@ contract SizeTest is Test {
         _check("TeamVesting.sol:TeamVesting");
     }
 
+    function test_SeniorReceiveGateFitsLimits() public {
+        _check("SeniorReceiveGate.sol:SeniorReceiveGate");
+    }
+
     function test_HoneypotProbeFitsLimits() public {
         _check("HoneypotProbe.sol:HoneypotProbe");
     }
