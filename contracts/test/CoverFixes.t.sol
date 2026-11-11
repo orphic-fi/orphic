@@ -69,127 +69,201 @@ contract CoverFixesTest is Base {
         deal(address(USDC), address(junior), USDC.balanceOf(address(junior)) + amount);
     }
 
-    /* T001, C6: a partial cover carries the remainder */
+    /* T001, C6 v2: a partial cover becomes an explicit carried debt */
 
-    /// (a) settle 2 pays what idle has, settle 3 bills the remainder once junior has funds again.
-    ///     Tolerance: the remainder shrinks by the Felix yield senior earned in the week (measured) and 1 USDC of rounding.
-    function test_C6_partialCoverRemainderIsBilledAtNextSettle() public {
+    /// (1) Partial cover, a week of senior yield, the next settle bills the full carry: senior ends within 2 USDC of the
+    ///     honest control that paid everything at settle 2 (tolerance: rounding of per-share units and the 1 ppm guard).
+    function test_C6_carryIsBilledInFullAndSeniorEndsAtTheControl() public {
         _smallJuniorBigLoss();
+        uint256 snap = vm.snapshotState();
+        // control: junior has the money at settle 2
+        _topUpJunior(20_000e6);
         _nextSettle();
-        (bool c2, uint256 short2, uint256 paid2, uint256 carried2) = _settle();
-        assertTrue(c2);
+        (, uint256 ctlOwed, uint256 ctlPaid, uint256 ctlCarried) = _settle();
+        assertEq(ctlCarried, 0);
+        _nextSettle();
+        _settle();
+        uint256 ctlSenior = _seniorReal();
+        uint256 ctlJunior = junior.totalAssets();
+        vm.revertToState(snap);
+        // carry world: settle 2 pays idle only, the money comes back, settle 3 bills the carry
+        _nextSettle();
+        (, uint256 owed2, uint256 paid2, uint256 carried2) = _settle();
         assertEq(paid2, 1_001e6, "idle (deposit + seed) paid");
-        assertEq(carried2, short2 - paid2);
-        assertGt(carried2, 3_500e6, "most of the loss is unpaid");
-        console2.log("settle 2: shortfall / paid / carried", short2, paid2, carried2);
-
+        assertEq(carried2, owed2 - paid2);
+        assertEq(junior.carryOwed(), carried2, "carryOwed is the unpaid part");
         _topUpJunior(20_000e6);
-        uint256 realAfter2 = _seniorReal();
         _nextSettle();
-        senior.accrueInterest();
-        uint256 yield3 = _seniorReal() - realAfter2; // Felix yield on senior during the week, shrinks the bill
-        (bool c3, uint256 short3, uint256 paid3, uint256 carried3) = _settle();
-        console2.log("settle 3: shortfall / paid / yield", short3, paid3, yield3);
-        assertTrue(c3);
-        assertEq(carried3, 0, "fully paid now");
-        assertApproxEqAbs(paid3, carried2 - yield3, 1e6, "remainder billed at settle 3");
-    }
-
-    /// (b) a buyer enters senior after the loss, once the cover is recognised (no recognition-lag dilution): settle 3 bills
-    ///     no more than the unpaid remainder. Tolerance: the Felix yield makes the bill smaller; 1 USDC rounding up.
-    function test_C6_buyerBetweenSettlesDoesNotEnlargeTheBill() public {
-        _smallJuniorBigLoss();
-        _nextSettle();
-        (,, uint256 paid2, uint256 carried2) = _settle();
-        console2.log("settle 2 paid / carried", paid2, carried2);
-        _topUpJunior(20_000e6);
-        vm.warp(block.timestamp + 5 days); // maxRate recognises the 1k transfer within 2 days
-        senior.accrueInterest();
-        deal(address(USDC), carol, 1_000_000e6);
-        _seniorDeposit(carol, 1_000_000e6);
-        junior.syncSenior(); // still below the carried baseline: refused, carol stays uncovered
-        _nextSettle();
-        (bool c3,, uint256 paid3, uint256 carried3) = _settle();
-        console2.log("settle 3 paid (buyer of 1M entered)", paid3);
-        assertTrue(c3);
+        (, uint256 owed3, uint256 paid3, uint256 carried3) = _settle();
+        console2.log("control owed / paid", ctlOwed, ctlPaid);
+        console2.log("carry world settle 2 owed / paid / carried", owed2, paid2, carried2);
+        console2.log("carry world settle 3 owed / paid", owed3, paid3);
         assertEq(carried3, 0);
-        assertLe(paid3, carried2 + 1e6, "bill bounded by the unpaid remainder");
-        assertGt(paid3, carried2 / 2, "and the remainder is really billed");
+        assertApproxEqAbs(paid3, carried2, 2, "the full carry is billed, a week of yield does not net it");
+        assertApproxEqAbs(_seniorReal(), ctlSenior, 2e6, "senior ends at the control");
+        assertApproxEqAbs(junior.totalAssets(), ctlJunior, 2e6, "junior ends at the control");
+        assertEq(junior.carryPerShare(), 0);
     }
 
-    /// (b2) the same buyer entering right after settle 2, while senior's price still recognises the 1k transfer: the
-    ///      pre-existing recognition-lag dilution (LIMITATIONS L1) can re-bill part of what was just paid. Printed, bounded
-    ///      by remainder + what settle 2 paid.
-    function test_C6_buyerRightAfterSettleTwoBoundedByRemainderPlusPaid() public {
-        _smallJuniorBigLoss();
-        _nextSettle();
-        (,, uint256 paid2, uint256 carried2) = _settle();
-        _topUpJunior(20_000e6);
-        deal(address(USDC), carol, 1_000_000e6);
-        _seniorDeposit(carol, 1_000_000e6);
-        _nextSettle();
-        (,, uint256 paid3,) = _settle();
-        console2.log("buyer right after settle 2: carried / paid2 / paid3", carried2, paid2, paid3);
-        assertLe(paid3, carried2 + paid2 + 1e6);
+    /// (2) An exiter priced at the partial-cover settle bears its share of the unpaid debt: the settle price equals the NAV
+    ///     before the cover less the WHOLE owed amount, per share (tolerance 2 USDC for the whole supply: rounding, 1 ppm).
+    function test_C6_exiterPricedAtThePartialCoverSettleBearsItsShare() public {
+        _seniorDeposit(alice, 100_000e6);
+        _juniorDeposit(bob, 10_000e6); // stayer
+        address dave = makeAddr("dave");
+        deal(address(USDC), dave, 10_000e6);
+        vm.startPrank(dave);
+        USDC.approve(address(junior), 10_000e6);
+        uint256 dShares = junior.deposit(10_000e6, dave);
+        junior.requestExit(dShares);
+        vm.stopPrank();
+        junior.syncSenior();
+        // keep most of junior's money in Felix, so idle (about 1,001) cannot pay the cover
+        vm.startPrank(agent);
+        junior.execute(address(USDC), abi.encodeCall(IERC20.approve, (FELIX_USDC_V1, 19_000e6)));
+        junior.execute(FELIX_USDC_V1, abi.encodeWithSignature("deposit(uint256,address)", 19_000e6, address(junior)));
+        vm.stopPrank();
+        _forceSeniorLoss(5_000e6);
+        vm.warp(junior.lastSettle() + 8 days); // past the exit's notice
+        senior.accrueInterest();
+        uint256 navBefore = junior.totalAssets();
+        uint256 supply = junior.totalSupply();
+        (, uint256 owed, uint256 paid, uint256 carried) = _settle();
+        assertGt(carried, 3_000e6, "scenario: most of the bill is unpaid");
+        uint256 expectedPrice = (navBefore - owed) * 1e12 * WAD / supply;
+        console2.log("settle 2 price / expected (NAV before less the whole bill)", junior.pricePerShare(), expectedPrice);
+        uint256 exiterValue = dShares * junior.pricePerShare() / WAD / 1e12;
+        uint256 exiterExpected = dShares * expectedPrice / WAD / 1e12;
+        uint256 stayerValue = junior.balanceOf(bob) * junior.pricePerShare() / WAD / 1e12;
+        uint256 stayerExpected = junior.balanceOf(bob) * expectedPrice / WAD / 1e12;
+        assertApproxEqAbs(exiterValue, exiterExpected, 2e6, "exiter bears its share of the unpaid debt");
+        assertApproxEqAbs(stayerValue, stayerExpected, 2e6, "stayer bears its share");
+        assertGt(paid, 0);
     }
 
-    /// (c) junior idle 0 at settle 2 and 3: settle never reverts, the whole bill is carried twice, paid when idle returns.
-    function test_C6_idleZeroCarriesTwiceThenPays() public {
+    /// (3) Idle 0 at settle 2 and 3: no revert, the debt is carried twice (same amount, no growth), billed once on return.
+    function test_C6_idleZeroCarriesTwiceAndBillsOnce() public {
         _smallJuniorBigLoss();
-        // park all junior idle USDC in Felix through the agent
         uint256 idle = USDC.balanceOf(address(junior));
         vm.startPrank(agent);
         junior.execute(address(USDC), abi.encodeCall(IERC20.approve, (FELIX_USDC_V1, idle)));
         junior.execute(FELIX_USDC_V1, abi.encodeWithSignature("deposit(uint256,address)", idle, address(junior)));
         vm.stopPrank();
         assertEq(USDC.balanceOf(address(junior)), 0);
-
         _nextSettle();
-        (bool c2, uint256 short2, uint256 paid2, uint256 carried2) = _settle();
-        assertTrue(c2);
-        assertEq(paid2, 0);
-        assertEq(carried2, short2);
+        (bool c2, uint256 owed2, uint256 paid2, uint256 carried2) = _settle();
         _nextSettle();
-        (bool c3, uint256 short3, uint256 paid3, uint256 carried3) = _settle();
+        (bool c3, uint256 owed3, uint256 paid3, uint256 carried3) = _settle();
         console2.log("idle 0: carried at settle 2 / 3", carried2, carried3);
-        assertTrue(c3);
-        assertEq(paid3, 0);
-        assertEq(carried3, short3);
-        // the carry shrinks only by a week of Felix yield (measured below 2% of the bill on 100k senior)
-        assertApproxEqRel(short3, carried2, 0.03e18);
-
+        assertTrue(c2 && c3);
+        assertEq(paid2 + paid3, 0);
+        assertEq(carried2, owed2);
+        assertApproxEqAbs(owed3, owed2, 2, "the debt neither grows with yield nor shrinks");
+        assertApproxEqAbs(carried3, carried2, 2);
         _topUpJunior(20_000e6);
         _nextSettle();
         (bool c4,, uint256 paid4, uint256 carried4) = _settle();
         assertTrue(c4);
         assertEq(carried4, 0);
-        assertApproxEqRel(paid4, carried3, 0.03e18);
-        console2.log("idle back: paid at settle 4", paid4);
+        assertApproxEqAbs(paid4, carried2, 2, "billed once, in full");
+        _nextSettle();
+        (bool c5,,,) = _settle();
+        assertFalse(c5, "and never again");
     }
 
-    /// (d) once the carry is paid, a loss-free sync and a later settle bill nothing more.
+    /// (4) A buyer into senior between the settles (once the small settle-2 transfer is recognised, so the pre-existing
+    ///     recognition-lag dilution of L1 is out of the picture): the bill is the carry, not more (tolerance 1 USDC).
+    function test_C6_buyerBetweenSettlesDoesNotEnlargeTheBill() public {
+        _smallJuniorBigLoss();
+        _nextSettle();
+        (,,, uint256 carried2) = _settle();
+        _topUpJunior(20_000e6);
+        vm.warp(block.timestamp + 5 days);
+        senior.accrueInterest();
+        deal(address(USDC), carol, 1_000_000e6);
+        _seniorDeposit(carol, 1_000_000e6);
+        junior.syncSenior(); // observe only: carol stays uncovered
+        assertGt(junior.carryPerShare(), 0);
+        _nextSettle();
+        (bool c3,, uint256 paid3, uint256 carried3) = _settle();
+        console2.log("carry / settle 3 bill with a 1M buyer", carried2, paid3);
+        assertTrue(c3);
+        assertEq(carried3, 0);
+        assertApproxEqAbs(paid3, carried2, 1e6);
+    }
+
+    /// (5) A junior deposit while a debt is outstanding mints at the debt-net price.
+    function test_C6_depositWhileCarryMintsAtTheDebtNetPrice() public {
+        _seniorDeposit(alice, 100_000e6);
+        _juniorDeposit(bob, 10_000e6);
+        junior.syncSenior();
+        vm.startPrank(agent);
+        junior.execute(address(USDC), abi.encodeCall(IERC20.approve, (FELIX_USDC_V1, 9_000e6)));
+        junior.execute(FELIX_USDC_V1, abi.encodeWithSignature("deposit(uint256,address)", 9_000e6, address(junior)));
+        vm.stopPrank();
+        _forceSeniorLoss(5_000e6);
+        _nextSettle();
+        senior.accrueInterest();
+        uint256 navBefore = junior.totalAssets();
+        (, uint256 owed2,, uint256 carried2) = _settle();
+        assertGt(carried2, 3_000e6);
+        assertEq(junior.carryOwed(), carried2);
+        uint256 netNav = junior.totalAssets();
+        assertApproxEqAbs(netNav, navBefore - owed2, 1e6, "NAV is net of the whole bill, independently of the contract's own view");
+        netNav = navBefore - owed2;
+        uint256 supply = junior.totalSupply() - junior.pricedExitShares();
+        uint256 netLive = netNav * 1e12 * WAD / supply;
+        uint256 grossLive = (netNav + carried2) * 1e12 * WAD / supply;
+        uint256 p = netLive > junior.pricePerShare() ? netLive : junior.pricePerShare();
+        deal(address(USDC), carol, 1_000e6);
+        uint256 shares = _juniorDeposit(carol, 1_000e6);
+        console2.log("shares for 1,000 USDC at the net / gross price", shares, 1_000e6 * 1e12 * WAD / grossLive);
+        assertApproxEqRel(shares, 1_000e6 * 1e12 * WAD / p, 1e12);
+        assertGt(shares, 1_000e6 * 1e12 * WAD / grossLive, "a gross price would mint fewer shares");
+    }
+
+    /// (6) Billed exactly once: after the debt clears, a loss-free sync and later settles bill nothing more.
     function test_C6_remainderIsBilledExactlyOnce() public {
         _smallJuniorBigLoss();
         _nextSettle();
-        _settle(); // partial
+        _settle();
         _topUpJunior(20_000e6);
         _nextSettle();
-        (, , uint256 paid3, uint256 carried3) = _settle(); // pays the remainder
+        (, , uint256 paid3, uint256 carried3) = _settle();
         assertGt(paid3, 0);
         assertEq(carried3, 0);
+        assertEq(junior.carryPerShare(), 0);
         uint256 seniorUsdc = USDC.balanceOf(address(senior));
         vm.warp(block.timestamp + 1 hours);
-        junior.syncSenior(); // loss-free: baseline moves to the whole supply
+        junior.syncSenior(); // loss-free again: baseline moves to the whole supply
         assertEq(junior.seniorSupplyBase(), senior.totalSupply());
         _nextSettle();
-        (bool c4, , uint256 paid4,) = _settle();
+        (bool c4,,,) = _settle();
         assertFalse(c4, "no Cover event: nothing more to bill");
-        assertEq(paid4, 0);
-        assertEq(USDC.balanceOf(address(senior)), seniorUsdc);
-        // and one more, still nothing
         _nextSettle();
         (bool c5,,,) = _settle();
         assertFalse(c5);
+        assertEq(USDC.balanceOf(address(senior)), seniorUsdc);
+    }
+
+    /// (7) A carry with exposed < supply: a buyer enters after the loss and before the partial-cover settle; the debt is
+    ///     held on the shares that were exposed and billed at the next settle (tolerance 1 USDC).
+    function test_C6_carryWithExposedBelowSupply() public {
+        _smallJuniorBigLoss();
+        vm.warp(block.timestamp + 1 hours);
+        deal(address(USDC), carol, 100_000e6);
+        _seniorDeposit(carol, 100_000e6); // doubles senior supply after the loss
+        _nextSettle();
+        (, uint256 owed2,, uint256 carried2) = _settle();
+        assertGt(carried2, 3_000e6);
+        assertLt(junior.seniorSupplyBase(), senior.totalSupply(), "baseline holds the exposed shares only");
+        assertEq(junior.seniorSupplyBase(), junior.seniorSupplyMin());
+        console2.log("exposed below supply: owed / carried", owed2, carried2);
+        _topUpJunior(20_000e6);
+        _nextSettle();
+        (, , uint256 paid3, uint256 carried3) = _settle();
+        assertEq(carried3, 0);
+        assertApproxEqAbs(paid3, carried2, 1e6);
     }
 
     /* T002, C3b: exposure is the minimum senior supply seen since the baseline */

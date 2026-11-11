@@ -90,6 +90,7 @@ contract JuniorVault is ERC20, Ownable2Step, ReentrancyGuard, Multicall {
     uint256 public seniorPriceBase; // senior real assets per PRICE_UNIT shares at the last settle, after any cover
     uint256 public seniorSupplyBase; // senior share supply at the last sync: only these shares were exposed to a loss
     uint256 public seniorSupplyMin; // lowest senior share supply observed since the baseline: exits before a late buy still count
+    uint256 public carryPerShare; // unpaid cover per exposed senior share (PRICE_UNIT units), billed at the next settle
     mapping(address => uint256) public felixLostBase; // senior Felix adapter => Felix lostAssets at the baseline, plus 1 (0 = unseen)
     uint256 public seniorBaseTime; // when the baseline was taken, for the management fee drift
     uint256 public pendingExitShares; // shares locked and not yet priced, still part of the live supply
@@ -300,52 +301,71 @@ contract JuniorVault is ERC20, Ownable2Step, ReentrancyGuard, Multicall {
     ///      minimum recorded at every observation), so shares that left and were replaced by a buyer after the loss are
     ///      not billed as if they still held it. Residual: an exit and a buy that both fall between two observations
     ///      stay invisible (closed by the senior receive-shares gate, a later change).
-    ///      Partial cover: when idle cannot pay the whole shortfall, the unpaid part is carried. The new baseline is
-    ///      raised by unpaid / exposed, so the next settle sees it as a loss again and bills it (still capped at idle,
-    ///      no venue pull), and the baseline supply stays at `exposed` so senior bought after the loss cannot enlarge
-    ///      the bill; those newcomers are covered again after the first loss-free sync. The `exposed != 0` guard is
-    ///      defensive (with nothing exposed the shortfall is 0). This path never reverts: idle 0 pays 0 and carries it all.
+    ///      Partial cover: when idle cannot pay what is owed, the unpaid part becomes an explicit debt,
+    ///      `carryPerShare` (PRICE_UNIT units, per exposed senior share). The baseline is the plain post-payment price,
+    ///      so senior's yield cannot net the debt. At every settle the owed amount is the new shortfall plus
+    ///      `carryPerShare * exposed`, paid up to idle (no venue pull); what is still unpaid is carried again, and the
+    ///      baseline supply stays at `exposed`, so senior bought after the loss cannot enlarge the bill and exits shrink
+    ///      it. While a debt is outstanding `syncSenior` only observes: newcomers are covered again once it is cleared.
+    ///      Junior's NAV is net of the debt (`carryOwed`) wherever junior is priced, so an exit priced at a partial-cover
+    ///      settle bears its share. The `exposed != 0` guard is defensive (with nothing exposed nothing is owed). This
+    ///      path never reverts: idle 0 pays 0 and carries it all.
     ///      Felix losses: the shortfall includes senior's share of Felix losses booked since the baseline
     ///      (_seniorCoverPrice); `coverInProgress` reads 0 for such a cover, since Vault V2 never marked the loss.
     function _coverSenior() internal returns (uint256 paid) {
-        uint256 price = _seniorCoverPrice();
+        (uint256 gross, uint256 price) = _seniorPrices(true);
         uint256 supply = senior.totalSupply();
         uint256 expected = _expectedSeniorPrice();
         uint256 baseSupply = supply;
-        if (price < expected && supply != 0) {
-            uint256 exposed = supply < seniorSupplyBase ? supply : seniorSupplyBase;
-            if (seniorSupplyMin < exposed) exposed = seniorSupplyMin;
-            uint256 shortfall = (expected - price) * exposed / PRICE_UNIT;
+        uint256 newCarry;
+        if ((price < expected || carryPerShare != 0) && supply != 0) {
+            uint256 exposed = _exposed(supply);
+            uint256 owed = carryPerShare * exposed / PRICE_UNIT;
+            if (price < expected) owed += (expected - price) * exposed / PRICE_UNIT;
             uint256 idle = asset.balanceOf(address(this));
             idle = idle > reservedAssets ? idle - reservedAssets : 0; // priced exits are fixed claims, not first loss
-            paid = shortfall < idle ? shortfall : idle;
+            paid = owed < idle ? owed : idle;
             if (paid != 0) asset.safeTransfer(address(senior), paid);
-            emit Cover(shortfall, paid);
-            price = _seniorRealPrice(); // gross, includes what we just paid; a paid Felix deficit is re-based below
-            if (paid < shortfall) {
-                emit CoverShortfallCarried(shortfall - paid);
+            emit Cover(owed, paid);
+            gross = _seniorRealPrice(); // includes what we just paid
+            if (paid < owed) {
+                emit CoverShortfallCarried(owed - paid);
                 if (exposed != 0) {
-                    price += (shortfall - paid) * PRICE_UNIT / exposed; // billed again at the next settle
+                    newCarry = (owed - paid) * PRICE_UNIT / exposed;
                     baseSupply = exposed;
                 }
             }
         }
-        seniorPriceBase = price;
+        carryPerShare = newCarry;
+        seniorPriceBase = gross;
         seniorSupplyBase = baseSupply;
         seniorSupplyMin = baseSupply;
         _snapFelixLost();
         seniorBaseTime = block.timestamp;
     }
 
+    /// @dev Senior shares that are still exposed to the loss: the smallest supply seen since the baseline.
+    function _exposed(uint256 supply) internal view returns (uint256 exposed) {
+        exposed = supply < seniorSupplyBase ? supply : seniorSupplyBase;
+        if (seniorSupplyMin < exposed) exposed = seniorSupplyMin;
+    }
+
+    /// @notice USDC junior still owes senior from a partial cover, billed at the next settle. Junior's NAV is net of it.
+    function carryOwed() public view returns (uint256) {
+        if (carryPerShare == 0) return 0;
+        return carryPerShare * _exposed(senior.totalSupply()) / PRICE_UNIT;
+    }
+
     /// @notice Refresh the senior baseline while no loss is outstanding, so shares deposited since the last settle
-    ///         become covered. Permissionless; the keeper calls it hourly. Below baseline it only lowers the observed
-    ///         minimum supply, so it can never be used after a loss to enlarge the bill.
+    ///         become covered. Permissionless; the keeper calls it hourly. Below baseline, or while a partial-cover debt is
+    ///         outstanding, it only lowers the observed minimum supply, so it can never be used after a loss to enlarge the bill.
     function syncSenior() external {
         _syncSenior();
     }
 
     function _syncSenior() internal {
         uint256 supply = _observeSenior();
+        if (carryPerShare != 0) return; // a debt is outstanding: observe only, the baseline waits for the settle that clears it
         (uint256 gross, uint256 net) = _seniorPrices(true);
         if (net < _expectedSeniorPrice()) return;
         seniorPriceBase = gross;
@@ -487,6 +507,8 @@ contract JuniorVault is ERC20, Ownable2Step, ReentrancyGuard, Multicall {
             }
         }
         total = total > reservedAssets ? total - reservedAssets : 0;
+        uint256 owedToSenior = carryOwed(); // cover junior still owes is not junior's money
+        total = total > owedToSenior ? total - owedToSenior : 0;
     }
 
     function marketAssets(uint256 i) external view returns (uint256) {
