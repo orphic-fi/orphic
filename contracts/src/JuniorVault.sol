@@ -17,6 +17,7 @@ import {MarketParamsLib} from "morpho-blue/libraries/MarketParamsLib.sol";
 import {MorphoBalancesLib} from "morpho-blue/libraries/periphery/MorphoBalancesLib.sol";
 import {IVaultV2} from "vault-v2/interfaces/IVaultV2.sol";
 import {IAdapter} from "vault-v2/interfaces/IAdapter.sol";
+import {VenueAdmin} from "./VenueAdmin.sol";
 
 /// @dev Selectors probed on a MetaMorpho v1.1 vault behind a Vault V2 adapter; any other contract just fails the probe.
 interface IFelixProbes {
@@ -117,11 +118,7 @@ contract JuniorVault is ERC20, Ownable2Step, ReentrancyGuard, Multicall {
 
     // Agent allowlist. receiverOffset is the calldata byte offset (after the 4-byte selector) of the address that must
     // equal this contract, or type(uint256).max when the call has no receiver to check.
-    struct Rule {
-        bool allowed;
-        uint256 receiverOffset;
-    }
-    mapping(address => mapping(bytes4 => Rule)) public rules;
+    mapping(address => mapping(bytes4 => VenueAdmin.Rule)) public rules;
     mapping(address => mapping(address => bool)) public approvals; // token => spender the agent may approve
 
     /* EVENTS */
@@ -617,7 +614,7 @@ contract JuniorVault is ERC20, Ownable2Step, ReentrancyGuard, Multicall {
             if (!approvals[target][spender]) revert NotAllowed();
             if (spender != address(morpho) && !isVault[spender]) revert NotAllowed(); // removed venues die at once
         } else {
-            Rule memory rule = rules[target][selector];
+            VenueAdmin.Rule memory rule = rules[target][selector];
             if (!rule.allowed) revert NotAllowed();
             if (target == address(morpho)) {
                 // every Morpho call starts with MarketParams: only registered markets, ever
@@ -651,77 +648,37 @@ contract JuniorVault is ERC20, Ownable2Step, ReentrancyGuard, Multicall {
     }
 
     function setRule(address target, bytes4 selector, bool allowed, uint256 receiverOffset) external onlyOwner {
-        // targets are the valuation universe and nothing else: never the asset, never the stake token, never arbitrary
-        if (allowed && target != address(morpho) && !isVault[target]) revert NotAllowed();
-        if (
-            selector == IERC20.transfer.selector || selector == IERC20.transferFrom.selector
-                || selector == IERC20.approve.selector
-        ) revert NotAllowed(); // share tokens are venues too; raw moves of them are never a rule
-        rules[target][selector] = Rule(allowed, receiverOffset);
-        emit RuleSet(target, selector, allowed, receiverOffset);
+        VenueAdmin.setRule(rules, isVault, address(morpho), target, selector, allowed, receiverOffset);
     }
 
     function setApprovalRule(address token, address spender, bool allowed) external onlyOwner {
-        if (allowed && spender != address(morpho) && !isVault[spender]) revert NotAllowed(); // only trusted venues
-        if (token == address(stakeToken) && address(stakeToken) != address(0)) revert NotAllowed();
-        approvals[token][spender] = allowed;
-        emit ApprovalRuleSet(token, spender, allowed);
+        VenueAdmin.setApprovalRule(approvals, isVault, address(morpho), address(stakeToken), token, spender, allowed);
     }
 
     function addMarket(MarketParams calldata mp) external onlyOwner {
-        if (mp.loanToken != address(asset)) revert WrongAsset();
-        if (markets.length >= MAX_MARKETS) revert TooMany();
-        Id id = mp.id();
-        if (isMarket[id]) revert AlreadySet();
-        isMarket[id] = true;
-        markets.push(mp);
-        emit MarketAdded(id);
+        VenueAdmin.addMarket(markets, isMarket, mp, address(asset));
     }
 
     function removeMarket(uint256 i) external onlyOwner {
-        if (morpho.expectedSupplyAssets(markets[i], address(this)) != 0) revert NotAllowed(); // exit first
-        Id id = markets[i].id();
-        isMarket[id] = false;
-        markets[i] = markets[markets.length - 1];
-        markets.pop();
-        emit MarketRemoved(id);
+        VenueAdmin.removeMarket(markets, isMarket, i, morpho);
     }
 
     function removeVault(uint256 i) external onlyOwner {
-        address vault = vaults[i];
-        if (IERC4626(vault).balanceOf(address(this)) != 0) revert NotAllowed(); // exit first
-        isVault[vault] = false;
-        vaults[i] = vaults[vaults.length - 1];
-        vaults.pop();
-        emit VaultRemoved(vault);
+        VenueAdmin.removeVault(vaults, isVault, i);
     }
 
     /// @notice Drop a venue without calling it, for one whose view reverts. Any position there is abandoned
     ///         from the valuation on purpose; the agent can still not reach it afterwards.
     function forceRemoveMarket(uint256 i) external onlyOwner {
-        Id id = markets[i].id();
-        isMarket[id] = false;
-        markets[i] = markets[markets.length - 1];
-        markets.pop();
-        emit MarketRemoved(id);
+        VenueAdmin.forceRemoveMarket(markets, isMarket, i);
     }
 
     function forceRemoveVault(uint256 i) external onlyOwner {
-        address vault = vaults[i];
-        isVault[vault] = false;
-        vaults[i] = vaults[vaults.length - 1];
-        vaults.pop();
-        emit VaultRemoved(vault);
+        VenueAdmin.forceRemoveVault(vaults, isVault, i);
     }
 
     function addVault(address vault) external onlyOwner {
-        if (vault == address(this) || vault == address(asset)) revert WrongAsset();
-        if (IERC4626(vault).asset() != address(asset)) revert WrongAsset();
-        if (vaults.length >= MAX_MARKETS) revert TooMany();
-        if (isVault[vault]) revert AlreadySet();
-        isVault[vault] = true;
-        vaults.push(vault);
-        emit VaultAdded(vault);
+        VenueAdmin.addVault(vaults, isVault, vault, address(asset));
     }
 
     /// @notice One-way. Turns the stake gate on. Stakes are quoted in ORPH wei per 1 USDC (1e6).

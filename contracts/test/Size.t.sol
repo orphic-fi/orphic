@@ -42,4 +42,9 @@ contract SizeTest is Test {
     function test_HoneypotProbeFitsLimits() public {
         _check("HoneypotProbe.sol:HoneypotProbe");
     }
+
+    /// @dev External library JuniorVault delegatecalls into; deployed separately, so it has its own limits.
+    function test_VenueAdminFitsLimits() public {
+        _check("VenueAdmin.sol:VenueAdmin");
+    }
 }
