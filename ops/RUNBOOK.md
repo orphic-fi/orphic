@@ -86,7 +86,7 @@ Not part of Sunday's launch script. Needs the senior curator key (hardware walle
 2. Read back on the gate: `senior()`, `junior()`, `owner()`, `maxUnrecognised() == 10000000`, and `canReceiveShares(junior) == true`, `canReceiveShares(<a fresh address>) == true` in normal times.
 3. Curator: `senior.submit(abi.encodeCall(setReceiveSharesGate, (gate)))` (the timelock on that selector is 3 days). Do NOT execute early.
 4. After 3 days (and not while a cover or loss is in progress, so the first honest deposit is not refused): `senior.setReceiveSharesGate(gate)`. Read back `receiveSharesGate() == gate`, then run one small senior deposit and `accrueInterest()` and confirm junior's fee shares still mint.
-5. Gate owner: `setAllowed(keeper, true)` ONLY if the keeper ever receives senior shares (it should not). Allowlist the Safe/treasury only if it must receive shares during a window.
+5. Gate owner: `setAllowed(keeper, true)` ONLY if the keeper ever receives senior shares (it should not). Allowlist the Safe/treasury only if it must receive shares during a window. NEVER allowlist a pooled holder (a wrapper, a lending market, a router, a vault): it would let every depositor behind it buy during a loss or cover window and defeat the gate. Fee recipients and adapters are exempt automatically.
 6. Abort: the curator can `submit(setReceiveSharesGate(0))` (3 days) to remove it; `revoke` cancels a pending set.
 Expect: after any loss, depositors see `CannotReceiveShares` until junior settles and the cover is recognised (2 to 4 days). Redemptions are never affected.
 
