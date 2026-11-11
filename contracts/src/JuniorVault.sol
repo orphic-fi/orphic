@@ -17,6 +17,7 @@ import {MarketParamsLib} from "morpho-blue/libraries/MarketParamsLib.sol";
 import {MorphoBalancesLib} from "morpho-blue/libraries/periphery/MorphoBalancesLib.sol";
 import {IVaultV2} from "vault-v2/interfaces/IVaultV2.sol";
 import {IAdapter} from "vault-v2/interfaces/IAdapter.sol";
+import {VenueAdmin} from "./VenueAdmin.sol";
 
 /// @dev Selectors probed on a MetaMorpho v1.1 vault behind a Vault V2 adapter; any other contract just fails the probe.
 interface IFelixProbes {
@@ -46,7 +47,6 @@ contract JuniorVault is ERC20, Ownable2Step, ReentrancyGuard, Multicall {
     uint256 public constant WAD = 1e18;
     uint256 public constant NOTICE = 7 days;
     uint256 public constant SETTLE_INTERVAL = 7 days - 1 hours; // weekly, with an hour of slack for the keeper
-    uint256 internal constant MAX_MARKETS = 16;
     uint256 public constant SEED_ASSETS = 1e6; // 1 USDC of dead shares against first-depositor price games
     uint256 internal constant PROBE_GAS = 50_000; // gas cap per Felix probe (storage reads need about 3k)
     uint256 public constant PRICE_UNIT = 1e24; // senior shares used to quote its price with enough precision
@@ -117,11 +117,7 @@ contract JuniorVault is ERC20, Ownable2Step, ReentrancyGuard, Multicall {
 
     // Agent allowlist. receiverOffset is the calldata byte offset (after the 4-byte selector) of the address that must
     // equal this contract, or type(uint256).max when the call has no receiver to check.
-    struct Rule {
-        bool allowed;
-        uint256 receiverOffset;
-    }
-    mapping(address => mapping(bytes4 => Rule)) public rules;
+    mapping(address => mapping(bytes4 => VenueAdmin.Rule)) public rules;
     mapping(address => mapping(address => bool)) public approvals; // token => spender the agent may approve
 
     /* EVENTS */
@@ -165,6 +161,8 @@ contract JuniorVault is ERC20, Ownable2Step, ReentrancyGuard, Multicall {
     error WrongAsset();
     error VenueBroken();
     error ZeroPrice();
+    error Insolvent();
+    error StakeRateOutOfBounds();
 
     constructor(IERC20 asset_, IVaultV2 senior_, IMorpho morpho_, address owner_, uint256 depositCap_)
         ERC20("Orphic Junior USDC", "ojUSDC")
@@ -191,7 +189,7 @@ contract JuniorVault is ERC20, Ownable2Step, ReentrancyGuard, Multicall {
         if (seeded) revert AlreadySet();
         seeded = true;
         asset.safeTransferFrom(msg.sender, address(this), SEED_ASSETS);
-        _mint(address(0xdead), _toShares(SEED_ASSETS));
+        _mint(address(0xdead), _toShares(SEED_ASSETS, 0)); // supply is 0 here: the price is WAD, nav unused
     }
 
     /* DEPOSIT */
@@ -199,15 +197,19 @@ contract JuniorVault is ERC20, Ownable2Step, ReentrancyGuard, Multicall {
     function deposit(uint256 assets, address receiver) external nonReentrant returns (uint256 shares) {
         if (depositsPaused || !seeded) revert Paused();
         if (assets == 0) revert ZeroAmount();
-        (uint256 nav, bool complete) = _navComplete();
+        _syncSenior(); // every junior deposit also refreshes what senior exposure we stand behind
+        (uint256 net, bool complete) = _netHoldings(); // one valuation prices the solvency check, the cap and the shares
         if (!complete) revert VenueBroken();
+        // priced exits are fixed claims: while holdings cannot cover them NAV is 0 and a newcomer would mint at the
+        // stale frozen price and fill the hole with their own USDC
+        if (net < reservedAssets || (net == reservedAssets && net != 0)) revert Insolvent(); // net == reserve: NAV 0, the frozen price is stale
+        uint256 nav = net - reservedAssets;
         if (nav + assets > depositCap) revert CapExceeded();
         if (walletCap != 0) {
             uint256 held = balanceOf(receiver) + exitOf[receiver].shares;
             if (held * pricePerShare / WAD / assetScale + assets > walletCap) revert CapExceeded();
         }
-        _syncSenior(); // every junior deposit also refreshes what senior exposure we stand behind
-        shares = _toShares(assets);
+        shares = _toShares(assets, nav);
         uint256 stake;
         if (address(stakeToken) != address(0)) {
             stake = assets * stakePerAsset / 1e6;
@@ -247,11 +249,27 @@ contract JuniorVault is ERC20, Ownable2Step, ReentrancyGuard, Multicall {
         ExitRequest memory r = exitOf[msg.sender];
         if (r.shares == 0) revert NothingToClaim();
         uint256 price = _priceAtOrAfter(r.readyAt, r.settleHint);
-        uint256 assets = uint256(r.shares) * price / WAD / assetScale;
-        if (asset.balanceOf(address(this)) < assets) revert InsufficientLiquidity();
+        uint256 owed = uint256(r.shares) * price / WAD / assetScale;
+        uint256 assets = owed;
+        uint256 idle = asset.balanceOf(address(this));
+        if (owed != 0 && idle < reservedAssets + carryOwed()) { // a claim worth 0 never needs a valuation
+            // idle alone does not prove junior can honour every priced claim: value everything. Holdings short of the
+            // reserve (a venue loss after pricing) are shared pro rata, so the first claimant takes no more than the
+            // last. Each claim leaves the ratio unchanged (net and reserve both fall in proportion).
+            (uint256 net, bool complete) = _netHoldings();
+            if (net < reservedAssets) {
+                // a venue view that reverts counts as 0 above: a shortfall is only provable when every view answers
+                if (!complete) revert VenueBroken();
+                assets = owed * net / reservedAssets;
+                // exits drain the reserve: once it is 0 the guard above no longer fires and deposits would mint at the
+                // frozen pre-loss price. Deposits stay off until a settle re-freezes it and the owner unpauses.
+                _pauseDeposits();
+            }
+        }
+        if (idle < assets) revert InsufficientLiquidity();
         delete exitOf[msg.sender];
         pricedExitShares -= r.shares;
-        reservedAssets = reservedAssets >= assets ? reservedAssets - assets : 0;
+        reservedAssets = reservedAssets >= owed ? reservedAssets - owed : 0; // the full claim leaves the reserve
         _burn(address(this), r.shares);
         // Release stake pro rata to the staked shares leaving; a full exit releases everything.
         uint256 stake = stakeOf[msg.sender];
@@ -550,7 +568,9 @@ contract JuniorVault is ERC20, Ownable2Step, ReentrancyGuard, Multicall {
         (total,) = _navComplete();
     }
 
-    function _navComplete() internal view returns (uint256 total, bool complete) {
+    /// @dev Idle USDC plus every allowlisted position, net of the cover junior still owes senior, BEFORE the reserve for
+    ///      priced exits is taken out. `complete` is false when a venue view reverted (it then counts as 0).
+    function _netHoldings() internal view returns (uint256 total, bool complete) {
         complete = true;
         total = asset.balanceOf(address(this));
         for (uint256 i = 0; i < markets.length; i++) {
@@ -567,9 +587,13 @@ contract JuniorVault is ERC20, Ownable2Step, ReentrancyGuard, Multicall {
                 complete = false;
             }
         }
-        total = total > reservedAssets ? total - reservedAssets : 0;
         uint256 owedToSenior = carryOwed(); // cover junior still owes is not junior's money
         total = total > owedToSenior ? total - owedToSenior : 0;
+    }
+
+    function _navComplete() internal view returns (uint256 total, bool complete) {
+        (total, complete) = _netHoldings();
+        total = total > reservedAssets ? total - reservedAssets : 0;
     }
 
     function marketAssets(uint256 i) external view returns (uint256) {
@@ -579,14 +603,19 @@ contract JuniorVault is ERC20, Ownable2Step, ReentrancyGuard, Multicall {
     function vaultAssets(uint256 i) external view returns (uint256) {
         IERC4626 v = IERC4626(vaults[i]);
         uint256 bal = v.balanceOf(address(this));
+        if (address(v) == address(senior)) {
+            // management-fee shares senior owes us but has not minted yet: ours already, so a deposit before settle cannot take them
+            (,, uint256 pending) = senior.accrueInterestView();
+            bal += pending;
+        }
         return bal == 0 ? 0 : v.convertToAssets(bal);
     }
 
     /// @dev Mint at the worse of the frozen price and the live price, so a deposit just before settle cannot take
     ///      the epoch's accrued yield from earlier depositors.
-    function _toShares(uint256 assets) internal view returns (uint256) {
+    function _toShares(uint256 assets, uint256 nav) internal view returns (uint256) {
         uint256 supply = totalSupply() - pricedExitShares;
-        uint256 live = supply == 0 ? WAD : totalAssets() * assetScale * WAD / supply;
+        uint256 live = supply == 0 ? WAD : nav * assetScale * WAD / supply;
         uint256 p = live > pricePerShare ? live : pricePerShare;
         if (p == 0) revert ZeroPrice(); // junior's NAV is wiped (net of any carried debt): nothing can be minted
         return assets * assetScale * WAD / p;
@@ -613,11 +642,18 @@ contract JuniorVault is ERC20, Ownable2Step, ReentrancyGuard, Multicall {
         if (target == address(stakeToken) && target != address(0)) revert NotAllowed();
         bytes4 selector = bytes4(data[:4]);
         if (selector == IERC20.approve.selector) {
-            (address spender,) = abi.decode(data[4:], (address, uint256));
-            if (!approvals[target][spender]) revert NotAllowed();
-            if (spender != address(morpho) && !isVault[spender]) revert NotAllowed(); // removed venues die at once
+            if (data.length != 68) revert NotAllowed(); // exactly approve(address,uint256): no trailing bytes
+            (address spender, uint256 amount) = abi.decode(data[4:], (address, uint256));
+            if (amount != 0) {
+                if (!approvals[target][spender]) revert NotAllowed();
+                if (spender != address(morpho) && !isVault[spender]) revert NotAllowed(); // removed venues die at once
+            } else if (target != address(asset) && !isVault[target] && !approvals[target][spender]) {
+                // revoking is always allowed (a removed venue's allowance must be clearable) but only on a token or vault
+                // junior deals with: USDC, a listed vault, or a token with an approval rule for that spender
+                revert NotAllowed();
+            }
         } else {
-            Rule memory rule = rules[target][selector];
+            VenueAdmin.Rule memory rule = rules[target][selector];
             if (!rule.allowed) revert NotAllowed();
             if (target == address(morpho)) {
                 // every Morpho call starts with MarketParams: only registered markets, ever
@@ -651,77 +687,39 @@ contract JuniorVault is ERC20, Ownable2Step, ReentrancyGuard, Multicall {
     }
 
     function setRule(address target, bytes4 selector, bool allowed, uint256 receiverOffset) external onlyOwner {
-        // targets are the valuation universe and nothing else: never the asset, never the stake token, never arbitrary
-        if (allowed && target != address(morpho) && !isVault[target]) revert NotAllowed();
-        if (
-            selector == IERC20.transfer.selector || selector == IERC20.transferFrom.selector
-                || selector == IERC20.approve.selector
-        ) revert NotAllowed(); // share tokens are venues too; raw moves of them are never a rule
-        rules[target][selector] = Rule(allowed, receiverOffset);
-        emit RuleSet(target, selector, allowed, receiverOffset);
+        VenueAdmin.setRule(rules, isVault, address(morpho), target, selector, allowed, receiverOffset);
     }
 
     function setApprovalRule(address token, address spender, bool allowed) external onlyOwner {
-        if (allowed && spender != address(morpho) && !isVault[spender]) revert NotAllowed(); // only trusted venues
-        if (token == address(stakeToken) && address(stakeToken) != address(0)) revert NotAllowed();
-        approvals[token][spender] = allowed;
-        emit ApprovalRuleSet(token, spender, allowed);
+        VenueAdmin.setApprovalRule(approvals, isVault, address(morpho), address(stakeToken), token, spender, allowed);
     }
 
     function addMarket(MarketParams calldata mp) external onlyOwner {
-        if (mp.loanToken != address(asset)) revert WrongAsset();
-        if (markets.length >= MAX_MARKETS) revert TooMany();
-        Id id = mp.id();
-        if (isMarket[id]) revert AlreadySet();
-        isMarket[id] = true;
-        markets.push(mp);
-        emit MarketAdded(id);
+        VenueAdmin.addMarket(markets, isMarket, mp, address(asset));
     }
 
     function removeMarket(uint256 i) external onlyOwner {
-        if (morpho.expectedSupplyAssets(markets[i], address(this)) != 0) revert NotAllowed(); // exit first
-        Id id = markets[i].id();
-        isMarket[id] = false;
-        markets[i] = markets[markets.length - 1];
-        markets.pop();
-        emit MarketRemoved(id);
+        VenueAdmin.removeMarket(markets, isMarket, i, morpho, address(asset));
     }
 
     function removeVault(uint256 i) external onlyOwner {
-        address vault = vaults[i];
-        if (IERC4626(vault).balanceOf(address(this)) != 0) revert NotAllowed(); // exit first
-        isVault[vault] = false;
-        vaults[i] = vaults[vaults.length - 1];
-        vaults.pop();
-        emit VaultRemoved(vault);
+        VenueAdmin.removeVault(vaults, isVault, i, address(asset));
     }
 
     /// @notice Drop a venue without calling it, for one whose view reverts. Any position there is abandoned
     ///         from the valuation on purpose; the agent can still not reach it afterwards.
     function forceRemoveMarket(uint256 i) external onlyOwner {
-        Id id = markets[i].id();
-        isMarket[id] = false;
-        markets[i] = markets[markets.length - 1];
-        markets.pop();
-        emit MarketRemoved(id);
+        VenueAdmin.forceRemoveMarket(markets, isMarket, i, address(morpho), address(asset));
+        _pauseDeposits();
     }
 
     function forceRemoveVault(uint256 i) external onlyOwner {
-        address vault = vaults[i];
-        isVault[vault] = false;
-        vaults[i] = vaults[vaults.length - 1];
-        vaults.pop();
-        emit VaultRemoved(vault);
+        VenueAdmin.forceRemoveVault(vaults, isVault, i, address(asset));
+        _pauseDeposits();
     }
 
     function addVault(address vault) external onlyOwner {
-        if (vault == address(this) || vault == address(asset)) revert WrongAsset();
-        if (IERC4626(vault).asset() != address(asset)) revert WrongAsset();
-        if (vaults.length >= MAX_MARKETS) revert TooMany();
-        if (isVault[vault]) revert AlreadySet();
-        isVault[vault] = true;
-        vaults.push(vault);
-        emit VaultAdded(vault);
+        VenueAdmin.addVault(vaults, isVault, vault, address(asset), address(stakeToken));
     }
 
     /// @notice One-way. Turns the stake gate on. Stakes are quoted in ORPH wei per 1 USDC (1e6).
@@ -731,12 +729,20 @@ contract JuniorVault is ERC20, Ownable2Step, ReentrancyGuard, Multicall {
             revert WrongAsset();
         }
         stakeToken = token;
+        VenueAdmin.revokeAllowances(token, vaults, address(morpho));
         stakePerAsset = stakePerAsset_;
         emit StakeTokenSet(address(token), stakePerAsset_);
     }
 
     /// @notice Propose a new stake rate (weekly, from the pool's 7-day average price). Applies after 3 days.
     function proposeStakePerAsset(uint256 stakePerAsset_) external onlyOwner {
+        // one proposal moves the rate at most 2x either way (from a non-zero rate) and never to 0, so a mistyped or hostile
+        // value cannot turn the stake into nothing or into a wall in one step; larger moves compound, one step per
+        // timelock (3 days) at best
+        uint256 cur = stakePerAsset;
+        if (cur != 0 && (stakePerAsset_ == 0 || stakePerAsset_ < cur / 2 || stakePerAsset_ > cur * 2)) {
+            revert StakeRateOutOfBounds();
+        }
         pendingStakePerAsset = stakePerAsset_;
         stakeEta = block.timestamp + STAKE_TIMELOCK;
         emit StakePerAssetProposed(stakePerAsset_, stakeEta);
@@ -769,5 +775,12 @@ contract JuniorVault is ERC20, Ownable2Step, ReentrancyGuard, Multicall {
     function setDepositsPaused(bool paused) external onlyOwner {
         depositsPaused = paused;
         emit DepositsPaused(paused);
+    }
+
+    /// @dev A forced removal abandons a position from the valuation: deposits stop until the owner re-lists and unpauses,
+    ///      so nobody buys in at a NAV that no longer counts it.
+    function _pauseDeposits() internal {
+        depositsPaused = true;
+        emit DepositsPaused(true);
     }
 }
