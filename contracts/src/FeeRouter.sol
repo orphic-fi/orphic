@@ -95,7 +95,10 @@ contract FeeRouter is Ownable2Step, ReentrancyGuard {
         Floor memory f = floors[token];
         if (address(f.oracle) == address(0)) revert NoFloor();
         IERC20 t = IERC20(token);
-        if (amountIn == 0 || amountIn > t.balanceOf(address(this))) revert NothingToDo();
+        uint256 bal = t.balanceOf(address(this));
+        uint256 parked = totalParked[token];
+        // parked amounts are already assigned to a recipient (`pullOwed`), never sellable
+        if (amountIn == 0 || bal <= parked || amountIn > bal - parked) revert NothingToDo();
 
         uint256 value = amountIn * f.oracle.price() / ORACLE_SCALE; // USDC units for amountIn token units
         if (value > maxSweepUsdc) revert SweepTooLarge(value, maxSweepUsdc);
@@ -126,7 +129,9 @@ contract FeeRouter is Ownable2Step, ReentrancyGuard {
         if (bps == 0) revert BadToken();
         IERC20 t = IERC20(token);
         uint256 bal = t.balanceOf(address(this));
-        if (bal == 0) revert NothingToDo();
+        uint256 parked = totalParked[token];
+        if (bal <= parked) revert NothingToDo();
+        bal -= parked; // parked amounts are already assigned to a recipient
         uint256 burn = bal * bps / BPS;
         _send(t, BURN, burn);
         _send(t, treasury, bal - burn);
