@@ -135,7 +135,13 @@ The gate is 20% of the deposit in ORPH. `stakePerAsset` is ORPH wei per 1 USDC a
 Anyone can call `settle()`; the keeper's `--weekly` run does it after `accrueInterest()` on senior. Before it: Rotator ensures junior idle USDC covers `pendingExitShares * pricePerShare` for exits maturing that day. After it: read `pricePerShare()`, `reservedAssets()`, `pricedExitShares()`, `Settled` event, and the `Cover` event if any. Post the numbers on the agents page.
 
 ## 7a. Router sweeps
-`sweep(token, router, swapData, amountIn)` is capped at `maxSweepUsdc` of oracle value per call (25,000 USDC at launch, owner-settable). Floor = oracle value minus `maxSlippageBps` (set 100 to 300). Oracle staleness check ships in week one together with the permissionless `cover()`; until then the keeper sweeps only when the Morpho oracle for the token has been updated within the hour (keeper check, not contract).
+`sweep(token, router, swapData, amountIn)` is capped at `maxSweepUsdc` of USDC out per call (25,000 USDC at launch, owner-settable): the oracle value of `amountIn` and the measured USDC received. The cap bounds USDC out, not the value of the tokens sold. Floor = oracle value minus `maxSlippageBps` (set 100 to 300).
+
+**Before the first sweep of a token (owner, hardware wallet):** `setRouter(router, true)`, `setFloor(token, oracle, bps)`, then `seedPrice(token, price)` with the oracle price (1e36 scale) you checked against the market. `sweep` reverts `PriceNotSeeded` until then. The oracle must not read the venue the token is swapped on (no spot price of the swap pool); ORPH's only market is the seeded v4 pool, which has no on-chain TWAP, so ORPH needs an oracle that does not read it. Pointing a token at a different oracle (`setFloor`) clears its reference: re-seed.
+
+**The band.** `sweep` reverts `PriceOutsideBand` when the oracle price is more than `maxPriceMoveBps` (1,000 = 10%) from the last accepted price, either way; an accepted sweep moves the reference to the price it used. After a real market move beyond the band, the owner checks the market and calls `seedPrice` again; read `lastPrice(token)` and `maxPriceMoveBps()` first. A band refusal is the signal that the oracle is stale or the market moved, not a keeper bug. `setMaxPriceMoveBps` (max 5,000) widens it. The keeper still sweeps only when the Morpho oracle for the token has been updated within the hour (keeper check).
+
+**Flushing.** `distribute()` is permissionless and the keeper calls it every tick (fixes 5/8): it is what bounds a junior-deposit fee snipe (LIMITATIONS L14). Anyone may call it; it only splits USDC already in the router, net of parked amounts, to the owner-set recipients.
 
 ## 8. Kill switch
 - Pause junior deposits: `cast send $JUNIOR "setDepositsPaused(bool)" true`. Exits, claims and settle keep working by construction.
