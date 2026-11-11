@@ -138,4 +138,45 @@ contract ExitsDepositsTest is Base {
         junior.removeVault(0);
         assertFalse(junior.depositsPaused());
     }
+
+    /* O6: a stake-rate proposal moves the rate at most 2x either way */
+
+    function test_FIXED_O6_proposalBoundedToHalfAndDouble() public {
+        vm.startPrank(owner);
+        junior.setStakeToken(IERC20(address(orph)), 0.2e18);
+        vm.expectRevert(JuniorVault.StakeRateOutOfBounds.selector);
+        junior.proposeStakePerAsset(0.4e18 + 1); // just above 2x
+        vm.expectRevert(JuniorVault.StakeRateOutOfBounds.selector);
+        junior.proposeStakePerAsset(0.1e18 - 1); // just below 0.5x
+        vm.expectRevert(JuniorVault.StakeRateOutOfBounds.selector);
+        junior.proposeStakePerAsset(0); // cannot switch the stake off or to dust in one step
+        vm.expectRevert(JuniorVault.StakeRateOutOfBounds.selector);
+        junior.proposeStakePerAsset(type(uint256).max);
+        junior.proposeStakePerAsset(0.4e18); // exactly 2x
+        junior.proposeStakePerAsset(0.1e18); // exactly 0.5x replaces it
+        vm.stopPrank();
+        assertEq(junior.pendingStakePerAsset(), 0.1e18);
+    }
+
+    function test_FIXED_O6_zeroRateAcceptsAnyFirstProposal() public {
+        vm.startPrank(owner);
+        junior.setStakeToken(IERC20(address(orph)), 0);
+        junior.proposeStakePerAsset(5e18);
+        vm.stopPrank();
+        assertEq(junior.pendingStakePerAsset(), 5e18);
+    }
+
+    function test_FIXED_O6_boundIsFromTheAppliedRateNotThePending() public {
+        vm.startPrank(owner);
+        junior.setStakeToken(IERC20(address(orph)), 0.2e18);
+        junior.proposeStakePerAsset(0.4e18);
+        vm.stopPrank();
+        vm.warp(block.timestamp + 3 days);
+        junior.applyStakePerAsset();
+        vm.startPrank(owner);
+        vm.expectRevert(JuniorVault.StakeRateOutOfBounds.selector);
+        junior.proposeStakePerAsset(0.9e18); // 2.25x of the new 0.4
+        junior.proposeStakePerAsset(0.8e18);
+        vm.stopPrank();
+    }
 }

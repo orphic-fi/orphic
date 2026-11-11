@@ -162,6 +162,7 @@ contract JuniorVault is ERC20, Ownable2Step, ReentrancyGuard, Multicall {
     error WrongAsset();
     error VenueBroken();
     error ZeroPrice();
+    error StakeRateOutOfBounds();
 
     constructor(IERC20 asset_, IVaultV2 senior_, IMorpho morpho_, address owner_, uint256 depositCap_)
         ERC20("Orphic Junior USDC", "ojUSDC")
@@ -704,6 +705,10 @@ contract JuniorVault is ERC20, Ownable2Step, ReentrancyGuard, Multicall {
 
     /// @notice Propose a new stake rate (weekly, from the pool's 7-day average price). Applies after 3 days.
     function proposeStakePerAsset(uint256 stakePerAsset_) external onlyOwner {
+        // one proposal moves the rate at most 2x either way (from a non-zero rate), so a mistyped or hostile value cannot
+        // turn the stake into nothing or into a wall in one step; larger moves take several weekly steps
+        uint256 cur = stakePerAsset;
+        if (cur != 0 && (stakePerAsset_ < cur / 2 || stakePerAsset_ > cur * 2)) revert StakeRateOutOfBounds();
         pendingStakePerAsset = stakePerAsset_;
         stakeEta = block.timestamp + STAKE_TIMELOCK;
         emit StakePerAssetProposed(stakePerAsset_, stakeEta);
