@@ -6,6 +6,7 @@ pragma solidity 0.8.28;
 
 import "./Base.t.sol";
 import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
+import {MorphoBalancesLib} from "morpho-blue/libraries/periphery/MorphoBalancesLib.sol";
 import {ERC4626} from "@openzeppelin/contracts/token/ERC20/extensions/ERC4626.sol";
 
 /// @dev A stake token that is also an ERC-4626 vault over USDC (the O7(f) shape).
@@ -14,6 +15,8 @@ contract StakeVault is ERC4626 {
 }
 
 contract ExitsDepositsTest is Base {
+    using MorphoBalancesLib for IMorpho;
+
     address carol = makeAddr("carol");
 
     function _usdcValue(address who) internal view returns (uint256) {
@@ -249,11 +252,19 @@ contract ExitsDepositsTest is Base {
 
     uint256 constant EX = 1_500e6; // each exiter's deposit
 
-    /// @dev idle plus every position, independent of the contract's own NAV code (all venue views answer here)
+    function _vaultValue(address v, uint256 extraShares) internal view returns (uint256) {
+        uint256 bal = IERC4626(v).balanceOf(address(junior)) + extraShares;
+        return bal == 0 ? 0 : IERC4626(v).convertToAssets(bal);
+    }
+
+    /// @dev idle plus every position, read straight from Morpho and the vaults: independent of junior's own views
+    ///      (all venues answer here; the four venues Base lists)
     function _holdings() internal view returns (uint256 h) {
         h = USDC.balanceOf(address(junior));
-        for (uint256 i = 0; i < junior.marketsLength(); i++) h += junior.marketAssets(i);
-        for (uint256 i = 0; i < junior.vaultsLength(); i++) h += junior.vaultAssets(i);
+        h += MORPHO.expectedSupplyAssets(mpKhype, address(junior)) + MORPHO.expectedSupplyAssets(mpWhype, address(junior));
+        h += _vaultValue(FELIX_USDC_V1, 0);
+        (,, uint256 pendingFee) = senior.accrueInterestView();
+        h += _vaultValue(address(senior), pendingFee);
     }
 
     function _toFelix(uint256 assets) internal {
@@ -448,20 +459,52 @@ contract ExitsDepositsTest is Base {
         assertEq(_claim(bob), owed);
     }
 
-    function test_E2_e_venueBumpRaisesTheRatio() public {
+    /// @dev senior with a deposit so junior holds management-fee shares; both exits priced; half of Felix lost afterwards
+    function _deficitWithSeniorFeeShares() internal returns (uint256 reserved) {
+        deal(address(USDC), carol, 200_000e6);
+        _seniorDeposit(carol, 100_000e6);
         _twoExitersPriced(2_800e6);
+        assertGt(senior.balanceOf(address(junior)), 0, "junior holds fee shares");
+        reserved = junior.reservedAssets();
         _loseHalfOfFelix();
-        uint256 felixShares = IERC4626(FELIX_USDC_V1).balanceOf(address(junior));
+    }
+
+    /// a real venue-view move (senior fee shares accrue, Felix earns): the ratio rises on its own, no donation
+    function test_E2_e_venueViewMoveRaisesTheRatio() public {
+        uint256 reserved = _deficitWithSeniorFeeShares();
+        uint256 h0 = _holdings();
+        assertLt(h0, reserved);
+        vm.warp(block.timestamp + 60 days);
+        senior.accrueInterest();
         _recallFelix();
-        uint256 low = USDC.balanceOf(address(junior));
-        // the same shares worth more (e.g. a recovered venue): restore the pre-loss share count, then recall
-        deal(address(USDC), address(junior), low + 700e6);
+        uint256 h1 = _holdings();
+        assertGt(h1, h0, "the views moved up");
+        (uint128 shares,,) = junior.exitOf(alice);
+        (, uint192 price) = junior.settles(junior.settlesLength() - 1);
+        uint256 owed = uint256(shares) * price / WAD / 1e12;
+        uint256 paid = _claim(alice);
+        emit log_named_decimal_uint("ratio before (1e6 = 100%)", h0 * 1e6 / reserved, 0);
+        emit log_named_decimal_uint("ratio after  (1e6 = 100%)", h1 * 1e6 / reserved, 0);
+        assertApproxEqAbs(paid, owed * h1 / reserved, 3);
+        assertGt(paid, owed * h0 / reserved, "paid at the higher ratio");
+        assertLt(paid, owed);
+    }
+
+    /// the ratio counts positions, payment comes from idle only: the second claimant waits for idle
+    function test_E2_e_ratioCountsPositionsButPaymentIsIdleOnly() public {
+        _deficitWithSeniorFeeShares();
+        _recallFelix(); // idle now excludes the senior fee shares
         uint256 a = _claim(alice);
+        vm.prank(bob);
+        vm.expectRevert(JuniorVault.InsufficientLiquidity.selector);
+        junior.claimExit();
+        uint256 feeShares = senior.balanceOf(address(junior));
+        vm.prank(agent);
+        junior.execute(address(senior), abi.encodeCall(IERC4626.redeem, (feeShares, address(junior), address(junior))));
         uint256 b = _claim(bob);
-        assertGt(a, low / 2, "bump raised the payout");
-        assertApproxEqAbs(a, b, 2);
-        assertLe(a + b, low + 700e6);
-        felixShares; // silence: the share count itself is not needed after the recall
+        emit log_named_decimal_uint("alice", a, 6);
+        emit log_named_decimal_uint("bob  ", b, 6);
+        assertApproxEqAbs(a, b, 10, "same ratio once idle arrives");
     }
 
     /// carry and a deficit are counted once: the ratio reads holdings net of the carried cover debt
@@ -495,11 +538,120 @@ contract ExitsDepositsTest is Base {
         emit log_named_decimal_uint("holdings", holdings, 6);
         emit log_named_decimal_uint("reserved", reserved, 6);
         emit log_named_decimal_uint("owed    ", owed, 6);
-        if (net >= reserved) {
-            assertEq(_claim(alice), owed, "carry alone does not make it a deficit");
-        } else {
-            uint256 paid = _claim(alice);
-            assertApproxEqAbs(paid, owed * net / reserved, 3, "holdings net of the carry, once");
-        }
+        assertLt(net, reserved, "the deficit branch runs");
+        uint256 paid = _claim(alice);
+        assertLt(paid, owed);
+        assertApproxEqAbs(paid, owed * net / reserved, 3, "holdings net of the carry, once");
+    }
+
+    /* review round 1 */
+
+    /// the reserve drains in a deficit, `Insolvent` no longer fires: deposits stay paused until a settle re-freezes the price
+    function test_FIXED_E2_e_depositsStayPausedAfterTheReserveDrains() public {
+        _twoExitersPriced(2_800e6);
+        _loseHalfOfFelix();
+        _recallFelix();
+        _claim(alice);
+        assertTrue(junior.depositsPaused(), "a claim at ratio < 1 pauses deposits");
+        _claim(bob);
+        assertEq(junior.reservedAssets(), 0);
+        assertEq(junior.pricedExitShares(), 0);
+        deal(address(USDC), carol, 100e6);
+        vm.startPrank(carol);
+        USDC.approve(address(junior), 100e6);
+        vm.expectRevert(JuniorVault.Paused.selector);
+        junior.deposit(100e6, carol);
+        vm.stopPrank();
+        // value comes back, the next settle freezes the new price, the owner reopens
+        deal(address(USDC), address(junior), USDC.balanceOf(address(junior)) + 10e6);
+        vm.warp(junior.lastSettle() + junior.SETTLE_INTERVAL());
+        junior.settle();
+        uint256 price = junior.pricePerShare();
+        assertGt(price, WAD, "10 USDC over the dead shares: far above the stale WAD");
+        vm.prank(owner);
+        junior.setDepositsPaused(false);
+        vm.prank(carol);
+        uint256 shares = junior.deposit(100e6, carol);
+        assertApproxEqRel(shares, uint256(100e6) * 1e12 * WAD / price, 1e15, "minted at the new price");
+    }
+
+    function test_E2_e_fullyBackedClaimDoesNotPauseDeposits() public {
+        _twoExitersPriced(0);
+        _claim(alice);
+        _claim(bob);
+        assertFalse(junior.depositsPaused());
+    }
+
+    /// net == reserve: NAV is 0 and the frozen price is stale, so that is refused too (and an empty junior is not)
+    function test_E2_e_insolventAlsoAtNetEqualsReserve() public {
+        _twoExitersPriced(0);
+        uint256 reserved = junior.reservedAssets();
+        deal(address(USDC), address(junior), reserved); // holdings exactly the reserve
+        deal(address(USDC), carol, 10e6);
+        vm.startPrank(carol);
+        USDC.approve(address(junior), 10e6);
+        vm.expectRevert(JuniorVault.Insolvent.selector);
+        junior.deposit(10e6, carol);
+        vm.stopPrank();
+    }
+
+    /// an exit priced at 0 never needs a valuation, so a reverting venue cannot block it
+    function test_FIXED_E2_e_zeroClaimIsNotBlockedByARevertingVenue() public {
+        _juniorDeposit(alice, EX);
+        _juniorDeposit(bob, EX);
+        _toFelix(2_800e6); // idle ~201 < the ~1,500 reserve: a real claim needs the valuation
+        _exitAll(bob);
+        vm.prank(alice);
+        junior.requestExit(1e5); // 1e5 wei of shares: shares x price rounds to 0 USDC
+        (, uint64 readyAt,) = junior.exitOf(bob);
+        vm.warp(readyAt > junior.lastSettle() + junior.SETTLE_INTERVAL() ? readyAt : junior.lastSettle() + junior.SETTLE_INTERVAL());
+        junior.settle();
+        vm.mockCallRevert(FELIX_USDC_V1, abi.encodeWithSignature("balanceOf(address)", address(junior)), "down");
+        assertEq(_claim(alice), 0, "worth 0, paid 0, not blocked");
+        (uint128 left,,) = junior.exitOf(alice);
+        assertEq(left, 0, "the request is closed");
+        vm.prank(bob);
+        vm.expectRevert(JuniorVault.VenueBroken.selector); // a real claim still needs provable solvency
+        junior.claimExit();
+    }
+
+    /* approve(x, 0) is not a free pass */
+
+    function test_FIXED_agentRevokeNeedsKnownTargetAndExactCalldata() public {
+        _approveAsAgent(FELIX_USDC_V1, 1_000e6);
+        // unlisted, rule-less target
+        vm.prank(agent);
+        vm.expectRevert(JuniorVault.NotAllowed.selector);
+        junior.execute(address(orph), abi.encodeCall(IERC20.approve, (FELIX_USDC_V1, 0)));
+        // trailing bytes
+        vm.prank(agent);
+        vm.expectRevert(JuniorVault.NotAllowed.selector);
+        junior.execute(address(USDC), bytes.concat(abi.encodeCall(IERC20.approve, (FELIX_USDC_V1, 0)), hex"01"));
+        // truncated
+        vm.prank(agent);
+        vm.expectRevert();
+        junior.execute(address(USDC), abi.encodePacked(IERC20.approve.selector, bytes32(uint256(uint160(FELIX_USDC_V1)))));
+        // USDC to a listed vault: works
+        _approveAsAgent(FELIX_USDC_V1, 0);
+        assertEq(USDC.allowance(address(junior), FELIX_USDC_V1), 0);
+        // a token with an approval rule for that spender: works
+        vm.prank(owner);
+        junior.setApprovalRule(address(orph), FELIX_USDC_V1, true);
+        vm.prank(agent);
+        junior.execute(address(orph), abi.encodeCall(IERC20.approve, (FELIX_USDC_V1, 0)));
+    }
+
+    /* O6 edge: from a rate of 1 the lower bound is 1 */
+
+    function test_FIXED_O6_rateOfOneNeverProposesZero() public {
+        vm.startPrank(owner);
+        junior.setStakeToken(IERC20(address(orph)), 1);
+        vm.expectRevert(JuniorVault.StakeRateOutOfBounds.selector);
+        junior.proposeStakePerAsset(0);
+        vm.expectRevert(JuniorVault.StakeRateOutOfBounds.selector);
+        junior.proposeStakePerAsset(3);
+        junior.proposeStakePerAsset(2);
+        junior.proposeStakePerAsset(1);
+        vm.stopPrank();
     }
 }

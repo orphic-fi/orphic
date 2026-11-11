@@ -47,7 +47,6 @@ contract JuniorVault is ERC20, Ownable2Step, ReentrancyGuard, Multicall {
     uint256 public constant WAD = 1e18;
     uint256 public constant NOTICE = 7 days;
     uint256 public constant SETTLE_INTERVAL = 7 days - 1 hours; // weekly, with an hour of slack for the keeper
-    uint256 internal constant MAX_MARKETS = 16;
     uint256 public constant SEED_ASSETS = 1e6; // 1 USDC of dead shares against first-depositor price games
     uint256 internal constant PROBE_GAS = 50_000; // gas cap per Felix probe (storage reads need about 3k)
     uint256 public constant PRICE_UNIT = 1e24; // senior shares used to quote its price with enough precision
@@ -203,7 +202,7 @@ contract JuniorVault is ERC20, Ownable2Step, ReentrancyGuard, Multicall {
         if (!complete) revert VenueBroken();
         // priced exits are fixed claims: while holdings cannot cover them NAV is 0 and a newcomer would mint at the
         // stale frozen price and fill the hole with their own USDC
-        if (net < reservedAssets) revert Insolvent();
+        if (net < reservedAssets || (net == reservedAssets && net != 0)) revert Insolvent(); // net == reserve: NAV 0, the frozen price is stale
         uint256 nav = net - reservedAssets;
         if (nav + assets > depositCap) revert CapExceeded();
         if (walletCap != 0) {
@@ -253,7 +252,7 @@ contract JuniorVault is ERC20, Ownable2Step, ReentrancyGuard, Multicall {
         uint256 owed = uint256(r.shares) * price / WAD / assetScale;
         uint256 assets = owed;
         uint256 idle = asset.balanceOf(address(this));
-        if (idle < reservedAssets + carryOwed()) {
+        if (owed != 0 && idle < reservedAssets + carryOwed()) { // a claim worth 0 never needs a valuation
             // idle alone does not prove junior can honour every priced claim: value everything. Holdings short of the
             // reserve (a venue loss after pricing) are shared pro rata, so the first claimant takes no more than the
             // last. Each claim leaves the ratio unchanged (net and reserve both fall in proportion).
@@ -262,6 +261,9 @@ contract JuniorVault is ERC20, Ownable2Step, ReentrancyGuard, Multicall {
                 // a venue view that reverts counts as 0 above: a shortfall is only provable when every view answers
                 if (!complete) revert VenueBroken();
                 assets = owed * net / reservedAssets;
+                // exits drain the reserve: once it is 0 the guard above no longer fires and deposits would mint at the
+                // frozen pre-loss price. Deposits stay off until a settle re-freezes it and the owner unpauses.
+                _pauseDeposits();
             }
         }
         if (idle < assets) revert InsufficientLiquidity();
@@ -640,11 +642,15 @@ contract JuniorVault is ERC20, Ownable2Step, ReentrancyGuard, Multicall {
         if (target == address(stakeToken) && target != address(0)) revert NotAllowed();
         bytes4 selector = bytes4(data[:4]);
         if (selector == IERC20.approve.selector) {
+            if (data.length != 68) revert NotAllowed(); // exactly approve(address,uint256): no trailing bytes
             (address spender, uint256 amount) = abi.decode(data[4:], (address, uint256));
-            // revoking is always allowed (a removed venue's allowance must be clearable); granting needs the rule
             if (amount != 0) {
                 if (!approvals[target][spender]) revert NotAllowed();
                 if (spender != address(morpho) && !isVault[spender]) revert NotAllowed(); // removed venues die at once
+            } else if (target != address(asset) && !isVault[target] && !approvals[target][spender]) {
+                // revoking is always allowed (a removed venue's allowance must be clearable) but only on a token or vault
+                // junior deals with: USDC, a listed vault, or a token with an approval rule for that spender
+                revert NotAllowed();
             }
         } else {
             VenueAdmin.Rule memory rule = rules[target][selector];
@@ -730,10 +736,13 @@ contract JuniorVault is ERC20, Ownable2Step, ReentrancyGuard, Multicall {
 
     /// @notice Propose a new stake rate (weekly, from the pool's 7-day average price). Applies after 3 days.
     function proposeStakePerAsset(uint256 stakePerAsset_) external onlyOwner {
-        // one proposal moves the rate at most 2x either way (from a non-zero rate), so a mistyped or hostile value cannot
-        // turn the stake into nothing or into a wall in one step; larger moves take several weekly steps
+        // one proposal moves the rate at most 2x either way (from a non-zero rate) and never to 0, so a mistyped or hostile
+        // value cannot turn the stake into nothing or into a wall in one step; larger moves compound, one step per
+        // timelock (3 days) at best
         uint256 cur = stakePerAsset;
-        if (cur != 0 && (stakePerAsset_ < cur / 2 || stakePerAsset_ > cur * 2)) revert StakeRateOutOfBounds();
+        if (cur != 0 && (stakePerAsset_ == 0 || stakePerAsset_ < cur / 2 || stakePerAsset_ > cur * 2)) {
+            revert StakeRateOutOfBounds();
+        }
         pendingStakePerAsset = stakePerAsset_;
         stakeEta = block.timestamp + STAKE_TIMELOCK;
         emit StakePerAssetProposed(stakePerAsset_, stakeEta);

@@ -126,6 +126,7 @@ library VenueAdmin {
     }
 
     /// @dev The USDC allowance this contract gave the vault is zeroed with it, so a re-listed or hostile vault finds none.
+    ///      ONLY USDC: any other token the agent approved to the vault stays approved (see LIMITATIONS L13).
     function _dropVault(address[] storage vaults, mapping(address => bool) storage isVault, uint256 i, address asset)
         private
     {
