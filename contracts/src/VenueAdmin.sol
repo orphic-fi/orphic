@@ -92,10 +92,15 @@ library VenueAdmin {
         emit MarketRemoved(id);
     }
 
-    function addVault(address[] storage vaults, mapping(address => bool) storage isVault, address vault, address asset)
-        public
-    {
-        if (vault == address(this) || vault == asset) revert WrongAsset();
+    function addVault(
+        address[] storage vaults,
+        mapping(address => bool) storage isVault,
+        address vault,
+        address asset,
+        address stakeToken
+    ) public {
+        // the stake is held here: a venue whose share token (the vault itself) is the stake token would count it in NAV
+        if (vault == address(this) || vault == asset || vault == stakeToken) revert WrongAsset();
         if (IERC4626(vault).asset() != asset) revert WrongAsset();
         if (vaults.length >= MAX_MARKETS) revert TooMany();
         if (isVault[vault]) revert AlreadySet();

@@ -6,6 +6,12 @@ pragma solidity 0.8.28;
 
 import "./Base.t.sol";
 import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
+import {ERC4626} from "@openzeppelin/contracts/token/ERC20/extensions/ERC4626.sol";
+
+/// @dev A stake token that is also an ERC-4626 vault over USDC (the O7(f) shape).
+contract StakeVault is ERC4626 {
+    constructor(IERC20 usdc) ERC4626(usdc) ERC20("Stake vault", "sVLT") {}
+}
 
 contract ExitsDepositsTest is Base {
     address carol = makeAddr("carol");
@@ -210,5 +216,32 @@ contract ExitsDepositsTest is Base {
         // staking still works
         _juniorDeposit(alice, 1_000e6);
         assertEq(junior.stakeOf(alice), 200e18);
+    }
+
+    /* O7(f): a vault whose share token is the stake token cannot be listed */
+
+    function test_FIXED_O7_f_addVaultRefusesTheStakeToken() public {
+        StakeVault sv = new StakeVault(USDC);
+        vm.startPrank(owner);
+        junior.setStakeToken(IERC20(address(sv)), 0.2e18); // legal: not a listed vault yet
+        vm.expectRevert(JuniorVault.WrongAsset.selector);
+        junior.addVault(address(sv));
+        vm.stopPrank();
+        assertFalse(junior.isVault(address(sv)));
+        assertEq(junior.vaultsLength(), 2);
+    }
+
+    function test_O7_f_otherVaultsStillList() public {
+        StakeVault other = new StakeVault(USDC);
+        vm.prank(owner);
+        junior.addVault(address(other));
+        assertTrue(junior.isVault(address(other)));
+    }
+
+    function test_O7_f_vaultWithoutAssetIsRefused() public {
+        vm.prank(owner);
+        vm.expectRevert(); // an EOA / contract without asset(): the call itself reverts, nothing is listed
+        junior.addVault(address(orph));
+        assertFalse(junior.isVault(address(orph)));
     }
 }

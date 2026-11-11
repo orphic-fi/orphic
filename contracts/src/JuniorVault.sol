@@ -689,7 +689,7 @@ contract JuniorVault is ERC20, Ownable2Step, ReentrancyGuard, Multicall {
     }
 
     function addVault(address vault) external onlyOwner {
-        VenueAdmin.addVault(vaults, isVault, vault, address(asset));
+        VenueAdmin.addVault(vaults, isVault, vault, address(asset), address(stakeToken));
     }
 
     /// @notice One-way. Turns the stake gate on. Stakes are quoted in ORPH wei per 1 USDC (1e6).
