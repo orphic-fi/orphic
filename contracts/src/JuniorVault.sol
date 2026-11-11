@@ -22,7 +22,8 @@ import {IAdapter} from "vault-v2/interfaces/IAdapter.sol";
 interface IFelixProbes {
     function morphoVaultV1() external view returns (address);
     function lostAssets() external view returns (uint256);
-    function lastTotalAssets() external view returns (uint256);
+    function totalSupply() external view returns (uint256);
+    function balanceOf(address) external view returns (uint256);
 }
 
 /// @title JuniorVault
@@ -91,16 +92,18 @@ contract JuniorVault is ERC20, Ownable2Step, ReentrancyGuard, Multicall {
     uint256 public seniorSupplyBase; // senior share supply at the last sync: only these shares were exposed to a loss
     uint256 public seniorSupplyMin; // lowest senior share supply observed since the baseline: exits before a late buy still count
     uint256 public carryPerShare; // unpaid cover per exposed senior share (PRICE_UNIT units), billed at the next settle
-    /// @dev Felix (MetaMorpho v1.1) vault behind a senior adapter, as it stood at the baseline. Everything the Felix
-    ///      term needs is frozen here, so nothing live at settle time (flows into or out of Felix or senior) can move it.
-    struct FelixSnap {
+    /// @dev A Felix (MetaMorpho v1.1) vault behind a senior adapter. `lostBase` (Felix's `lostAssets`, a scalar flows cannot
+    ///      move) is re-taken at every baseline reset. `fraction` (senior's share of the vault, PRICE_UNIT units, its shares
+    ///      over its supply) and `assetsRef` (the adapter's assets, for the 1 ppm dust guard) are the EXPOSURE part: they
+    ///      are re-taken only by `snapFelixExposure` (agent or owner), never by a permissionless call.
+    struct FelixExp {
         address vault;
-        uint96 lostBase; // Felix lostAssets
-        uint128 assetsBase; // the adapter's realAssets
-        uint128 totalBase; // Felix lastTotalAssets, stored with lostAssets
+        uint96 lostBase;
+        uint128 fraction;
+        uint128 assetsRef;
     }
-    FelixSnap[] public felixSnaps;
-    uint256 public felixSnapSupply; // senior share supply when the snapshot was taken
+    FelixExp[] public felixExp;
+    uint256 public felixExpSupply; // senior share supply when the exposure was taken
     uint256 public seniorBaseTime; // when the baseline was taken, for the management fee drift
     uint256 public pendingExitShares; // shares locked and not yet priced, still part of the live supply
     uint256 public pricedExitShares; // shares priced at a past settle, excluded from the live supply
@@ -128,6 +131,7 @@ contract JuniorVault is ERC20, Ownable2Step, ReentrancyGuard, Multicall {
     event ExitClaimed(address indexed owner, uint256 shares, uint256 assets, uint256 price);
     event Settled(uint256 indexed index, uint256 nav, uint256 supply, uint256 price, uint256 cover);
     event Cover(uint256 owed, uint256 paid);
+    event FelixExposureSnapped(uint256 vaults, uint256 seniorSupply);
     event CoverShortfallCarried(uint256 unpaid); // part of a shortfall idle USDC could not pay, billed at the next settle
     event AgentCall(address indexed target, bytes4 indexed selector, uint256 value);
     event RuleSet(address indexed target, bytes4 indexed selector, bool allowed, uint256 receiverOffset);
@@ -175,11 +179,10 @@ contract JuniorVault is ERC20, Ownable2Step, ReentrancyGuard, Multicall {
         lastSettle = block.timestamp;
         lastMaturedDay = block.timestamp / 1 days;
         settles.push(Settle(uint64(block.timestamp), uint192(WAD)));
-        (uint256 price0, uint256[] memory assets0,) = _seniorPriceAndAssets(true);
-        seniorPriceBase = price0;
+        seniorPriceBase = _seniorRealPrice();
         seniorSupplyBase = senior_.totalSupply();
         seniorSupplyMin = seniorSupplyBase;
-        _snapFelix(assets0);
+        _snapFelixExposure();
         seniorBaseTime = block.timestamp;
     }
 
@@ -322,11 +325,12 @@ contract JuniorVault is ERC20, Ownable2Step, ReentrancyGuard, Multicall {
     ///      settle bears its share. The `exposed != 0` guard is defensive (with nothing exposed nothing is owed). This
     ///      path never reverts: idle 0 pays 0 and carries it all.
     ///      Felix losses: Vault V2 never marks a Felix bad debt, so the gross price does not show it. The amount owed also
-    ///      includes senior's share of the Felix `lostAssets` booked since the baseline, computed from the baseline snapshot
-    ///      only (`felixSnaps`: lost, the adapter's assets and Felix's total at the reset, and senior's supply then), so
-    ///      flows after the baseline cannot move it. `coverInProgress` reads 0 for such a cover.
+    ///      includes senior's share of the Felix `lostAssets` booked since the baseline: (lost now - lostBase) times
+    ///      senior's share-of-Felix fraction from the exposure snapshot (`felixExp`, taken only by the agent or owner), scaled
+    ///      to the exposed senior shares. Nothing a permissionless caller or a flow can move feeds it. `coverInProgress`
+    ///      reads 0 for such a cover.
     function _coverSenior() internal returns (uint256 paid) {
-        (uint256 price, uint256[] memory assetsOf, uint256 denominator) = _seniorPriceAndAssets(true);
+        (uint256 price, uint256 denominator) = _seniorPriceAndDenominator();
         uint256 supply = senior.totalSupply();
         uint256 expected = _expectedSeniorPrice();
         uint256 baseSupply = supply;
@@ -336,7 +340,7 @@ contract JuniorVault is ERC20, Ownable2Step, ReentrancyGuard, Multicall {
             uint256 exposed = _exposed(supply);
             uint256 owed = carryPerShare * exposed / PRICE_UNIT;
             if (price < expected) owed += (expected - price) * exposed / PRICE_UNIT;
-            if (felixLoss && felixSnapSupply != 0) owed += felixOwed * exposed / felixSnapSupply;
+            if (felixLoss && felixExpSupply != 0) owed += felixOwed * exposed / felixExpSupply;
             uint256 idle = asset.balanceOf(address(this));
             idle = idle > reservedAssets ? idle - reservedAssets : 0; // priced exits are fixed claims, not first loss
             paid = owed < idle ? owed : idle;
@@ -355,7 +359,7 @@ contract JuniorVault is ERC20, Ownable2Step, ReentrancyGuard, Multicall {
         seniorPriceBase = price;
         seniorSupplyBase = baseSupply;
         seniorSupplyMin = baseSupply;
-        _snapFelix(assetsOf);
+        _rebaseFelixLost();
         seniorBaseTime = block.timestamp;
     }
 
@@ -383,12 +387,12 @@ contract JuniorVault is ERC20, Ownable2Step, ReentrancyGuard, Multicall {
         if (carryPerShare != 0) return; // a debt is outstanding: observe only, the baseline waits for the settle that clears it
         (, bool felixLoss) = _felixOwed();
         if (felixLoss) return; // a Felix loss is booked and not yet covered: observe only
-        (uint256 price, uint256[] memory assetsOf,) = _seniorPriceAndAssets(true);
+        uint256 price = _seniorRealPrice();
         if (price < _expectedSeniorPrice()) return;
         seniorPriceBase = price;
         seniorSupplyBase = supply;
         seniorSupplyMin = supply;
-        _snapFelix(assetsOf);
+        _rebaseFelixLost();
         seniorBaseTime = block.timestamp;
     }
 
@@ -414,91 +418,109 @@ contract JuniorVault is ERC20, Ownable2Step, ReentrancyGuard, Multicall {
     ///      (MetaMorpho v1.1) bad debt stays inside Felix's `totalAssets`, so this price does not show it, exactly like
     ///      Vault V2's own accounting. Used for the baselines and for `coverInProgress`; the Felix term is `_felixOwed`.
     function _seniorRealPrice() internal view returns (uint256 price) {
-        (price,,) = _seniorPriceAndAssets(false);
+        (price,) = _seniorPriceAndDenominator();
     }
 
-    /// @dev The gross price, and optionally each adapter's `realAssets` (the baseline snapshot reuses them: reading them
-    ///      again costs about 130k gas on Felix's adapter).
-    function _seniorPriceAndAssets(bool collect) internal view returns (uint256 price, uint256[] memory assets, uint256 denominator) {
+    function _seniorPriceAndDenominator() internal view returns (uint256 price, uint256 denominator) {
         uint256 real = asset.balanceOf(address(senior));
         uint256 n = senior.adaptersLength();
-        if (collect) assets = new uint256[](n);
         for (uint256 i = 0; i < n; i++) {
-            uint256 a = IAdapter(senior.adapters(i)).realAssets();
-            real += a;
-            if (collect) assets[i] = a;
+            real += IAdapter(senior.adapters(i)).realAssets();
         }
         (,, uint256 pendingFeeShares) = senior.accrueInterestView(); // fee shares owed to us but not yet minted
         denominator = senior.totalSupply() + pendingFeeShares + senior.virtualShares();
         price = PRICE_UNIT * (real + 1) / denominator;
     }
 
-    /// @dev USDC, in baseline shares (divide by `felixSnapSupply`, multiply by exposed shares), that senior owes for the
-    ///      Felix losses booked since the baseline: sum over snapshot entries of (lost now - lost then) * assets then /
-    ///      total then. Only `lostAssets` is read live (one probe per entry; it only grows in v1.1 and moves on a real
-    ///      loss), so flows cannot move the term. `grew` is true when an entry's amount is above 1 ppm of its assets (the same guard as the
-    ///      price baseline); smaller bumps, which Felix books by rounding, are forgiven at the next reset. A failed probe counts as no loss.
+    /// @dev USDC owed for the Felix losses booked since the baseline, in exposure-snapshot shares (multiply by exposed
+    ///      shares over `felixExpSupply`): sum over entries of (lost now - lostBase) * fraction. Only `lostAssets` is read
+    ///      live (one probe per entry; it only grows in v1.1 and moves on a real loss). `grew` is true when an entry's
+    ///      amount is above 1 ppm of its reference assets, the same guard as the price baseline: smaller bumps, which
+    ///      Felix books by rounding, never block a sync and are forgiven at the next reset. A failed probe counts as 0.
     function _felixOwed() internal view returns (uint256 owed, bool grew) {
-        uint256 n = felixSnaps.length;
+        uint256 n = felixExp.length;
         for (uint256 i = 0; i < n; i++) {
-            FelixSnap memory f = felixSnaps[i];
-            (bool ok, uint256 lost) = _probe(f.vault, IFelixProbes.lostAssets.selector);
-            if (!ok || lost <= f.lostBase || f.totalBase == 0) continue;
-            uint256 amount = uint256(f.assetsBase) * (lost - f.lostBase) / f.totalBase;
+            FelixExp storage f = felixExp[i];
+            (bool ok, uint256 lost) = _probe(f.vault, IFelixProbes.lostAssets.selector, 0, false);
+            if (!ok || lost <= f.lostBase) continue;
+            uint256 amount = (lost - f.lostBase) * f.fraction / PRICE_UNIT;
             owed += amount;
-            if (amount * 1e6 > f.assetsBase) grew = true; // above the 1 ppm guard: a wei-level bump Felix books on its own never blocks a sync
+            if (amount * 1e6 > f.assetsRef) grew = true;
         }
     }
 
-    /// @dev Rebuild the Felix snapshot at a baseline reset, for the adapters listed right now whose probe succeeds. An
-    ///      adapter added later is not billed until the next reset.
-    function _snapFelix(uint256[] memory assetsOf) internal {
-        uint256 n = assetsOf.length;
+    /// @dev At a baseline reset: Felix's `lostAssets` becomes the new base for every vault in the exposure snapshot.
+    function _rebaseFelixLost() internal {
+        uint256 n = felixExp.length;
+        for (uint256 i = 0; i < n; i++) {
+            FelixExp storage f = felixExp[i];
+            (bool ok, uint256 lost) = _probe(f.vault, IFelixProbes.lostAssets.selector, 0, false);
+            if (ok && lost <= type(uint96).max) f.lostBase = uint96(lost);
+        }
+    }
+
+    /// @notice Re-take the Felix exposure: for each senior adapter that fronts a Felix vault, senior's share of that vault
+    ///         (its shares over the vault's supply) and the adapter's assets, plus senior's supply now. Agent or owner only,
+    ///         never a permissionless call, because the exposure is the one part a flash deposit could steer. The keeper
+    ///         calls it hourly. A booked-but-unbilled loss is never forgiven here: a vault already in the snapshot keeps
+    ///         its `lostBase`; only a vault new to the snapshot starts at its current `lostAssets`. Adapters that are gone
+    ///         or fail a probe drop out.
+    function snapFelixExposure() external {
+        if (msg.sender != agent && msg.sender != owner()) revert NotAgent();
+        _snapFelixExposure();
+    }
+
+    function _snapFelixExposure() internal {
+        FelixExp[] memory old = felixExp;
+        uint256 n = senior.adaptersLength();
         uint256 k;
         for (uint256 i = 0; i < n; i++) {
-            address adapter = senior.adapters(i);
-            (bool ok, address vault, uint256 lost, uint256 total) = _felixState(adapter);
+            (bool ok, FelixExp memory f) = _felixEntry(senior.adapters(i), old);
             if (!ok) continue;
-            uint256 assets = assetsOf[i];
-            if (lost > type(uint96).max || assets > type(uint128).max || total > type(uint128).max) continue;
-            FelixSnap memory f = FelixSnap(vault, uint96(lost), uint128(assets), uint128(total));
-            if (k < felixSnaps.length) felixSnaps[k] = f;
-            else felixSnaps.push(f);
+            if (k < felixExp.length) felixExp[k] = f;
+            else felixExp.push(f);
             k++;
         }
-        while (felixSnaps.length > k) felixSnaps.pop();
-        felixSnapSupply = senior.totalSupply();
+        while (felixExp.length > k) felixExp.pop();
+        felixExpSupply = senior.totalSupply();
+        emit FelixExposureSnapped(k, felixExpSupply);
     }
 
-    function felixSnapsLength() external view returns (uint256) {
-        return felixSnaps.length;
+    /// @dev One adapter's exposure entry, or not ok when it is not a MetaMorpho wrapper or any probe fails.
+    function _felixEntry(address adapter, FelixExp[] memory old) private view returns (bool, FelixExp memory f) {
+        (bool ok, uint256 word) = _probe(adapter, IFelixProbes.morphoVaultV1.selector, 0, false);
+        if (!ok || word > type(uint160).max) return (false, f);
+        f.vault = address(uint160(word)); // a codeless or zero vault fails the probes below: they need a 32-byte answer
+        uint256 lost;
+        uint256 supply;
+        uint256 shares;
+        (ok, lost) = _probe(f.vault, IFelixProbes.lostAssets.selector, 0, false);
+        if (!ok || lost > type(uint96).max) return (false, f);
+        (ok, supply) = _probe(f.vault, IFelixProbes.totalSupply.selector, 0, false);
+        if (!ok || supply > type(uint128).max) return (false, f);
+        (ok, shares) = _probe(f.vault, IFelixProbes.balanceOf.selector, uint256(uint160(adapter)), true);
+        if (!ok) return (false, f);
+        for (uint256 j = 0; j < old.length; j++) {
+            if (old[j].vault == f.vault) lost = old[j].lostBase; // never forgive a loss already booked
+        }
+        f.lostBase = uint96(lost);
+        if (supply != 0) f.fraction = uint128(shares >= supply ? PRICE_UNIT : shares * PRICE_UNIT / supply);
+        uint256 assets = IAdapter(adapter).realAssets();
+        f.assetsRef = uint128(assets > type(uint128).max ? type(uint128).max : assets);
+        return (true, f);
     }
 
-    /// @dev Low-level probes, because try/catch does not catch a malformed return or a call to an address without code.
-    ///      The adapter must have code and answer `morphoVaultV1()` with exactly one word holding a clean address with
-    ///      code; that vault must answer `lostAssets()` and `lastTotalAssets()` with exactly one word each. Each call
-    ///      gets at most PROBE_GAS, so a hostile contract cannot burn the caller's gas.
-    function _felixState(address adapter) internal view returns (bool ok, address vault, uint256 lost, uint256 total) {
-        if (adapter.code.length == 0) return (false, address(0), 0, 0);
-        uint256 word;
-        (ok, word) = _probe(adapter, IFelixProbes.morphoVaultV1.selector);
-        if (!ok || word == 0 || word > type(uint160).max) return (false, address(0), 0, 0);
-        vault = address(uint160(word));
-        if (vault.code.length == 0) return (false, address(0), 0, 0);
-        (ok, lost) = _probe(vault, IFelixProbes.lostAssets.selector);
-        if (!ok || lost >= type(uint256).max) return (false, address(0), 0, 0);
-        (ok, total) = _probe(vault, IFelixProbes.lastTotalAssets.selector);
-        if (!ok) return (false, address(0), 0, 0);
-    }
-
-    /// @dev staticcall with a gas cap; the answer must be exactly 32 bytes and only those 32 bytes are copied, so a
-    ///      callee returning a huge buffer costs this contract nothing beyond the callee's own capped gas.
-    function _probe(address target, bytes4 selector) private view returns (bool ok, uint256 word) {
+    /// @dev staticcall with a gas cap (low level, because try/catch does not catch a malformed return or a call to an
+    ///      address without code); the answer must be exactly 32 bytes and only those are copied, so a callee returning a
+    ///      huge buffer costs this contract nothing beyond the callee's own capped gas.
+    function _probe(address target, bytes4 selector, uint256 arg, bool hasArg) private view returns (bool ok, uint256 word) {
         uint256 g = PROBE_GAS;
+        uint256 size = hasArg ? 36 : 4;
         assembly {
             let ptr := mload(0x40)
             mstore(ptr, selector)
-            ok := staticcall(g, target, ptr, 4, 0, 0)
+            mstore(add(ptr, 4), arg)
+            ok := staticcall(g, target, ptr, size, 0, 0)
             if ok {
                 ok := eq(returndatasize(), 32)
                 if ok {

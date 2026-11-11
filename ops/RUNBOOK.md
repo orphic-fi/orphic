@@ -127,7 +127,7 @@ The gate is 20% of the deposit in ORPH. `stakePerAsset` is ORPH wei per 1 USDC a
 4. Emergency (price collapse or spike): `proposeStakePerAsset` still waits 3 days by design; use `setDepositsPaused(true)` if the gate becomes meaningless in the meantime.
 
 ## 6a. Hourly (keeper)
-`junior.syncSenior()` every tick so new senior deposits are covered; report `coverInProgress()`. Also `junior.observeSenior()` every tick (records senior's lowest supply so an exit followed by a buy is not billed twice, see LIMITATIONS L10; keeper change pending). If the keeper is down, anyone can call both.
+`junior.syncSenior()` every tick so new senior deposits are covered; report `coverInProgress()`. Also `junior.observeSenior()` every tick (records senior's lowest supply so an exit followed by a buy is not billed twice, see LIMITATIONS L10; keeper change pending). The agent or owner also calls `junior.snapFelixExposure()` once after senior is funded and then every tick (the Felix exposure for the cover, see LIMITATIONS L11; keeper change pending, nobody else can call it). If the keeper is down, anyone can call `syncSenior()` and `observeSenior()`.
 
 ## 7. Weekly settle (Sundays, 00:00 UTC window)
 Anyone can call `settle()`; the keeper's `--weekly` run does it after `accrueInterest()` on senior. Before it: Rotator ensures junior idle USDC covers `pendingExitShares * pricePerShare` for exits maturing that day. After it: read `pricePerShare()`, `reservedAssets()`, `pricedExitShares()`, `Settled` event, and the `Cover` event if any. Post the numbers on the agents page.
