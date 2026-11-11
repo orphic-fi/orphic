@@ -587,6 +587,70 @@ contract CoverFixesTest is Base {
         assertApproxEqAbs(flow, ctl, 1e6);
     }
 
+    /// (1, cap) The atomic sandwich in ONE transaction with a real Morpho flash loan. The collateral oracle has dropped
+    ///     (ASSUMED, mocked) but nobody has liquidated yet, so no bad debt is realised or booked. The attacker, in one tx:
+    ///     flash 3M, deposit 2M into senior (a loss-free moment, Felix has booked nothing), permissionless `syncSenior()`
+    ///     (succeeds, baseline supply = the inflated supply), the real `Morpho.liquidate` (crystallises the bad debt), a Felix
+    ///     touch (books it), `settle()` at the due second, redeem, repay. `exposed` is capped at the exposure snapshot's
+    ///     supply, so the bill is the independent pro rata figure of senior's share when the loss happened (0.1% plus
+    ///     1 USDC), not scaled by the supply inflation (here x3).
+    function test_C9_atomicFlashSandwichDoesNotScaleTheBillUp() public {
+        _felixSetup();
+        vm.warp(block.timestamp + 7 days - 3 hours);
+        junior.syncSenior();
+        _felixTouch();
+        lostPre = felix.lostAssets();
+        vm.mockCall(bd.mp.oracle, abi.encodeCall(IOracle.price, ()), abi.encode(bd.price / 100)); // ASSUMED: collateral -99%
+        vm.warp(block.timestamp + 3 hours); // the settle is due
+        uint256 fracPre = felix.balanceOf(felixAdapter) * 1e24 / felix.totalSupply();
+        SandwichAttacker atk = new SandwichAttacker(USDC, MORPHO, senior, junior, felix);
+        deal(address(USDC), address(atk), 1_200_000e6); // what the liquidation costs the attacker, and dust
+        uint256 supplyBefore = senior.totalSupply();
+        vm.recordLogs();
+        atk.run(3_000_000e6, bd.mp, bd.borrower, bd.collateral, bd.debt);
+        vm.clearMockedCalls();
+        (bool covered, uint256 owed,,) = _coverFromLogs();
+        uint256 expected = (felix.lostAssets() - lostPre) * fracPre / 1e24;
+        console2.log("senior supply (1e18 units) before / flash deposit 2M => x3", supplyBefore / 1e18);
+        console2.log("owed (capped) / independent pro rata figure", owed, expected);
+        assertTrue(covered);
+        assertGt(expected, 1_000e6);
+        assertApproxEqAbs(owed, expected, expected / 1000 + 1e6);
+    }
+
+    /// (3) Senior exits after the snapshot still shrink the Felix bill (the exposed < felixExpSupply path): half of senior
+    ///     leaves, then the loss; the bill is the full-snapshot bill scaled by the supply left (1% plus 1 USDC). Printed
+    ///     against senior's true pro rata share: the supply scaling slightly under-bills it (Felix's own supply shrank too).
+    function test_C9_seniorExitsAfterTheSnapshotShrinkTheFelixBill() public {
+        _felixSetup();
+        uint256 half = senior.balanceOf(alice) / 2;
+        vm.prank(alice);
+        senior.redeem(half, alice, alice);
+        junior.observeSenior();
+        _lossBooked();
+        uint256 full = (felix.lostAssets() - lostPre) * fracAtSnap / 1e24;
+        uint256 scaled = full * senior.totalSupply() / expSupply;
+        uint256 trueShare = (felix.lostAssets() - lostPre) * (felix.balanceOf(felixAdapter) * 1e24 / felix.totalSupply()) / 1e24;
+        (, uint256 owed,,) = _settle();
+        console2.log("full-snapshot bill / scaled by supply left / owed", full, scaled, owed);
+        console2.log("senior's true pro rata share after the exit (printed)", trueShare);
+        assertLt(owed, full * 6 / 10, "the exits shrank the bill");
+        assertApproxEqAbs(owed, scaled, scaled / 100 + 1e6);
+    }
+
+    function _coverFromLogs() internal returns (bool covered, uint256 owed, uint256 paid, uint256 carried) {
+        Vm.Log[] memory ls = vm.getRecordedLogs();
+        for (uint256 i = 0; i < ls.length; i++) {
+            if (ls[i].emitter != address(junior) || ls[i].topics.length == 0) continue;
+            if (ls[i].topics[0] == keccak256("Cover(uint256,uint256)")) {
+                covered = true;
+                (owed, paid) = abi.decode(ls[i].data, (uint256, uint256));
+            } else if (ls[i].topics[0] == keccak256("CoverShortfallCarried(uint256)")) {
+                carried = abi.decode(ls[i].data, (uint256));
+            }
+        }
+    }
+
     /// (e) Loss liquidated, a sync lands BEFORE Felix books it, then the booking touch: billed once, no double count; the
     ///     next settle bills nothing. Compared with the ordinary order.
     function test_C9_syncBeforeTheBookingTouchBillsOnce() public {
@@ -909,5 +973,41 @@ contract GarbageVault {
         }
         while (true) {} // mode 5
         return "";
+    }
+}
+
+/// @dev The atomic sandwich: Morpho flash loan, deposit into senior, permissionless sync, real liquidation, Felix touch, settle,
+///      redeem, repay.
+contract SandwichAttacker {
+    IERC20 internal usdc;
+    IMorpho internal morpho;
+    IVaultV2 internal senior;
+    JuniorVault internal junior;
+    IERC4626 internal felix;
+
+    constructor(IERC20 usdc_, IMorpho morpho_, IVaultV2 senior_, JuniorVault junior_, IERC4626 felix_) {
+        usdc = usdc_;
+        morpho = morpho_;
+        senior = senior_;
+        junior = junior_;
+        felix = felix_;
+    }
+
+    function run(uint256 x, MarketParams calldata mp, address borrower, uint256 collateral, uint256 debt) external {
+        usdc.approve(address(morpho), type(uint256).max);
+        morpho.flashLoan(address(usdc), x, abi.encode(mp, borrower, collateral, debt));
+    }
+
+    function onMorphoFlashLoan(uint256 assets, bytes calldata data) external {
+        (MarketParams memory mp, address borrower, uint256 collateral, uint256 debt) =
+            abi.decode(data, (MarketParams, address, uint256, uint256));
+        usdc.approve(address(senior), assets - debt);
+        uint256 shares = senior.deposit(assets - debt, address(this));
+        junior.syncSenior(); // no loss is realised yet: succeeds, baseline supply = the inflated supply
+        morpho.liquidate(mp, borrower, collateral, 0, ""); // crystallises the bad debt
+        usdc.approve(address(felix), 1e6);
+        felix.deposit(1e6, address(this)); // touches Felix: books it
+        junior.settle();
+        senior.redeem(shares, address(this), address(this));
     }
 }

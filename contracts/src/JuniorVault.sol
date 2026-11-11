@@ -46,7 +46,7 @@ contract JuniorVault is ERC20, Ownable2Step, ReentrancyGuard, Multicall {
     uint256 public constant WAD = 1e18;
     uint256 public constant NOTICE = 7 days;
     uint256 public constant SETTLE_INTERVAL = 7 days - 1 hours; // weekly, with an hour of slack for the keeper
-    uint256 public constant MAX_MARKETS = 16;
+    uint256 internal constant MAX_MARKETS = 16;
     uint256 public constant SEED_ASSETS = 1e6; // 1 USDC of dead shares against first-depositor price games
     uint256 internal constant PROBE_GAS = 50_000; // gas cap per Felix probe (storage reads need about 3k)
     uint256 public constant PRICE_UNIT = 1e24; // senior shares used to quote its price with enough precision
@@ -340,7 +340,8 @@ contract JuniorVault is ERC20, Ownable2Step, ReentrancyGuard, Multicall {
             uint256 exposed = _exposed(supply);
             uint256 owed = carryPerShare * exposed / PRICE_UNIT;
             if (price < expected) owed += (expected - price) * exposed / PRICE_UNIT;
-            if (felixLoss && felixExpSupply != 0) owed += felixOwed * exposed / felixExpSupply;
+            // exposed is capped at the exposure snapshot's supply: a flash-inflated baseline supply cannot scale the Felix term up
+            if (felixLoss && felixExpSupply != 0) owed += felixOwed * (exposed < felixExpSupply ? exposed : felixExpSupply) / felixExpSupply;
             uint256 idle = asset.balanceOf(address(this));
             idle = idle > reservedAssets ? idle - reservedAssets : 0; // priced exits are fixed claims, not first loss
             paid = owed < idle ? owed : idle;
