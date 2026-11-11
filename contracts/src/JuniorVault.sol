@@ -188,7 +188,7 @@ contract JuniorVault is ERC20, Ownable2Step, ReentrancyGuard, Multicall {
         if (seeded) revert AlreadySet();
         seeded = true;
         asset.safeTransferFrom(msg.sender, address(this), SEED_ASSETS);
-        _mint(address(0xdead), _toShares(SEED_ASSETS));
+        _mint(address(0xdead), _toShares(SEED_ASSETS, 0)); // supply is 0 here: the price is WAD, nav unused
     }
 
     /* DEPOSIT */
@@ -196,15 +196,15 @@ contract JuniorVault is ERC20, Ownable2Step, ReentrancyGuard, Multicall {
     function deposit(uint256 assets, address receiver) external nonReentrant returns (uint256 shares) {
         if (depositsPaused || !seeded) revert Paused();
         if (assets == 0) revert ZeroAmount();
-        (uint256 nav, bool complete) = _navComplete();
+        _syncSenior(); // every junior deposit also refreshes what senior exposure we stand behind
+        (uint256 nav, bool complete) = _navComplete(); // one valuation prices both the cap and the shares
         if (!complete) revert VenueBroken();
         if (nav + assets > depositCap) revert CapExceeded();
         if (walletCap != 0) {
             uint256 held = balanceOf(receiver) + exitOf[receiver].shares;
             if (held * pricePerShare / WAD / assetScale + assets > walletCap) revert CapExceeded();
         }
-        _syncSenior(); // every junior deposit also refreshes what senior exposure we stand behind
-        shares = _toShares(assets);
+        shares = _toShares(assets, nav);
         uint256 stake;
         if (address(stakeToken) != address(0)) {
             stake = assets * stakePerAsset / 1e6;
@@ -576,14 +576,19 @@ contract JuniorVault is ERC20, Ownable2Step, ReentrancyGuard, Multicall {
     function vaultAssets(uint256 i) external view returns (uint256) {
         IERC4626 v = IERC4626(vaults[i]);
         uint256 bal = v.balanceOf(address(this));
+        if (address(v) == address(senior)) {
+            // management-fee shares senior owes us but has not minted yet: ours already, so a deposit before settle cannot take them
+            (,, uint256 pending) = senior.accrueInterestView();
+            bal += pending;
+        }
         return bal == 0 ? 0 : v.convertToAssets(bal);
     }
 
     /// @dev Mint at the worse of the frozen price and the live price, so a deposit just before settle cannot take
     ///      the epoch's accrued yield from earlier depositors.
-    function _toShares(uint256 assets) internal view returns (uint256) {
+    function _toShares(uint256 assets, uint256 nav) internal view returns (uint256) {
         uint256 supply = totalSupply() - pricedExitShares;
-        uint256 live = supply == 0 ? WAD : totalAssets() * assetScale * WAD / supply;
+        uint256 live = supply == 0 ? WAD : nav * assetScale * WAD / supply;
         uint256 p = live > pricePerShare ? live : pricePerShare;
         if (p == 0) revert ZeroPrice(); // junior's NAV is wiped (net of any carried debt): nothing can be minted
         return assets * assetScale * WAD / p;
