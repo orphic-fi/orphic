@@ -26,6 +26,33 @@ contract GasBurner {
     }
 }
 
+/// @dev Minimal MetaMorpho-shaped vault and adapter for junior's exposure snapshot (it probes `morphoVaultV1`, `lostAssets`,
+///      `totalSupply`, `balanceOf` and the adapter's `realAssets`).
+contract MockFelixVault {
+    uint256 public lostAssets;
+    uint256 public totalSupply = 1_000e6;
+
+    function balanceOf(address) external pure returns (uint256) {
+        return 1_000e6;
+    }
+
+    function setLost(uint256 v) external {
+        lostAssets = v;
+    }
+}
+
+contract MockFelixAdapter {
+    address public morphoVaultV1;
+
+    constructor(address v) {
+        morphoVaultV1 = v;
+    }
+
+    function realAssets() external pure returns (uint256) {
+        return 1_000e6;
+    }
+}
+
 contract SeniorReceiveGateTest is Base {
     using MorphoBalancesLib for IMorpho;
 
@@ -484,6 +511,7 @@ contract SeniorReceiveGateTest is Base {
         assertApproxEqAbs(gated, ctl, 2e6, "senior holder within 2 USDC of the no-buyer control");
         assertApproxEqAbs(gatedJ, ctlJ, 2e6, "junior within 2 USDC of the control");
         console2.log("ungated: junior pays extra vs control", int256(ctlJ) - int256(ungatedJ));
+        assertGt(ctlJ, ungatedJ + 100e6, "the ungated buyer really cost junior extra cover");
     }
 
     /// @dev C3 late buyer: a buyer enters AFTER the loss and BEFORE the settle, and takes a pro rata part of junior's top-up.
@@ -676,6 +704,8 @@ contract SeniorReceiveGateTest is Base {
         _forceSeniorLoss(500e6);
         console2.log("gas refuse (1) loss outstanding", _gasOf(carol));
         vm.revertToState(snap);
+        vm.prank(agent);
+        junior.snapFelixExposure();
         (, uint96 lostBase,,) = junior.felixExp(0);
         _setFelixLost(uint256(lostBase) + 1_000e6);
         console2.log("gas refuse (3) booked Felix loss", _gasOf(carol));
@@ -690,5 +720,114 @@ contract SeniorReceiveGateTest is Base {
         junior.settle();
         // carry only exists if junior could not pay: here it can, so (2) is exercised in the carry test; measure the pass path again
         console2.log("gas after a fully paid cover (refused by (4))", _gasOf(carol));
+    }
+
+    /* review round 1 */
+
+    /// B1: Felix rounding bumps `lostAssets` and anyone can book one with dust; junior forgives it at its next sync, so the
+    ///     gate uses junior's own 1 ppm guard. A 1-wei bump does not refuse; a loss above the guard does.
+    function test_B1_dustBumpDoesNotRefuseButRealLossDoes() public {
+        _world(100_000e6, 20_000e6);
+        // junior's snapshot was taken at construction with an empty senior (fraction 0, assetsRef 0: nothing billed, nothing
+        // refused, as in L11 item 8); the keeper's snapshot after funds arrive is what arms the Felix term
+        vm.prank(agent);
+        junior.snapFelixExposure();
+        (, uint96 lostBase, uint128 fraction, uint128 assetsRef) = junior.felixExp(0);
+        console2.log("entry fraction / assetsRef", fraction, assetsRef);
+        _setFelixLost(uint256(lostBase) + 1);
+        assertTrue(_ok(carol), "a 1-wei bump never refuses");
+        _seniorDeposit(carol, 1_000e6);
+        // the bump at which junior's guard trips: (lost - lostBase) * fraction / 1e24 * 1e6 > assetsRef
+        uint256 trip = uint256(assetsRef) * 1e18 / fraction;
+        console2.log("lostAssets bump that trips the guard", trip);
+        _setFelixLost(uint256(lostBase) + trip / 2);
+        assertTrue(_ok(carol), "half the guard passes");
+        _setFelixLost(uint256(lostBase) + trip * 2);
+        assertEq(junior.carryPerShare(), 0);
+        assertLe(junior.coverInProgress(), gate.maxUnrecognised(), "isolated: not the cover condition");
+        assertFalse(_ok(carol), "above 1 ppm refuses");
+    }
+
+    /// S1: with a performance fee and a recipient other than junior, V2 asks the gate about that recipient from inside
+    ///     `accrueInterestView`, which the gate's own checks call: the recipient is exempt before any heavy check.
+    function test_S1_performanceFeeRecipientIsExemptNoRecursion() public {
+        address perf = makeAddr("perfRecipient");
+        vm.startPrank(owner);
+        _curate(abi.encodeCall(IVaultV2.setPerformanceFeeRecipient, (perf)));
+        _curate(abi.encodeCall(IVaultV2.setPerformanceFee, (0.1e18)));
+        vm.stopPrank();
+        _world(100_000e6, 20_000e6);
+        vm.warp(block.timestamp + 10 days);
+        senior.accrueInterest(); // would revert or recurse if the gate asked itself about `perf`
+        console2.log("performance fee shares minted", senior.balanceOf(perf));
+        assertGt(senior.balanceOf(perf), 0, "performance fee mints");
+        assertGt(senior.balanceOf(address(junior)), 0, "management fee mints");
+        // normal times: deposit and transfer work
+        _seniorDeposit(carol, 1_000e6);
+        vm.prank(alice);
+        senior.transfer(carol, 1e6);
+        assertLt(_gasOf(perf), 30_000, "cheap exemption");
+        // during a loss the recipient stays exempt while a newcomer is refused
+        _forceSeniorLoss(500e6);
+        assertTrue(_ok(perf), "recipient exempt");
+        assertFalse(_ok(bob), "newcomer refused");
+    }
+
+    /// S2: junior's `felixExp` can be longer than senior's adapter list (an adapter removed since the last snap keeps its
+    ///     entry). A booked loss on a later entry still refuses.
+    function test_S2_removedAdaptersLaterEntryStillRefuses() public {
+        MockFelixVault vA = new MockFelixVault();
+        MockFelixVault vB = new MockFelixVault();
+        address aA = address(new MockFelixAdapter(address(vA)));
+        address aB = address(new MockFelixAdapter(address(vB)));
+        vm.startPrank(owner);
+        _curate(abi.encodeCall(IVaultV2.addAdapter, (aA)));
+        _curate(abi.encodeCall(IVaultV2.addAdapter, (aB)));
+        vm.stopPrank();
+        vm.prank(agent);
+        junior.snapFelixExposure();
+        assertTrue(_hasExp(2), "three entries: Felix, A, B");
+        assertFalse(_hasExp(3));
+        vm.startPrank(owner);
+        senior.setLiquidityAdapterAndData(address(0), "");
+        _curate(abi.encodeCall(IVaultV2.removeAdapter, (felixAdapter)));
+        _curate(abi.encodeCall(IVaultV2.removeAdapter, (marketAdapter)));
+        vm.stopPrank();
+        assertEq(senior.adaptersLength(), 2, "two adapters left, three entries");
+        _setGate();
+        assertTrue(_ok(carol), "open before the loss");
+        vB.setLost(100e6); // entry index 2, past senior.adaptersLength()
+        assertFalse(_ok(carol), "a booked loss on the later entry refuses");
+        vB.setLost(0);
+        assertTrue(_ok(carol));
+    }
+
+    function _hasExp(uint256 i) internal view returns (bool ok) {
+        (ok,) = address(junior).staticcall(abi.encodeCall(junior.felixExp, (i)));
+    }
+
+    /// S3: cost against Felix's withdraw-queue length (`previewRedeem` loops its markets, twice per check).
+    function test_S3_gasAgainstFelixQueueLength() public {
+        _world(420_000e6, 20_000e6);
+        IFelixLostView felix = IFelixLostView(FELIX_USDC_V1);
+        uint256 bal = IERC4626(FELIX_USDC_V1).balanceOf(felixAdapter);
+        _cool();
+        uint256 g0 = gasleft();
+        IERC4626(FELIX_USDC_V1).previewRedeem(bal);
+        uint256 preview = g0 - gasleft();
+        uint256 check = _gasOf(carol);
+        uint256 qlen = felix.withdrawQueueLength();
+        console2.log("Felix withdraw queue length", qlen);
+        console2.log("Felix previewRedeem gas (cold)", preview);
+        console2.log("gate full check gas (cold)", check);
+        console2.log("approx gas per Felix market per preview", preview / qlen);
+        // fail closed beyond what the caller gives: a starved call refuses, a funded one passes
+        (bool s1, bytes memory r1) = address(gate).staticcall{gas: 400_000}(abi.encodeCall(gate.canReceiveShares, (carol)));
+        assertTrue(s1);
+        assertFalse(abi.decode(r1, (bool)), "400k gas: fails closed");
+        _cool();
+        (bool s2, bytes memory r2) = address(gate).staticcall{gas: 1_500_000}(abi.encodeCall(gate.canReceiveShares, (carol)));
+        assertTrue(s2 && abi.decode(r2, (bool)), "1.5M gas: passes");
+        assertLt(check, 1_000_000, "inside the 1.0M cap");
     }
 }

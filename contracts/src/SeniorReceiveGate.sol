@@ -33,8 +33,8 @@ contract SeniorReceiveGate is Ownable2Step {
     uint256 internal constant WAD = 1e18;
     uint256 internal constant PRICE_UNIT = 1e24; // same unit as JuniorVault.PRICE_UNIT
     uint256 internal constant PROBE_GAS = 50_000; // cap for one cheap read (a storage getter needs ~3k)
-    uint256 internal constant CHECK_GAS = 1_200_000; // cap for the whole refuse check; HyperEVM small block is 2M
-    uint256 internal constant MAX_ADAPTERS = 32; // above this the check refuses instead of running unbounded
+    uint256 internal constant CHECK_GAS = 1_000_000; // cap for the whole refuse check (about 570k measured); HyperEVM small block is 2M
+    uint256 internal constant MAX_ADAPTERS = 32; // bound for the adapter sweep and for the `felixExp` probe loop; above it the check refuses
     uint256 public constant MAX_UNRECOGNISED_CAP = 1_000e6; // owner cannot set the threshold above 1,000 USDC
 
     IVaultV2 public immutable senior;
@@ -69,12 +69,19 @@ contract SeniorReceiveGate is Ownable2Step {
         emit MaxUnrecognisedSet(amount);
     }
 
-    /// @notice Vault V2 calls this on deposit/mint (onBehalf), transfer/transferFrom (to) and for its fee recipients.
+    /// @notice Vault V2 calls this on deposit/mint (onBehalf), transfer/transferFrom (to) and for BOTH fee recipients inside
+    ///         `accrueInterestView`, which the checks below call too: every fee recipient is therefore exempt before any
+    ///         heavy check, or the gate would recurse into itself.
     function canReceiveShares(address account) external view returns (bool) {
         if (account == address(junior) || isAllowed[account]) return true;
-        // adapter exemption: `isAdapter` is a public mapping on senior, so one capped low-level call, no loop; a failed or
-        // malformed answer just means "not known to be an adapter" and falls through to the checks (which also fail closed).
-        if (_isAdapter(account)) return true;
+        // capped low-level reads, 32-byte answers only; a failed read just means "not exempt" and falls through to the
+        // checks (which also fail closed). `isAdapter` is a public mapping on senior: no loop.
+        (bool ok, uint256 w) = _probe(IVaultV2.isAdapter.selector, uint256(uint160(account)), true);
+        if (ok && w == 1) return true;
+        (ok, w) = _probe(IVaultV2.managementFeeRecipient.selector, 0, false);
+        if (ok && w == uint256(uint160(account))) return true;
+        (ok, w) = _probe(IVaultV2.performanceFeeRecipient.selector, 0, false);
+        if (ok && w == uint256(uint160(account))) return true;
         // Everything else runs inside a self-call with a gas cap: any revert (a dependency without code, a malformed
         // return, arithmetic) or an out-of-gas ends as `false`, never as a revert.
         try this.checkClear{gas: CHECK_GAS}() returns (bool clear) {
@@ -88,12 +95,18 @@ contract SeniorReceiveGate is Ownable2Step {
     ///         failed read, which `canReceiveShares` turns into a refusal.
     function checkClear() external view returns (bool) {
         require(msg.sender == address(this));
-        // (3) booked Felix loss not yet billed: any entry whose vault's lostAssets grew above its lostBase
+        // (3) booked Felix loss not yet billed, with junior's own 1 ppm guard (JuniorVault._felixOwed): the entry's
+        //     (lost - lostBase) * fraction is above 1 ppm of its reference assets. Smaller bumps are Felix rounding, which
+        //     anyone can book with dust, and junior forgives them at its next sync, so the gate must not refuse on them.
+        //     Looped to a fixed bound, not senior.adaptersLength(): junior's array can be longer than the adapter list
+        //     (an adapter removed since the last snap keeps its entry). The end of the array is the first revert.
         uint256 n = senior.adaptersLength();
         if (n > MAX_ADAPTERS) return false;
-        for (uint256 i = 0; i < n; i++) {
-            try junior.felixExp{gas: PROBE_GAS}(i) returns (address v, uint96 lostBase, uint128, uint128) {
-                if (IFelixLost(v).lostAssets{gas: PROBE_GAS}() > lostBase) return false; // a failed read reverts: refuse
+        for (uint256 i = 0; i < MAX_ADAPTERS; i++) {
+            try junior.felixExp{gas: PROBE_GAS}(i) returns (address v, uint96 lostBase, uint128 fraction, uint128 assetsRef) {
+                uint256 lost = IFelixLost(v).lostAssets{gas: PROBE_GAS}(); // a failed read reverts: refuse
+                if (lost <= lostBase) continue;
+                if ((lost - lostBase) * fraction / PRICE_UNIT * 1e6 > assetsRef) return false;
             } catch {
                 break; // past the end of junior's array
             }
@@ -106,20 +119,21 @@ contract SeniorReceiveGate is Ownable2Step {
         return _coverInProgress(price, recognised) <= maxUnrecognised;
     }
 
-    function _isAdapter(address account) internal view returns (bool ok) {
+    /// @dev staticcall to senior with a gas cap; ok only for an exactly-32-byte answer.
+    function _probe(bytes4 selector, uint256 arg, bool hasArg) internal view returns (bool ok, uint256 word) {
         address s = address(senior);
         uint256 g = PROBE_GAS;
-        bytes4 sel = IVaultV2.isAdapter.selector;
+        uint256 size = hasArg ? 36 : 4;
         assembly {
             let ptr := mload(0x40)
-            mstore(ptr, sel)
-            mstore(add(ptr, 4), account)
-            ok := staticcall(g, s, ptr, 36, 0, 0)
+            mstore(ptr, selector)
+            mstore(add(ptr, 4), arg)
+            ok := staticcall(g, s, ptr, size, 0, 0)
             if ok {
                 ok := eq(returndatasize(), 32)
                 if ok {
                     returndatacopy(ptr, 0, 32)
-                    ok := eq(mload(ptr), 1)
+                    word := mload(ptr)
                 }
             }
         }
@@ -148,7 +162,8 @@ contract SeniorReceiveGate is Ownable2Step {
     }
 
     /// @dev JuniorVault._expectedSeniorPrice: baseline less the management-fee drift since it, less 1 ppm. Floored at 0
-    ///      (junior's own version would revert there; a gate must not).
+    ///      (junior's own version would revert there; a gate must not). At 0 the price check always passes, i.e. it fails
+    ///      OPEN there; unreachable (needs 10 years of fee drift, or a 100% fee).
     function _expectedPrice() internal view returns (uint256) {
         uint256 base = junior.seniorPriceBase();
         uint256 drift = base * senior.managementFee() * (block.timestamp - junior.seniorBaseTime()) / WAD + base / 1e6;
