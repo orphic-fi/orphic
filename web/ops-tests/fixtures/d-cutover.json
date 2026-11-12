@@ -8,7 +8,7 @@
       "title": "call  setRecipients(address,address,address)",
       "what": "Repoint the old fee router's recipients (senior, v2 junior, treasury).",
       "to": "0xc2d2c5e56798bfd0eec67eec12ddc2b521b1aa37",
-      "data": "0xfcd0251b0000000000000000000000003f7382bd8bfc6c548caa2d7b4dfce628b12a97590000000000000000000000009c265f8fa3cc4ec68a2491c7135a649f2b58269b000000000000000000000000ba08a51bb1bb49e9840eb55511e8880f95306a40",
+      "data": "0xfcd0251b0000000000000000000000003f7382bd8bfc6c548caa2d7b4dfce628b12a9759000000000000000000000000e502ba6d40b3296a6bf709592ae1b74ba6f5a931000000000000000000000000ba08a51bb1bb49e9840eb55511e8880f95306a40",
       "value": "0x0",
       "gas": "0xf775",
       "readbacks": [],
@@ -16,7 +16,7 @@
       "predictedAddress": null,
       "arguments": [
         "0x3F7382bd8BFC6C548CAa2D7B4dfCe628B12A9759",
-        "0x9c265F8FA3CC4ec68a2491C7135A649F2B58269B",
+        "0xe502BA6d40b3296A6bf709592AE1B74Ba6F5a931",
         "0xba08A51bb1BB49E9840Eb55511E8880F95306A40"
       ],
       "needsBigBlock": false
@@ -75,7 +75,7 @@
     {
       "title": "call  snapFelixExposure()",
       "what": "Take the Felix exposure snapshot on the v2 junior.",
-      "to": "0x9c265f8fa3cc4ec68a2491c7135a649f2b58269b",
+      "to": "0xe502ba6d40b3296a6bf709592ae1b74ba6f5a931",
       "data": "0x23ea60f9",
       "value": "0x0",
       "gas": "0xb416e",
@@ -88,7 +88,7 @@
     {
       "title": "call  setDepositsPaused(bool)",
       "what": "Junior deposits paused until the checklist is done.",
-      "to": "0x9c265f8fa3cc4ec68a2491c7135a649f2b58269b",
+      "to": "0xe502ba6d40b3296a6bf709592ae1b74ba6f5a931",
       "data": "0x1c481e2d0000000000000000000000000000000000000000000000000000000000000000",
       "value": "0x0",
       "gas": "0xc104",
@@ -110,23 +110,23 @@
       "label": "senior fee recipient == v2 (phase C done)",
       "to": "0x3F7382bd8BFC6C548CAa2D7B4dfCe628B12A9759",
       "data": "0x6d9a3010",
-      "expect": "0x0000000000000000000000009c265f8fa3cc4ec68a2491c7135a649f2b58269b"
+      "expect": "0x000000000000000000000000e502ba6d40b3296a6bf709592ae1b74ba6f5a931"
     },
     {
       "label": "senior receive gate == new gate",
       "to": "0x3F7382bd8BFC6C548CAa2D7B4dfCe628B12A9759",
       "data": "0x7e729ac4",
-      "expect": "0x0000000000000000000000008bf671db51d28d1ce01b0c002de3bc33573bd8d3"
+      "expect": "0x0000000000000000000000004937314ed838f78e12e234b30ef4fd98b83a39fa"
     },
     {
       "label": "gate lets a fresh account in",
-      "to": "0x8Bf671dB51d28D1Ce01b0C002De3BC33573Bd8D3",
+      "to": "0x4937314Ed838F78e12e234B30eF4Fd98b83A39FA",
       "data": "0x98c9b49c000000000000000000000000000000000000000000000000000000000000beef",
       "expect": "0x0000000000000000000000000000000000000000000000000000000000000001"
     },
     {
       "label": "v2 deposits still paused",
-      "to": "0x9c265F8FA3CC4ec68a2491C7135A649F2B58269B",
+      "to": "0xe502BA6d40b3296A6bf709592AE1B74Ba6F5a931",
       "data": "0x60da3e83",
       "expect": "0x0000000000000000000000000000000000000000000000000000000000000001"
     },
@@ -166,7 +166,7 @@
       "label": "old router.junior == v2",
       "to": "0xC2d2C5e56798Bfd0EEc67EEC12ddC2b521b1aA37",
       "data": "0xeab77ac9",
-      "expect": "0x0000000000000000000000009c265f8fa3cc4ec68a2491c7135a649f2b58269b"
+      "expect": "0x000000000000000000000000e502ba6d40b3296a6bf709592ae1b74ba6f5a931"
     },
     {
       "label": "old router.treasury",
@@ -196,14 +196,20 @@
     },
     {
       "label": "v2 Felix exposure snapshot present",
-      "to": "0x9c265F8FA3CC4ec68a2491C7135A649F2B58269B",
+      "to": "0xe502BA6d40b3296A6bf709592AE1B74Ba6F5a931",
       "data": "0x5b23d3fe0000000000000000000000000000000000000000000000000000000000000000",
       "expect": "0x0000000000000000000000008a862fd6c12f9ad34c9c2ff45ab2b6712e8cea27",
       "word": 0
     },
     {
+      "label": "v2.snapFelixExposure ran in D (felixExpSupply moved past its phase-A value)",
+      "to": "0xe502BA6d40b3296A6bf709592AE1B74Ba6F5a931",
+      "data": "0x1800dcc0",
+      "gte": 316030032503690467599
+    },
+    {
       "label": "v2 deposits OPEN (last step)",
-      "to": "0x9c265F8FA3CC4ec68a2491C7135A649F2B58269B",
+      "to": "0xe502BA6d40b3296A6bf709592AE1B74Ba6F5a931",
       "data": "0x60da3e83",
       "expect": "0x0000000000000000000000000000000000000000000000000000000000000000"
     }
@@ -212,11 +218,11 @@
     "== Logs ==",
     "  verify: ok",
     "==========================",
-    "Estimated max fee per gas: 0.071080498 gwei",
-    "Estimated base fee per gas: 0.010540249 gwei",
-    "Estimated max priority fee per gas: 0.05 gwei",
+    "Estimated max fee per gas: 0.018496461 gwei",
+    "Estimated base fee per gas: 0.00924823 gwei",
+    "Estimated max priority fee per gas: 0.000000001 gwei",
     "Estimated total gas used for script: 831977",
-    "Estimated amount required: 0.000059137339484546 HYPE",
+    "Estimated amount required: 0.000015388630133397 HYPE",
     "=========================="
   ]
 }

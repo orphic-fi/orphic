@@ -3,11 +3,12 @@
 // Check semantics are the same as ops/replay_plan.py run_check:
 //   {to,data,expect}  exact 32-byte-aligned result      {to,data,gte}   integer result >= gte
 //   {to,data,word:i,expect}  32-byte word i equals expect   {codehash:addr,expect}  keccak256(code at addr) equals expect
+//   {codeof:addr|$created,contains:0x<20 bytes>}  the runtime code at addr contains those bytes (a linked library)
 //   {to,data}         result is non-zero
 (function(){
 const TOP=['name','deployer','chainId','script','steps','verify','logs','signer','role','nonce','bigBlocks','waitBeforeSeconds','waitFromPlan','notBeforeCall','precheck'];
 const STEP=['title','what','to','data','value','gas','readbacks','contractName','predictedAddress','arguments','calls','needsBigBlock'];
-const CHECK=['label','to','data','expect','gte','word','codehash'];
+const CHECK=['label','to','data','expect','gte','word','codehash','codeof','contains'];
 const NBC=['to','data','plus','note'];
 const isHex=s=>typeof s==='string'&&/^0x[0-9a-fA-F]*$/.test(s);
 const isAddr=s=>typeof s==='string'&&/^0x[0-9a-fA-F]{40}$/.test(s);
@@ -17,6 +18,12 @@ function validateCheck(c,where,errs,allowCreated){
   if(c===null||typeof c!=='object'||Array.isArray(c)){errs.push(`${where}: check is not an object`);return;}
   for(const k of Object.keys(c))if(!CHECK.includes(k))errs.push(`${where}: unknown check field "${k}"`);
   if(typeof c.label!=='string')errs.push(`${where}: check has no label`);
+  if(c.codeof!==undefined){
+    if(!(isAddr(c.codeof)||(allowCreated&&c.codeof==='$created')))errs.push(`${where}: codeof is not an address`);
+    if(!isHex(c.contains)||c.contains.length!==42)errs.push(`${where}: codeof needs "contains" = 20 bytes`);
+    for(const k of ['to','data','gte','word','expect','codehash'])if(c[k]!==undefined)errs.push(`${where}: codeof cannot be combined with "${k}"`);
+    return;
+  }
   if(c.codehash!==undefined){
     if(!isAddr(c.codehash))errs.push(`${where}: codehash is not an address`);
     if(!isHex(c.expect)||c.expect.length!==66)errs.push(`${where}: codehash needs a 32-byte expect`);
@@ -73,6 +80,10 @@ function validatePlan(p){
 const hexInt=h=>BigInt(h===''||h==='0x'?'0x0':h);
 // one check -> {ok, got}. io: {call(to,data)->hex, getCode(addr)->hex, keccak(hexNo0x)->hex no 0x}. `created` replaces "$created".
 async function evalCheck(c,io,created){
+  if(c.codeof!==undefined){
+    const code=await io.getCode(c.codeof==='$created'?created:c.codeof);
+    return{ok:code.length>2&&code.toLowerCase().includes(c.contains.toLowerCase().slice(2)),got:`${Math.max(0,(code.length-2)/2)} bytes`};
+  }
   if(c.codehash!==undefined){
     const code=await io.getCode(c.codehash);
     const got='0x'+io.keccak(code.slice(2));

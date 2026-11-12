@@ -38,7 +38,7 @@ for(const [name,file] of [...old,...fix]){
 await t('the fixtures exercise every new field (nothing is untested)',()=>{
   for(const k of ['signer','role','nonce','bigBlocks','waitBeforeSeconds','waitFromPlan','precheck'])assert.ok(used.top.has(k),'top '+k);
   assert.ok(used.step.has('needsBigBlock'));
-  for(const k of ['gte','word','codehash'])assert.ok(used.check.has(k),'check '+k);
+  for(const k of ['gte','word','codehash','codeof','contains'])assert.ok(used.check.has(k),'check '+k);
 });
 await t('the keeper settle plan (signer is not the deployer) is refused: the page signs only as the plan deployer',()=>{
   const errs=pc.validatePlan(load(path.join(fixDir,'s-old-settle.json')));
@@ -76,6 +76,14 @@ await t('word compares word i only; a non-zero but different word FAILS',async()
   assert.equal((await pc.evalCheck(c,mkio({[`${A}:0x02`]:word(1)+word(7).slice(2)}))).ok,true);
   assert.equal((await pc.evalCheck(c,mkio({[`${A}:0x02`]:word(7)+word(1).slice(2)}))).ok,false);
   assert.equal((await pc.evalCheck(c,mkio({[`${A}:0x02`]:word(1)+word(8).slice(2)}))).ok,false);
+});
+await t('codeof/contains checks the runtime code for the library address; $created resolves',async()=>{
+  const lib='0x'+'bb'.repeat(20);const code='0x6080'+'bb'.repeat(20)+'00';
+  const c={label:'e',codeof:'$created',contains:lib};
+  assert.equal((await pc.evalCheck(c,mkio({},{[A]:code}),A)).ok,true);
+  assert.equal((await pc.evalCheck(c,mkio({},{[A]:'0x6080'+'cc'.repeat(20)}),A)).ok,false);
+  assert.equal((await pc.evalCheck(c,mkio({},{}),A)).ok,false);
+  assert.ok(pc.validatePlan({...base(),precheck:[{label:'x',codeof:'$created',contains:lib}]}).some(e=>/codeof is not an address/.test(e)),'$created only in step read-backs');
 });
 await t('codehash hashes the code; missing code or another hash FAILS',async()=>{
   const code='0x6001600055';const h='0x'+keccak256(Buffer.from(code.slice(2),'hex'));
