@@ -18,10 +18,7 @@ contract ORPHTest is Test {
     TimelockController treasury;
 
     function setUp() public {
-        vm.setEnv("DEPLOYER", vm.toString(deployer));
-        vm.setEnv("POOL_SEEDER", vm.toString(seeder));
-        vm.setEnv("TREASURY_ADMIN", vm.toString(admin));
-        vm.setEnv("TEAM", vm.toString(team));
+        _env(3 days); // forge's env is process-wide: set DELAY too, test_delayFloor changes it
         vm.recordLogs();
         new DeployORPH().run();
         Vm.Log[] memory logs = vm.getRecordedLogs();
@@ -71,5 +68,27 @@ contract ORPHTest is Test {
         vm.prank(admin);
         treasury.execute(address(orph), 0, data, bytes32(0), bytes32(0));
         assertEq(orph.balanceOf(team), 1e18);
+    }
+
+    /// O4(b): a stray DELAY=0 (or anything under a day) is refused before the broadcast; one day passes.
+    function test_delayFloor() public {
+        DeployORPH d = new DeployORPH();
+        bytes memory refusal = bytes("DELAY below 1 day: a stray 0 would let the admin move the treasury in one block");
+        uint256[2] memory bad = [uint256(0), 1 days - 1];
+        for (uint256 i; i < bad.length; i++) {
+            _env(bad[i]);
+            vm.expectRevert(refusal);
+            d.run();
+        }
+        _env(1 days);
+        d.run(); // passes
+    }
+
+    function _env(uint256 delay) internal {
+        vm.setEnv("DEPLOYER", vm.toString(deployer));
+        vm.setEnv("POOL_SEEDER", vm.toString(seeder));
+        vm.setEnv("TREASURY_ADMIN", vm.toString(admin));
+        vm.setEnv("TEAM", vm.toString(team));
+        vm.setEnv("DELAY", vm.toString(delay));
     }
 }
