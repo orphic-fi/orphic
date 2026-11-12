@@ -28,4 +28,5 @@ export const juniorAbi = [
       { name: "lltv", type: "uint256" },
     ],
   },
+  { type: "function", name: "carryOwed", stateMutability: "view", inputs: [], outputs: [{ name: "", type: "uint256" }] },
 ] as const;

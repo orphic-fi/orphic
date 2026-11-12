@@ -8,7 +8,7 @@ import { buildPlan, validatePlan } from "./exec/plan.js";
 import { executePlan, weeklyClose, type ExecContext } from "./exec/send.js";
 import type { TxSigner } from "./exec/signer.js";
 import { accrueSenior, juniorWeekly, readJuniorStatus, syncSenior, type JuniorCtx } from "./exec/junior.js";
-import { manageJuniorIdle } from "./exec/juniorDeploy.js";
+import { ensureLiquidity, manageJuniorIdle } from "./exec/juniorDeploy.js";
 import { sampleOrphPrice } from "./data/orph.js";
 import { checkSeniorDrift } from "./exec/drift.js";
 import { bookApy, humanSummary, writeReport, type RunReport } from "./report.js";
@@ -147,6 +147,14 @@ export async function run(opts: RunOptions, cfg: SeniorConfig = loadConfig(opts.
     juniorStatus = { enabled: true, note: `junior status read failed: ${(err as Error).message}` };
     warnings.push(juniorStatus.note);
   }
+  // K2, every tick: idle must cover reservedAssets + carryOwed(), else every position is recalled.
+  let juniorLiquidity: RunReport["juniorLiquidity"];
+  try {
+    juniorLiquidity = await ensureLiquidity({ ...jctx, log });
+  } catch (err) {
+    juniorLiquidity = { checked: false, note: `liquidity check failed: ${(err as Error).message}` };
+    warnings.push(juniorLiquidity.note);
+  }
   // Junior settle runs on the first tick after the contract allows it (lastSettle + 7d - 1h), whatever the hour: the
   // seed settle happened on a Sunday evening, so a Sunday-midnight-only window would skip a week. juniorWeekly is a
   // read until settle is due; when due it recalls junior's Felix position and settles.
@@ -162,6 +170,8 @@ export async function run(opts: RunOptions, cfg: SeniorConfig = loadConfig(opts.
   let juniorIdle: RunReport["juniorIdle"];
   if (opts.weekly || juniorWeeklyResult?.settleDue) {
     juniorIdle = { checked: false, action: "skipped", note: "settle tick: idle management deferred to the next hour" };
+  } else if (juniorLiquidity?.short) {
+    juniorIdle = { checked: false, action: "skipped", note: "liquidity recall this tick: idle management deferred to the next hour" };
   } else {
     try {
       juniorIdle = await manageJuniorIdle({ ...jctx, log });
@@ -222,6 +232,7 @@ export async function run(opts: RunOptions, cfg: SeniorConfig = loadConfig(opts.
     juniorAccrue,
     juniorStatus,
     juniorIdle,
+    juniorLiquidity,
     juniorWeekly: juniorWeeklyResult,
     orphPrice,
     drift,

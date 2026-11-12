@@ -53,6 +53,7 @@ const seniorRedeemAbi = parseAbi([
 export interface IdleInputs {
   idle: bigint; // junior USDC balance
   reserved: bigint; // junior.reservedAssets (owed to priced exits)
+  carryOwed: bigint; // junior.carryOwed(): cover still owed to senior; execute() refuses to dip idle below reserved + this
   owedToMaturing: bigint; // USDC owed to exits maturing before the next settle, at today's price
   seniorAssets: bigint; // senior totalAssets
   felixAssets: bigint; // junior's Felix position in USDC
@@ -67,7 +68,7 @@ export type IdleAction =
 
 export function reserveFor(i: IdleInputs): bigint {
   const coverBuffer = (i.seniorAssets * COVER_BUFFER_BPS) / 10_000n;
-  let r = i.reserved + i.owedToMaturing;
+  let r = i.reserved + i.carryOwed + i.owedToMaturing;
   if (coverBuffer > r) r = coverBuffer;
   if (MIN_RESERVE > r) r = MIN_RESERVE;
   return r;
@@ -111,7 +112,10 @@ export async function readIdleInputs(ctx: IdleCtx): Promise<IdleInputs> {
   const c = ctx.client!;
   const junior = ctx.cfg.junior as Address;
   const felix = ctx.cfg.felix.address;
-  const [idle, reserved, pending, pps, seniorAssets, felixShares, felixWithdrawable, allowance] = await Promise.all([
+  // carryOwed does not exist on a pre-fix junior build: no debt there.
+  const carry = c.readContract({ address: junior, abi: juniorAbi, functionName: "carryOwed" }).catch(() => 0n);
+  const [carryOwed, idle, reserved, pending, pps, seniorAssets, felixShares, felixWithdrawable, allowance] = await Promise.all([
+    carry,
     c.readContract({ address: ctx.cfg.usdc, abi: erc20Full, functionName: "balanceOf", args: [junior] }),
     c.readContract({ address: junior, abi: juniorAbi, functionName: "reservedAssets" }),
     c.readContract({ address: junior, abi: juniorAbi, functionName: "pendingExitShares" }),
@@ -125,7 +129,7 @@ export async function readIdleInputs(ctx: IdleCtx): Promise<IdleInputs> {
   // All pending exit shares are treated as maturing before the next settle: the queue is 7 days and settles are
   // weekly, so anything requested by now is owed at the next settle or the one after. Conservative on purpose.
   const owedToMaturing = (pending * pps) / 10n ** 18n / 10n ** 12n;
-  return { idle, reserved, owedToMaturing, seniorAssets, felixAssets, felixWithdrawable, allowance };
+  return { idle, reserved, carryOwed, owedToMaturing, seniorAssets, felixAssets, felixWithdrawable, allowance };
 }
 
 async function execute(ctx: IdleCtx, target: Address, data: Hex): Promise<Hex> {
@@ -303,4 +307,37 @@ export async function recallAll(ctx: IdleCtx, opts: { seniorShares: boolean }): 
   }
   out.note = out.steps.join("; ");
   return out;
+}
+
+export interface LiquidityResult {
+  checked: boolean;
+  idleUsdc?: number;
+  owedUsdc?: number;
+  short?: boolean;
+  recall?: RecallResult;
+  note: string;
+}
+
+/**
+ * K2, every tick: junior's idle USDC must cover what it has priced and promised, `reservedAssets + carryOwed()`
+ * (the same bound execute() enforces). When it does not, recall EVERY position (Felix, every market, junior's own
+ * senior fee shares) so the priced claims and the carried cover are payable.
+ */
+export async function ensureLiquidity(ctx: IdleCtx): Promise<LiquidityResult> {
+  const log = ctx.log ?? (() => undefined);
+  if (isPlaceholder(ctx.cfg.junior) || isPlaceholder(ctx.cfg.vault)) return { checked: false, note: "junior or senior is a placeholder; liquidity check skipped" };
+  if (!ctx.client) return { checked: false, note: "no RPC client; liquidity check skipped" };
+  const junior = ctx.cfg.junior as Address;
+  const c = ctx.client;
+  const [idle, reserved, carry] = await Promise.all([
+    c.readContract({ address: ctx.cfg.usdc, abi: erc20Full, functionName: "balanceOf", args: [junior] }),
+    c.readContract({ address: junior, abi: juniorAbi, functionName: "reservedAssets" }),
+    c.readContract({ address: junior, abi: juniorAbi, functionName: "carryOwed" }).catch(() => 0n),
+  ]);
+  const owed = reserved + carry;
+  const base = { checked: true, idleUsdc: Number(idle) / 1e6, owedUsdc: Number(owed) / 1e6 };
+  if (idle >= owed) return { ...base, short: false, note: `idle ${fmt(idle)} covers reserved + carry ${fmt(owed)}` };
+  log(`junior liquidity: idle ${fmt(idle)} is below reserved + carry ${fmt(owed)}; recalling every position`);
+  const recall = await recallAll(ctx, { seniorShares: true });
+  return { ...base, short: true, recall, note: `idle ${fmt(idle)} below ${fmt(owed)}: ${recall.note}` };
 }
