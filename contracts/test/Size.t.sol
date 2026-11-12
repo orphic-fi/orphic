@@ -51,4 +51,9 @@ contract SizeTest is Test {
     function test_VenueAdminFitsLimits() public {
         _check("VenueAdmin.sol:VenueAdmin");
     }
+
+    /// @dev The launch-day launcher (script 05 deploys it).
+    function test_SeedLauncherFitsLimits() public {
+        _check("SeedLauncher.sol:SeedLauncher");
+    }
 }
