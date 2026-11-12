@@ -29,6 +29,10 @@ export interface Reads {
   juniorIdle: bigint;
   juniorReserved: bigint;
   juniorLastSettle: bigint;
+  /** junior.marketAssets(i) for every registered Morpho market: the shipped keeper never opens one. */
+  juniorMarketAssets: bigint[];
+  /** senior.receiveSharesGate() now. */
+  seniorReceiveSharesGate: Address;
   juniorPaused: boolean;
   juniorTotalAssets: bigint;
   agentGasWei: bigint;
@@ -46,13 +50,20 @@ export interface Fallback {
   reason: string;
 }
 
-export function evaluate(r: Reads, expectedAgent: Address): { findings: Finding[]; fallbacks: Fallback[] } {
+const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000" as Address;
+
+/** `expectedGate` is the senior receive-shares gate the config expects; the zero address while none is wired. */
+export function evaluate(r: Reads, expectedAgent: Address, expectedGate: Address = ZERO_ADDRESS): { findings: Finding[]; fallbacks: Fallback[] } {
   const findings: Finding[] = [];
   const fallbacks: Fallback[] = [];
   const f = (level: Finding["level"], code: string, message: string) => findings.push({ level, code, message });
 
   // Who runs the vaults.
   if (r.juniorAgent.toLowerCase() !== expectedAgent.toLowerCase()) f("alert", "JUNIOR_AGENT", `junior.agent is ${r.juniorAgent}, expected ${expectedAgent}`);
+  if (r.seniorReceiveSharesGate.toLowerCase() !== expectedGate.toLowerCase()) f("alert", "SENIOR_GATE", `senior.receiveSharesGate is ${r.seniorReceiveSharesGate}, expected ${expectedGate}`);
+  r.juniorMarketAssets.forEach((a, i) => {
+    if (a > 0n) f("alert", "JUNIOR_MORPHO_POSITION", `junior holds ${fmt(a)} in Morpho market ${i}; the keeper only uses Felix, so this is not ours`);
+  });
   if (!r.seniorIsAllocatorExpected) f("alert", "SENIOR_ALLOCATOR", `${expectedAgent} is not an allocator on senior`);
   if (r.agentGasWei < MIN_AGENT_GAS_WEI) f("warn", "AGENT_GAS", `agent wallet holds ${(Number(r.agentGasWei) / 1e18).toFixed(4)} HYPE on HyperEVM, below ${Number(MIN_AGENT_GAS_WEI) / 1e18}`);
 
@@ -96,6 +107,10 @@ function fmt(v: bigint): string {
 export async function readAll(cfg: SeniorConfig, client: PublicClient, expectedAgent: Address, now: bigint): Promise<Reads> {
   const senior = cfg.vault as Address;
   const junior = cfg.junior as Address;
+  const marketsLen = await client.readContract({ address: junior, abi: juniorAbi, functionName: "marketsLength" });
+  const marketAssets: bigint[] = [];
+  for (let i = 0n; i < marketsLen; i++) marketAssets.push(await client.readContract({ address: junior, abi: juniorAbi, functionName: "marketAssets", args: [i] }));
+  const gate = await client.readContract({ address: senior, abi: vaultV2Abi, functionName: "receiveSharesGate" });
   const [lastUpdate, totalAssets, isAlloc, juniorAgent, juniorIdle, reserved, lastSettle, paused, juniorTotal, gas, cover, seniorIdle, adaptersLen] = await Promise.all([
     client.readContract({ address: senior, abi: vaultV2Abi, functionName: "lastUpdate" }),
     client.readContract({ address: senior, abi: vaultV2Abi, functionName: "totalAssets" }),
@@ -126,6 +141,8 @@ export async function readAll(cfg: SeniorConfig, client: PublicClient, expectedA
     juniorIdle,
     juniorReserved: reserved,
     juniorLastSettle: lastSettle,
+    juniorMarketAssets: marketAssets,
+    seniorReceiveSharesGate: gate,
     juniorPaused: paused,
     juniorTotalAssets: juniorTotal,
     agentGasWei: gas,
@@ -146,7 +163,8 @@ export async function runWatchdog(opts: { cfg: SeniorConfig; client: PublicClien
   const log = opts.log ?? ((l: string) => console.log(l));
   const now = BigInt(Math.floor((opts.now ?? new Date()).getTime() / 1000));
   const reads = await readAll(opts.cfg, opts.client, opts.expectedAgent, now);
-  const { findings, fallbacks } = evaluate(reads, opts.expectedAgent);
+  const gate = opts.cfg.expectedReceiveSharesGate;
+  const { findings, fallbacks } = evaluate(reads, opts.expectedAgent, gate && !isPlaceholder(gate) ? (gate as Address) : undefined);
   for (const f of findings) log(`${f.level.toUpperCase()} ${f.code}: ${f.message}`);
   if (!findings.length) log("watchdog: every invariant holds");
 
@@ -173,7 +191,7 @@ export async function runWatchdog(opts: { cfg: SeniorConfig; client: PublicClien
   return {
     runAt: new Date(Number(now) * 1000).toISOString(),
     expectedAgent: opts.expectedAgent,
-    reads: Object.fromEntries(Object.entries(reads).map(([k, v]) => [k, typeof v === "bigint" ? v.toString() : v])),
+    reads: Object.fromEntries(Object.entries(reads).map(([k, v]) => [k, typeof v === "bigint" ? v.toString() : Array.isArray(v) ? v.map(String).join(",") : v])),
     findings,
     fallbacks: done,
     alertCount: findings.filter((f) => f.level === "alert").length,

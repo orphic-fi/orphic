@@ -5,6 +5,7 @@ const U = 1_000_000n; // 1 USDC
 const base: IdleInputs = {
   idle: 81n * U,
   reserved: 0n,
+  carryOwed: 0n,
   owedToMaturing: 0n,
   seniorAssets: 316n * U,
   felixAssets: 0n,

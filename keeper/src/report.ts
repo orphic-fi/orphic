@@ -1,8 +1,9 @@
-import type { JuniorIdleResult } from "./exec/juniorDeploy.js";
+import type { JuniorIdleResult, LiquidityResult } from "./exec/juniorDeploy.js";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import type { JuniorStatus, JuniorWeeklyResult, SyncResult } from "./exec/junior.js";
 import type { OrphPriceResult } from "./data/orph.js";
+import type { DistributeResult } from "./exec/router.js";
 import type { DriftResult } from "./exec/drift.js";
 import type { Decision, ExecutionResult, MarketInputs, PlanStep, Proposal, VaultState } from "./types.js";
 
@@ -30,8 +31,12 @@ export interface RunReport {
   weeklyClose?: { emissionsSold: number; accrueTx?: string; note: string };
   juniorSync?: SyncResult;
   juniorAccrue?: SyncResult;
+  juniorSnap?: SyncResult;
+  juniorObserve?: SyncResult;
+  feeDistribute?: DistributeResult;
   juniorStatus?: JuniorStatus;
   juniorIdle?: JuniorIdleResult;
+  juniorLiquidity?: LiquidityResult;
   juniorWeekly?: JuniorWeeklyResult;
   orphPrice?: OrphPriceResult;
   drift?: DriftResult;
@@ -85,9 +90,14 @@ export function humanSummary(report: Omit<RunReport, "summary">): string[] {
   if (report.juniorStatus?.enabled && report.juniorStatus.coverInProgressUsdc !== undefined) out.push(report.juniorStatus.note);
   else if (report.juniorStatus) out.push(`junior: ${report.juniorStatus.note}`);
   if (report.juniorAccrue) out.push(`accrue: ${report.juniorAccrue.note}`);
+  if (report.feeDistribute) out.push(`distribute: ${report.feeDistribute.note}`);
+  if (report.juniorObserve) out.push(`observeSenior: ${report.juniorObserve.note}`);
+  if (report.juniorSnap) out.push(`snapFelixExposure: ${report.juniorSnap.note}`);
   if (report.juniorSync) out.push(`syncSenior: ${report.juniorSync.note}`);
+  if (report.juniorLiquidity?.short) out.push(`junior liquidity: ${report.juniorLiquidity.note}`);
   if (report.juniorWeekly?.warning) out.push(report.juniorWeekly.warning);
   if (report.juniorWeekly) out.push(`junior weekly: ${report.juniorWeekly.note}`);
+  for (const st of report.juniorWeekly?.steps ?? []) out.push(`  settle tick ${st}`);
   if (report.weeklyClose) out.push(`weekly close: ${report.weeklyClose.note}`);
   if (report.orphPrice) {
     out.push(`orph price: ${report.orphPrice.note}`);

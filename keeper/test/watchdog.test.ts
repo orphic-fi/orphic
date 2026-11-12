@@ -15,6 +15,8 @@ const healthy: Reads = {
   juniorIdle: 5n * U,
   juniorReserved: 0n,
   juniorLastSettle: now - 2n * 24n * 3600n,
+  juniorMarketAssets: [0n, 0n, 0n, 0n],
+  seniorReceiveSharesGate: "0x0000000000000000000000000000000000000000",
   juniorPaused: false,
   juniorTotalAssets: 81n * U,
   agentGasWei: 500_000_000_000_000_000n,
@@ -31,6 +33,20 @@ describe("watchdog", () => {
   it("alerts when the roles are not on the expected wallet", () => {
     expect(codes({ ...healthy, juniorAgent: "0x000000000000000000000000000000000000dEaD" })).toContain("JUNIOR_AGENT");
     expect(codes({ ...healthy, seniorIsAllocatorExpected: false })).toContain("SENIOR_ALLOCATOR");
+  });
+  it("alerts on any junior Morpho market position (non-Felix), including dust", () => {
+    expect(codes({ ...healthy, juniorMarketAssets: [0n, 1n, 0n, 0n] })).toEqual(["JUNIOR_MORPHO_POSITION"]);
+    expect(codes({ ...healthy, juniorMarketAssets: [5n * U, 0n, 2n * U, 0n] })).toEqual(["JUNIOR_MORPHO_POSITION", "JUNIOR_MORPHO_POSITION"]);
+  });
+  it("alerts on an agent() change", () => {
+    expect(codes({ ...healthy, juniorAgent: "0x000000000000000000000000000000000000bEEF" })).toEqual(["JUNIOR_AGENT"]);
+  });
+  it("alerts when senior's receiveSharesGate is not the expected one, in both directions", () => {
+    const gate = "0x5000000000000000000000000000000000000005" as const;
+    expect(codes({ ...healthy, seniorReceiveSharesGate: gate })).toEqual(["SENIOR_GATE"]); // none expected, one appeared
+    expect(evaluate({ ...healthy, seniorReceiveSharesGate: gate }, AGENT, gate).findings).toEqual([]);
+    expect(evaluate(healthy, AGENT, gate).findings.map((f) => f.code)).toEqual(["SENIOR_GATE"]); // expected, removed
+    expect(evaluate({ ...healthy, seniorReceiveSharesGate: "0x6000000000000000000000000000000000000006" }, AGENT, gate).findings.map((f) => f.code)).toEqual(["SENIOR_GATE"]); // swapped
   });
   it("treats a missed daily accrue as a dead Rotator and falls back", () => {
     const r = { ...healthy, seniorLastUpdate: now - HEARTBEAT_MAX_AGE - 1n };

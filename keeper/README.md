@@ -108,19 +108,19 @@ Dry-run prints the table and writes `ops/last-plan.json`. Live mode:
 
 `weeklyClose` in `src/exec/send.ts`. Runs when the tick lands in the Sunday 00:xx UTC hour or with `--weekly`. There are no emission positions yet, so it logs that and calls `vault.accrueInterest()` so fees accrue on a fixed schedule (dry-run only logs).
 
-### Junior sleeve (`src/exec/junior.ts`)
+### Junior sleeve (`src/exec/junior.ts`, `juniorDeploy.ts`, `router.ts`)
 
-Hourly, after the allocation step:
+Every tick, after the allocation step (the full schedule and its reasons are in `ops/RUNBOOK.md` 6a):
 
-- `junior.syncSenior()` is called (dry-run logs "would call").
-- `coverInProgress()` on junior and `maxRate()` on senior go into the report together with a human line `cover in progress: X USDC, about H hours to full recognition`, where `H = coverInProgress / (totalAssets * maxRate * 3600 / 1e18)` and 0 when there is no cover. While the senior vault is a placeholder, `totalAssets` comes from the fixture and `maxRate` reads as 0, so H shows as unknown.
+- `feeRouter.distribute()` when the router holds unparked USDC (`NothingToDo` is a skip), then `junior.observeSenior()` when senior's supply is below the recorded minimum, then `junior.snapFelixExposure()` (skipped while a Felix loss is booked and unbilled, or senior is unfunded), then `junior.syncSenior()` when senior's supply moved. Dry-run logs "would call".
+- Liquidity: if junior idle USDC < `reservedAssets + carryOwed()`, every position is recalled through `junior.execute`: Felix, every Morpho market and junior's own senior fee shares. Surplus idle above `reserve` is deployed to Felix, where `reserve` is the max of (`reservedAssets + carryOwed()` + exits maturing before the next settle), 1% of senior assets and 5 USDC.
+- `coverInProgress()` on junior and `maxRate()` on senior go into the report with `cover in progress: X USDC, about H hours to full recognition`.
 
-Weekly, before the senior close logic:
+Settle tick (the first tick within 3,600 s of `lastSettle + 6 d 23 h`, and every tick after until settled): touch Felix (`execute(Felix.withdraw(0, junior, junior))`), recall every Felix and market position to idle, no redeploys, then `settle()` at the due second when it is at most 15 minutes away, else on the next tick (a `lastSettle` that moved meanwhile counts as done). `distribute` and the snapshot wait until after the settle. A failed touch, recall, wait or settle is an `error` and an `alerts` entry (red run), the settle is not sent after a failed touch or recall, and nothing is redeployed. The report lists the steps in order under `juniorWeekly.steps`.
 
-- Maturity check: `owed = pendingExitShares() * pricePerShare() / 1e18 / 1e12` (USDC base units). If `USDC.balanceOf(junior) < owed` the keeper logs a WARNING with the shortfall. Bringing funds back through `junior.execute` is not implemented yet; the warning is the deliverable.
-- `junior.settle()` is called when `block.timestamp >= lastSettle() + 7 days - 1 hour` (keeper wall clock in place of block time; the contract enforces the real bound).
+Weekly maturity check: `owed = pendingExitShares() * pricePerShare() / 1e18 / 1e12`; a shortfall of junior idle is a WARNING.
 
-Both steps are skipped while `junior` is `0xTODO`.
+All of this is skipped while `junior` is `0xTODO`; the snapshot, observe and carry reads skip with a note on a junior build that predates audit fixes 1/8 to 4/8. The watchdog (`src/watchdog.ts`) additionally alerts on any junior Morpho-market position, an `agent()` change and a senior `receiveSharesGate` that differs from `expectedReceiveSharesGate` in the config.
 
 ### ORPH price record (`src/data/orph.ts`, `src/engine/twap.ts`)
 
@@ -196,7 +196,7 @@ What an allocator technically can do, and the keeper never does:
 - On Vault V2 an allocator CAN call `setMaxRate` and `setLiquidityAdapterAndData` instantly, with no timelock. The keeper has no code path that calls either; its ABI fragments do not even include them. It only reads them for the drift check above.
 - Because of this, a leaked allocator key could change the rate cap or the liquidity adapter, or churn allocations within caps. That is the blast radius. It cannot take funds out of the vault.
 - Mitigation by design: `setIsAllocator` is not timelocked, so the Safe (curator) revokes a compromised allocator instantly. The drift check exists to make that call quickly.
-- On junior it only calls the permissionless `syncSenior()` and `settle()`.
+- On junior it calls the permissionless `syncSenior()`, `observeSenior()`, `settle()` and `FeeRouter.distribute()`, plus, as the agent, `snapFelixExposure()` and allowlisted `execute` calls (Felix deposit/withdraw, Morpho withdraw and senior redeem to recall, with junior pinned as receiver).
 
 ## Layout
 
@@ -214,7 +214,8 @@ src/engine/irm.ts       Adaptive Curve IRM approximation
 src/engine/allocate.ts  proposal and move decision
 src/exec/plan.ts        plan sequencing and validation
 src/exec/send.ts        dry-run and live execution, weekly close
-src/exec/junior.ts      junior syncSenior, cover status, maturity check and settle
+src/exec/junior.ts      junior syncSenior, observeSenior, snapFelixExposure, cover status, settle tick
+src/exec/router.ts      FeeRouter.distribute
 src/exec/drift.ts       senior maxRate and liquidityAdapter drift check (report only)
 src/report.ts           report writer and summary
 src/index.ts            tick entry point
