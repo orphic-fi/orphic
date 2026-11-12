@@ -79,6 +79,17 @@ Read-back: `managementFeeRecipient() == JUNIOR`, `managementFee() == 158548959`,
 
 After step 3, caps and adapters cannot change for 3 days. That is the point.
 
+## 3a. Senior receive-shares gate (curator; audit fixes 4/8, wired in 7/8)
+Not part of Sunday's launch script. Needs the senior curator key (hardware wallet) and a 3-day wait. Closes C7, C3b, C3 late buyer; see LIMITATIONS L15 and DECISIONS D43 for what it costs.
+
+1. Deploy `SeniorReceiveGate(senior, junior, owner)` where `owner` is the senior curator. The constructor reverts `WrongPair` unless `junior.senior() == senior`.
+2. Read back on the gate: `senior()`, `junior()`, `owner()`, `maxUnrecognised() == 10000000`, and `canReceiveShares(junior) == true`, `canReceiveShares(<a fresh address>) == true` in normal times.
+3. Curator: `senior.submit(abi.encodeCall(setReceiveSharesGate, (gate)))` (the timelock on that selector is 3 days). Do NOT execute early.
+4. After 3 days (and not while a cover or loss is in progress, so the first honest deposit is not refused): `senior.setReceiveSharesGate(gate)`. Read back `receiveSharesGate() == gate`, then run one small senior deposit and `accrueInterest()` and confirm junior's fee shares still mint.
+5. Gate owner: `setAllowed(keeper, true)` ONLY if the keeper ever receives senior shares (it should not). Allowlist the Safe/treasury only if it must receive shares during a window. NEVER allowlist a pooled holder (a wrapper, a lending market, a router, a vault): it would let every depositor behind it buy during a loss or cover window and defeat the gate. Fee recipients and adapters are exempt automatically.
+6. Abort: the curator can `submit(setReceiveSharesGate(0))` (3 days) to remove it; `revoke` cancels a pending set.
+Expect: after any loss, depositors see `CannotReceiveShares` until junior settles and the cover is recognised (2 to 4 days). Redemptions are never affected.
+
 ## 4. Sunday: dry-run a settle on a fork
 I run `forge test --match-contract DeployTest` against the live addresses (env `SENIOR`, `JUNIOR` override) and the junior test suite pointed at the deployed junior: deposit, agent supply, warp 7 days, `settle()`, exit, claim. Results into the log.
 
