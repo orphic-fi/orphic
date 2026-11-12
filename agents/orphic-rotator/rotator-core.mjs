@@ -14005,6 +14005,13 @@ var vaultV2Abi = [
     stateMutability: "view",
     inputs: [],
     outputs: [{ name: "", type: "address" }]
+  },
+  {
+    type: "function",
+    name: "receiveSharesGate",
+    stateMutability: "view",
+    inputs: [],
+    outputs: [{ name: "", type: "address" }]
   }
 ];
 
@@ -14772,7 +14779,39 @@ var juniorAbi = [
   { type: "function", name: "seniorSupplyBase", stateMutability: "view", inputs: [], outputs: [{ name: "", type: "uint256" }] },
   { type: "function", name: "pendingExitShares", stateMutability: "view", inputs: [], outputs: [{ name: "", type: "uint256" }] },
   { type: "function", name: "pricePerShare", stateMutability: "view", inputs: [], outputs: [{ name: "", type: "uint256" }] },
-  { type: "function", name: "lastSettle", stateMutability: "view", inputs: [], outputs: [{ name: "", type: "uint256" }] }
+  { type: "function", name: "lastSettle", stateMutability: "view", inputs: [], outputs: [{ name: "", type: "uint256" }] },
+  { type: "function", name: "marketsLength", stateMutability: "view", inputs: [], outputs: [{ name: "", type: "uint256" }] },
+  { type: "function", name: "marketAssets", stateMutability: "view", inputs: [{ name: "i", type: "uint256" }], outputs: [{ name: "", type: "uint256" }] },
+  {
+    type: "function",
+    name: "markets",
+    stateMutability: "view",
+    inputs: [{ name: "", type: "uint256" }],
+    outputs: [
+      { name: "loanToken", type: "address" },
+      { name: "collateralToken", type: "address" },
+      { name: "oracle", type: "address" },
+      { name: "irm", type: "address" },
+      { name: "lltv", type: "uint256" }
+    ]
+  },
+  { type: "function", name: "carryOwed", stateMutability: "view", inputs: [], outputs: [{ name: "", type: "uint256" }] },
+  { type: "function", name: "snapFelixExposure", stateMutability: "nonpayable", inputs: [], outputs: [] },
+  { type: "function", name: "felixExpSupply", stateMutability: "view", inputs: [], outputs: [{ name: "", type: "uint256" }] },
+  {
+    type: "function",
+    name: "felixExp",
+    stateMutability: "view",
+    inputs: [{ name: "", type: "uint256" }],
+    outputs: [
+      { name: "vault", type: "address" },
+      { name: "lostBase", type: "uint96" },
+      { name: "fraction", type: "uint128" },
+      { name: "assetsRef", type: "uint128" }
+    ]
+  },
+  { type: "function", name: "observeSenior", stateMutability: "nonpayable", inputs: [], outputs: [] },
+  { type: "function", name: "seniorSupplyMin", stateMutability: "view", inputs: [], outputs: [{ name: "", type: "uint256" }] }
 ];
 
 // src/exec/juniorDeploy.ts
@@ -14791,9 +14830,17 @@ var erc4626 = parseAbi([
   "function balanceOf(address) view returns (uint256)",
   "function convertToAssets(uint256 shares) view returns (uint256)"
 ]);
+var morphoWithdrawAbi = parseAbi([
+  "function position(bytes32 id, address user) view returns (uint256 supplyShares, uint128 borrowShares, uint128 collateral)",
+  "function withdraw((address loanToken, address collateralToken, address oracle, address irm, uint256 lltv) marketParams, uint256 assets, uint256 shares, address onBehalf, address receiver) returns (uint256, uint256)"
+]);
+var seniorRedeemAbi = parseAbi([
+  "function balanceOf(address) view returns (uint256)",
+  "function redeem(uint256 shares, address receiver, address owner) returns (uint256)"
+]);
 function reserveFor(i) {
   const coverBuffer = i.seniorAssets * COVER_BUFFER_BPS / 10000n;
-  let r = i.reserved + i.owedToMaturing;
+  let r = i.reserved + i.carryOwed + i.owedToMaturing;
   if (coverBuffer > r) r = coverBuffer;
   if (MIN_RESERVE > r) r = MIN_RESERVE;
   return r;
@@ -14818,7 +14865,9 @@ async function readIdleInputs(ctx) {
   const c = ctx.client;
   const junior = ctx.cfg.junior;
   const felix = ctx.cfg.felix.address;
-  const [idle, reserved, pending, pps, seniorAssets, felixShares, felixWithdrawable, allowance] = await Promise.all([
+  const carry = c.readContract({ address: junior, abi: juniorAbi, functionName: "carryOwed" }).catch(() => 0n);
+  const [carryOwed, idle, reserved, pending, pps, seniorAssets, felixShares, felixWithdrawable, allowance] = await Promise.all([
+    carry,
     c.readContract({ address: ctx.cfg.usdc, abi: erc20Full, functionName: "balanceOf", args: [junior] }),
     c.readContract({ address: junior, abi: juniorAbi, functionName: "reservedAssets" }),
     c.readContract({ address: junior, abi: juniorAbi, functionName: "pendingExitShares" }),
@@ -14830,7 +14879,7 @@ async function readIdleInputs(ctx) {
   ]);
   const felixAssets = felixShares > 0n ? await c.readContract({ address: felix, abi: erc4626, functionName: "convertToAssets", args: [felixShares] }) : 0n;
   const owedToMaturing = pending * pps / 10n ** 18n / 10n ** 12n;
-  return { idle, reserved, owedToMaturing, seniorAssets, felixAssets, felixWithdrawable, allowance };
+  return { idle, reserved, carryOwed, owedToMaturing, seniorAssets, felixAssets, felixWithdrawable, allowance };
 }
 async function execute(ctx, target, data) {
   const calldata = encodeFunctionData({ abi: juniorAbi, functionName: "execute", args: [target, data] });
@@ -14908,11 +14957,103 @@ async function recallFromFelix(ctx) {
   log(`junior recall: ${verb}; sent ${hash2}`);
   return { txHash: hash2, note: verb };
 }
+async function touchFelix(ctx) {
+  const log = ctx.log ?? (() => void 0);
+  const junior = ctx.cfg.junior;
+  const felix = ctx.cfg.felix.address;
+  if (ctx.dryRun) {
+    log("junior touch: would call Felix.withdraw(0, junior, junior) through junior.execute so a pending bad debt is booked (dry-run)");
+    return { note: "dry-run: would touch Felix (withdraw 0)" };
+  }
+  const hash2 = await execute(ctx, felix, encodeFunctionData({ abi: erc4626, functionName: "withdraw", args: [0n, junior, junior] }));
+  log(`junior touch: Felix accrual run; sent ${hash2}`);
+  return { txHash: hash2, note: "Felix touched (withdraw 0)" };
+}
+async function recallAll(ctx, opts) {
+  const log = ctx.log ?? (() => void 0);
+  const out = { txHashes: [], steps: [], errors: [], note: "" };
+  if (!ctx.client) return { ...out, note: "no RPC client; recall skipped" };
+  const c = ctx.client;
+  const junior = ctx.cfg.junior;
+  const step = async (venue, fn) => {
+    try {
+      const r = await fn();
+      if (r.txHash) out.txHashes.push(r.txHash);
+      out.steps.push(`${venue}: ${r.note}`);
+    } catch (err) {
+      const m = `${venue}: recall failed: ${err.message.split("\n")[0]}`;
+      out.errors.push(m);
+      out.steps.push(m);
+      log(`junior recall: ${m}`);
+    }
+  };
+  await step("Felix", () => recallFromFelix(ctx));
+  const n = Number(await c.readContract({ address: junior, abi: juniorAbi, functionName: "marketsLength" }));
+  for (let i = 0; i < n; i++) {
+    await step(`market ${i}`, async () => {
+      const assets = await c.readContract({ address: junior, abi: juniorAbi, functionName: "marketAssets", args: [BigInt(i)] });
+      if (assets === 0n) return { note: "no position" };
+      const [loanToken, collateralToken, oracle, irm, lltv] = await c.readContract({ address: junior, abi: juniorAbi, functionName: "markets", args: [BigInt(i)] });
+      const mp = { loanToken, collateralToken, oracle, irm, lltv };
+      const id = keccak256(encodeMarketParams(mp));
+      const [position, m] = await Promise.all([
+        c.readContract({ address: ctx.cfg.morphoBlue, abi: morphoWithdrawAbi, functionName: "position", args: [id, junior] }),
+        c.readContract({ address: ctx.cfg.morphoBlue, abi: morphoBlueAbi, functionName: "market", args: [id] })
+      ]);
+      const liquidity = m[0] - m[2];
+      const all = assets <= liquidity;
+      const amount = all ? assets : liquidity;
+      const verb = `recall ${(Number(amount) / 1e6).toFixed(2)} of ${(Number(assets) / 1e6).toFixed(2)} USDC from market ${i}`;
+      if (amount === 0n) return { note: "market illiquid; nothing recalled" };
+      if (ctx.dryRun) return { note: `dry-run: would ${verb}` };
+      const data = encodeFunctionData({
+        abi: morphoWithdrawAbi,
+        functionName: "withdraw",
+        args: [mp, all ? 0n : amount, all ? position[0] : 0n, junior, junior]
+      });
+      const hash2 = await sendCall(ctx, junior, encodeFunctionData({ abi: juniorAbi, functionName: "execute", args: [ctx.cfg.morphoBlue, data] }), `junior.execute -> morpho withdraw ${i}`);
+      return { txHash: hash2, note: verb };
+    });
+  }
+  if (opts.seniorShares && !isPlaceholder(ctx.cfg.vault)) {
+    const senior = ctx.cfg.vault;
+    await step("senior fee shares", async () => {
+      const shares = await c.readContract({ address: senior, abi: seniorRedeemAbi, functionName: "balanceOf", args: [junior] });
+      if (shares === 0n) return { note: "no senior shares held" };
+      if (ctx.dryRun) return { note: `dry-run: would redeem ${shares.toString()} senior shares` };
+      const hash2 = await execute(ctx, senior, encodeFunctionData({ abi: seniorRedeemAbi, functionName: "redeem", args: [shares, junior, junior] }));
+      return { txHash: hash2, note: `redeemed ${shares.toString()} senior shares` };
+    });
+  }
+  out.note = out.steps.join("; ");
+  return out;
+}
+async function ensureLiquidity(ctx) {
+  const log = ctx.log ?? (() => void 0);
+  if (isPlaceholder(ctx.cfg.junior) || isPlaceholder(ctx.cfg.vault)) return { checked: false, note: "junior or senior is a placeholder; liquidity check skipped" };
+  if (!ctx.client) return { checked: false, note: "no RPC client; liquidity check skipped" };
+  const junior = ctx.cfg.junior;
+  const c = ctx.client;
+  const [idle, reserved, carry] = await Promise.all([
+    c.readContract({ address: ctx.cfg.usdc, abi: erc20Full, functionName: "balanceOf", args: [junior] }),
+    c.readContract({ address: junior, abi: juniorAbi, functionName: "reservedAssets" }),
+    c.readContract({ address: junior, abi: juniorAbi, functionName: "carryOwed" }).catch(() => 0n)
+  ]);
+  const owed = reserved + carry;
+  const base = { checked: true, idleUsdc: Number(idle) / 1e6, owedUsdc: Number(owed) / 1e6 };
+  if (idle >= owed) return { ...base, short: false, note: `idle ${fmt2(idle)} covers reserved + carry ${fmt2(owed)}` };
+  log(`junior liquidity: idle ${fmt2(idle)} is below reserved + carry ${fmt2(owed)}; recalling every position`);
+  const recall = await recallAll(ctx, { seniorShares: true });
+  return { ...base, short: true, recall, note: `idle ${fmt2(idle)} below ${fmt2(owed)}: ${recall.note}` };
+}
 
 // src/exec/junior.ts
 var WAD3 = 10n ** 18n;
 var SETTLE_PERIOD = 7n * 24n * 3600n;
 var SETTLE_GRACE = 3600n;
+var SETTLE_INTERVAL = SETTLE_PERIOD - SETTLE_GRACE;
+var SETTLE_LEAD = 3600n;
+var SETTLE_MAX_WAIT = 1200n;
 function hoursToRecognition(coverInProgress, totalAssets, maxRate) {
   if (coverInProgress <= 0n) return 0;
   const perHour = totalAssets * maxRate * 3600n / WAD3;
@@ -14925,8 +15066,8 @@ function owedToExits(pendingExitShares, pricePerShare) {
 function exitShortfall(juniorIdle, owed) {
   return owed > juniorIdle ? owed - juniorIdle : 0n;
 }
-function settleDue(nowTs, lastSettle) {
-  return nowTs >= lastSettle + SETTLE_PERIOD - SETTLE_GRACE;
+function settleTickDue(nowTs, lastSettle) {
+  return nowTs + SETTLE_LEAD >= lastSettle + SETTLE_INTERVAL;
 }
 function juniorEnabled(cfg) {
   return !isPlaceholder(cfg.junior);
@@ -14965,6 +15106,28 @@ function coverLine(coverUsdc, hours) {
 }
 async function send(ctx, functionName) {
   return sendCall(ctx, ctx.cfg.junior, encodeFunctionData({ abi: juniorAbi, functionName }), functionName);
+}
+async function observeSenior(ctx) {
+  const log = ctx.log ?? ((l) => console.log(l));
+  if (!juniorEnabled(ctx.cfg) || isPlaceholder(ctx.cfg.vault) || !ctx.client) return { called: false, note: "placeholder or no client; observeSenior skipped" };
+  let min;
+  try {
+    min = await ctx.client.readContract({ address: ctx.cfg.junior, abi: juniorAbi, functionName: "seniorSupplyMin" });
+  } catch {
+    return { called: false, note: "junior has no seniorSupplyMin (pre-fix build); observeSenior skipped" };
+  }
+  const supply = await ctx.client.readContract({ address: ctx.cfg.vault, abi: vaultV2Abi, functionName: "totalSupply" });
+  if (supply >= min) {
+    log(`observeSenior: senior supply ${supply} not below the recorded minimum ${min}, nothing to record`);
+    return { called: false, note: "supply not below the recorded minimum; nothing to observe" };
+  }
+  if (ctx.dryRun) {
+    log("observeSenior: would call junior.observeSenior() (dry-run)");
+    return { called: false, note: "dry-run: observeSenior not sent" };
+  }
+  const hash2 = await sendCall(ctx, ctx.cfg.junior, encodeFunctionData({ abi: juniorAbi, functionName: "observeSenior" }), "observeSenior");
+  log(`observeSenior sent ${hash2}`);
+  return { called: true, txHash: hash2, note: "observeSenior sent" };
 }
 async function syncSenior(ctx) {
   const log = ctx.log ?? ((l) => console.log(l));
@@ -15019,6 +15182,47 @@ async function accrueSenior(ctx) {
   log(`accrue: senior.accrueInterest() sent ${hash2} (${d.reason})`);
   return { called: true, txHash: hash2, note: `accrueInterest sent: ${d.reason}` };
 }
+var PRICE_UNIT = 10n ** 24n;
+var MAX_FELIX_ENTRIES = 32;
+var lostAssetsAbi = parseAbi(["function lostAssets() view returns (uint256)"]);
+function felixLossUnbilled(entries) {
+  return entries.some((e) => e.lost > e.lostBase && (e.lost - e.lostBase) * e.fraction / PRICE_UNIT * 1000000n > e.assetsRef);
+}
+async function snapFelix(ctx) {
+  const log = ctx.log ?? ((l) => console.log(l));
+  if (!juniorEnabled(ctx.cfg) || isPlaceholder(ctx.cfg.vault) || !ctx.client) return { called: false, note: "placeholder or no client; Felix snapshot skipped" };
+  const c = ctx.client;
+  const junior = ctx.cfg.junior;
+  const skip = (note) => {
+    log(`snapFelixExposure: skip (${note})`);
+    return { called: false, note };
+  };
+  try {
+    await c.readContract({ address: junior, abi: juniorAbi, functionName: "felixExpSupply" });
+  } catch {
+    return skip("junior has no snapFelixExposure (pre-fix build)");
+  }
+  if (await c.readContract({ address: ctx.cfg.vault, abi: vaultV2Abi, functionName: "totalSupply" }) === 0n) return skip("senior is not funded yet");
+  const entries = [];
+  for (let i = 0; i < MAX_FELIX_ENTRIES; i++) {
+    let e;
+    try {
+      e = await c.readContract({ address: junior, abi: juniorAbi, functionName: "felixExp", args: [BigInt(i)] });
+    } catch {
+      break;
+    }
+    const lost = await c.readContract({ address: e[0], abi: lostAssetsAbi, functionName: "lostAssets" });
+    entries.push({ lostBase: e[1], fraction: e[2], assetsRef: e[3], lost });
+  }
+  if (felixLossUnbilled(entries)) return skip("a Felix loss is booked and unbilled; waiting for the settle that bills it");
+  if (ctx.dryRun) {
+    log("snapFelixExposure: would call junior.snapFelixExposure() (dry-run)");
+    return { called: false, note: "dry-run: snapFelixExposure not sent" };
+  }
+  const hash2 = await sendCall(ctx, junior, encodeFunctionData({ abi: juniorAbi, functionName: "snapFelixExposure" }), "snapFelixExposure");
+  log(`snapFelixExposure sent ${hash2}`);
+  return { called: true, txHash: hash2, note: "snapFelixExposure sent" };
+}
 async function juniorWeekly(ctx) {
   const log = ctx.log ?? ((l) => console.log(l));
   if (!juniorEnabled(ctx.cfg)) {
@@ -15053,26 +15257,88 @@ async function juniorWeekly(ctx) {
     log(`junior exits covered: owed ${result.owedUsdc} USDC, idle ${result.juniorIdleUsdc} USDC`);
   }
   const nowTs = ctx.nowTs ?? BigInt(Math.floor(Date.now() / 1e3));
-  result.settleDue = settleDue(nowTs, lastSettle);
+  result.settleDue = settleTickDue(nowTs, lastSettle);
   if (!result.settleDue) {
     result.note = `settle not due (lastSettle ${lastSettle})`;
     log(`junior weekly: ${result.note}`);
     return result;
   }
+  const dueTs = lastSettle + SETTLE_INTERVAL;
+  const steps = [];
+  result.steps = steps;
+  const sctx = { cfg: ctx.cfg, dryRun: ctx.dryRun, client: ctx.client, signer: ctx.signer, agentPrivateKey: ctx.agentPrivateKey, log };
   if (!isPlaceholder(ctx.cfg.vault)) {
-    const recall = await recallFromFelix({ cfg: ctx.cfg, dryRun: ctx.dryRun, client: ctx.client, signer: ctx.signer, agentPrivateKey: ctx.agentPrivateKey, log });
+    const touch = await touchFelix(sctx);
+    steps.push(`1 touch: ${touch.note}`);
+    const recall = await recallAll(sctx, { seniorShares: false });
+    steps.push(`2 recall: ${recall.note}`);
     result.recall = recall.note;
-    if (recall.txHash) result.recallTx = recall.txHash;
+    if (recall.txHashes.length) result.recallTx = recall.txHashes[recall.txHashes.length - 1];
+    if (recall.errors.length) throw new Error(`settle aborted, recall failed: ${recall.errors.join("; ")}`);
   }
-  if (ctx.dryRun) {
-    result.note = "dry-run: settle not sent";
-    log("junior weekly: would call junior.settle() (dry-run)");
+  const wait2 = dueTs - nowTs;
+  if (wait2 > SETTLE_MAX_WAIT) {
+    steps.push(`3 settle: due in ${wait2}s, more than ${SETTLE_MAX_WAIT}s away; the next tick settles`);
+    result.note = `recalled; settle due in ${wait2}s, next tick settles`;
+    log(`junior weekly: ${result.note}`);
     return result;
   }
+  if (ctx.dryRun) {
+    steps.push(`3 settle: would wait ${wait2 > 0n ? wait2 : 0n}s for the due second, then call junior.settle() (dry-run)`);
+    result.note = "dry-run: settle not sent";
+    log("junior weekly: would call junior.settle() at the due second (dry-run)");
+    return result;
+  }
+  const sleep = ctx.sleep ?? ((ms) => new Promise((r) => setTimeout(r, ms)));
+  const giveUp = Date.now() + Number(SETTLE_MAX_WAIT + 120n) * 1e3;
+  for (; ; ) {
+    const chainTs = (await ctx.client.getBlock()).timestamp;
+    if (chainTs >= dueTs) break;
+    if (!ctx.sleep && Date.now() > giveUp) throw new Error("chain time did not reach the settle due second; the next tick settles");
+    await sleep(Math.min(Number(dueTs - chainTs), 5) * 1e3);
+  }
   result.settleTx = await send(ctx, "settle");
+  steps.push("3 settle: sent at the due second");
   result.note = "settle sent";
   log(`junior settle sent ${result.settleTx}`);
   return result;
+}
+
+// src/abi/feeRouter.ts
+var feeRouterAbi = [
+  { type: "function", name: "distribute", stateMutability: "nonpayable", inputs: [], outputs: [] },
+  { type: "function", name: "totalParked", stateMutability: "view", inputs: [{ name: "token", type: "address" }], outputs: [{ name: "", type: "uint256" }] }
+];
+
+// src/exec/router.ts
+async function distributeFees(ctx) {
+  const log = ctx.log ?? (() => void 0);
+  const router = ctx.cfg.feeRouter;
+  if (isPlaceholder(router)) return { called: false, note: "feeRouter is not configured; skipped" };
+  if (!ctx.client) return { called: false, note: "no RPC client; distribute skipped" };
+  const to = router;
+  const [bal, parked] = await Promise.all([
+    ctx.client.readContract({ address: ctx.cfg.usdc, abi: erc20Abi, functionName: "balanceOf", args: [to] }),
+    ctx.client.readContract({ address: to, abi: feeRouterAbi, functionName: "totalParked", args: [ctx.cfg.usdc] })
+  ]);
+  const unparked = bal > parked ? bal - parked : 0n;
+  const unparkedUsdc = Number(unparked) / 1e6;
+  if (unparked === 0n) {
+    log("distribute: router holds no unparked USDC, nothing to do");
+    return { called: false, unparkedUsdc, note: "no unparked USDC; nothing to do" };
+  }
+  if (ctx.dryRun) {
+    log(`distribute: would call feeRouter.distribute() for ${unparkedUsdc} USDC (dry-run)`);
+    return { called: false, unparkedUsdc, note: `dry-run: would distribute ${unparkedUsdc} USDC` };
+  }
+  try {
+    const hash2 = await sendCall(ctx, to, encodeFunctionData({ abi: feeRouterAbi, functionName: "distribute" }), "distribute");
+    log(`distribute: ${unparkedUsdc} USDC split; sent ${hash2}`);
+    return { called: true, txHash: hash2, unparkedUsdc, note: `distributed ${unparkedUsdc} USDC` };
+  } catch (err) {
+    if (/NothingToDo/.test(err.message)) return { called: false, unparkedUsdc, note: "NothingToDo (flushed by someone else); skipped" };
+    throw err;
+  }
 }
 
 // src/data/orph.ts
@@ -15301,9 +15567,14 @@ function humanSummary(report) {
   if (report.juniorStatus?.enabled && report.juniorStatus.coverInProgressUsdc !== void 0) out.push(report.juniorStatus.note);
   else if (report.juniorStatus) out.push(`junior: ${report.juniorStatus.note}`);
   if (report.juniorAccrue) out.push(`accrue: ${report.juniorAccrue.note}`);
+  if (report.feeDistribute) out.push(`distribute: ${report.feeDistribute.note}`);
+  if (report.juniorObserve) out.push(`observeSenior: ${report.juniorObserve.note}`);
+  if (report.juniorSnap) out.push(`snapFelixExposure: ${report.juniorSnap.note}`);
   if (report.juniorSync) out.push(`syncSenior: ${report.juniorSync.note}`);
+  if (report.juniorLiquidity?.short) out.push(`junior liquidity: ${report.juniorLiquidity.note}`);
   if (report.juniorWeekly?.warning) out.push(report.juniorWeekly.warning);
   if (report.juniorWeekly) out.push(`junior weekly: ${report.juniorWeekly.note}`);
+  for (const st of report.juniorWeekly?.steps ?? []) out.push(`  settle tick ${st}`);
   if (report.weeklyClose) out.push(`weekly close: ${report.weeklyClose.note}`);
   if (report.orphPrice) {
     out.push(`orph price: ${report.orphPrice.note}`);
@@ -15406,6 +15677,27 @@ async function run(opts, cfg = loadConfig(opts.configPath), deps = {}) {
     juniorAccrue = { called: false, note: `accrue failed: ${err.message}` };
     log(juniorAccrue.note);
   }
+  let feeDistribute;
+  try {
+    feeDistribute = await distributeFees(jctx);
+  } catch (err) {
+    feeDistribute = { called: false, note: `distribute failed: ${err.message}` };
+    log(feeDistribute.note);
+  }
+  let juniorObserve;
+  try {
+    juniorObserve = await observeSenior(jctx);
+  } catch (err) {
+    juniorObserve = { called: false, note: `observeSenior failed: ${err.message}` };
+    log(juniorObserve.note);
+  }
+  let juniorSnap;
+  try {
+    juniorSnap = await snapFelix(jctx);
+  } catch (err) {
+    juniorSnap = { called: false, note: `snapFelixExposure failed: ${err.message}` };
+    log(juniorSnap.note);
+  }
   try {
     juniorSync = await syncSenior(jctx);
   } catch (err) {
@@ -15418,6 +15710,13 @@ async function run(opts, cfg = loadConfig(opts.configPath), deps = {}) {
     juniorStatus = { enabled: true, note: `junior status read failed: ${err.message}` };
     warnings.push(juniorStatus.note);
   }
+  let juniorLiquidity;
+  try {
+    juniorLiquidity = await ensureLiquidity({ ...jctx, log });
+  } catch (err) {
+    juniorLiquidity = { checked: false, note: `liquidity check failed: ${err.message}` };
+    warnings.push(juniorLiquidity.note);
+  }
   let juniorWeeklyResult;
   try {
     juniorWeeklyResult = await juniorWeekly(jctx);
@@ -15428,6 +15727,8 @@ async function run(opts, cfg = loadConfig(opts.configPath), deps = {}) {
   let juniorIdle;
   if (opts.weekly || juniorWeeklyResult?.settleDue) {
     juniorIdle = { checked: false, action: "skipped", note: "settle tick: idle management deferred to the next hour" };
+  } else if (juniorLiquidity?.short) {
+    juniorIdle = { checked: false, action: "skipped", note: "liquidity recall this tick: idle management deferred to the next hour" };
   } else {
     try {
       juniorIdle = await manageJuniorIdle({ ...jctx, log });
@@ -15480,8 +15781,12 @@ async function run(opts, cfg = loadConfig(opts.configPath), deps = {}) {
     weeklyClose: weekly,
     juniorSync,
     juniorAccrue,
+    juniorSnap,
+    juniorObserve,
+    feeDistribute,
     juniorStatus,
     juniorIdle,
+    juniorLiquidity,
     juniorWeekly: juniorWeeklyResult,
     orphPrice,
     drift,
