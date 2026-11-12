@@ -87,6 +87,7 @@ contract SeedPoolTest is Test, Addresses {
         (, spent, hype) = l.seed(key, sqrtP, lo, hi, POOL_ORPH, cap, SENIOR_SAFE);
         gas -= gasleft();
         vm.stopPrank();
+        assertEq(uint256(_slot0()), uint256(sqrtP), "launcher: price at the plan");
         vm.revertToState(snap);
     }
 
@@ -146,7 +147,7 @@ contract SeedPoolTest is Test, Addresses {
         assertEq(_liq(tokenId), planLiq, "liquidity = plan");
         assertEq(spent, 0);
         assertEq(hype, 0);
-        console2.log("O1 inside range: launcher.seed gas", gas, "(2M small block)");
+        console2.log("O1 inside range: launcher.seed gas", gas);
     }
 
     /// O1(b): pre-initialised ABOVE the opening tick (ORPH cheaper). The empty gap is crossed for free.
@@ -260,6 +261,17 @@ contract SeedPoolTest is Test, Addresses {
         s.run();
         assertEq(IPositionManager(POSM).nextTokenId(), nextId, "nothing was minted");
         assertEq(orph.balanceOf(deployer), 1_000_000_000e18, "nothing moved");
+    }
+
+    /// Review 1 (L3): an EIP-7702 delegated EOA (code = 0xef0100 || address) is still an EOA.
+    function test_O4d_eip7702DelegatedOwnerReverts() public {
+        _env(0);
+        address delegated = makeAddr("7702 EOA");
+        vm.etch(delegated, abi.encodePacked(hex"ef0100", address(mlr)));
+        assertEq(delegated.code.length, 23);
+        vm.setEnv("NFT_OWNER", vm.toString(delegated));
+        vm.expectRevert(bytes("NFT_OWNER is an EIP-7702 delegated EOA, not a contract"));
+        s.run();
     }
 
     /// O4(d): a contract owner other than SENIOR_SAFE works and receives the NFT.

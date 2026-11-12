@@ -26,7 +26,7 @@ import {Addresses} from "./Addresses.sol";
 /// Env: DEPLOYER (holds the 600M ORPH; the hardware wallet), ORPH, HYPE_USD_E8 (HYPE price in USD with 8 decimals,
 ///      read from the Morpho API at deploy time), HYPE_USD_REF_E8 (the same price from an INDEPENDENT source; the script
 ///      refuses a difference over 20%), FDV_USD (default 5000), NFT_OWNER (default SENIOR_SAFE; must have code: a Safe or
-///      timelock, never an EOA), SEED_CAP_ORPH (wei, default 0 = refuse any re-price that sells ORPH; <= 600M ORPH).
+///      timelock, never an EOA or an EIP-7702 delegated EOA), SEED_CAP_ORPH (wei, default 0 = refuse any re-price that sells ORPH; <= 600M ORPH).
 ///      Uniswap v4 addresses verified on-chain 7 Nov.
 contract SeedPool is Script, Addresses {
     address public constant POOL_MANAGER = 0x12D4Fd9C5DeDd00ab8a0bCe2CF0167bbf94b6B1F;
@@ -64,6 +64,11 @@ contract SeedPool is Script, Addresses {
         l.nftOwner = vm.envOr("NFT_OWNER", SENIOR_SAFE);
         l.cap = vm.envOr("SEED_CAP_ORPH", uint256(0));
         require(l.nftOwner.code.length > 0, "NFT_OWNER has no code: the position NFT must sit in a Safe or timelock");
+        bytes memory ownerCode = l.nftOwner.code;
+        require(
+            !(ownerCode.length == 23 && ownerCode[0] == 0xef && ownerCode[1] == 0x01 && ownerCode[2] == 0x00),
+            "NFT_OWNER is an EIP-7702 delegated EOA, not a contract"
+        );
         _requireBand(hypeUsdE8, vm.envUint("HYPE_USD_REF_E8"));
         require(l.cap <= POOL_ORPH, "SEED_CAP_ORPH above the pool ORPH");
         require(IERC20(l.orph).balanceOf(l.deployer) >= POOL_ORPH, "deployer lacks the pool ORPH");

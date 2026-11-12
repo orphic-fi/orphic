@@ -124,7 +124,6 @@ contract SeedLauncher is IUnlockCallback {
             }
             if (hype != 0) pm.take(p.key.currency0, address(this), hype);
         }
-        address orph = Currency.unwrap(p.key.currency1);
         uint256 bal = p.orphIn - spent;
         uint128 liq = LiquidityAmounts.getLiquidityForAmount1(
             TickMath.getSqrtPriceAtTick(p.lo), TickMath.getSqrtPriceAtTick(p.hi), bal
