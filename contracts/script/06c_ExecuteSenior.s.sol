@@ -3,6 +3,7 @@ pragma solidity 0.8.28;
 
 import {Script, console2} from "forge-std/Script.sol";
 import {IVaultV2} from "vault-v2/interfaces/IVaultV2.sol";
+import {SeniorReceiveGate} from "../src/SeniorReceiveGate.sol";
 import {Addresses} from "./Addresses.sol";
 
 interface IOldJunior {
@@ -11,7 +12,8 @@ interface IOldJunior {
 
 /// Migration phase C (audit fixes 7/8). Executes the two submitted senior changes: the management-fee recipient becomes the v2
 /// junior (V2 accrues first, so every fee second up to now goes to the old junior), then the receive-shares gate is wired.
-/// Anyone may execute (Vault V2's `timelocked()` has no caller check); the plan lists SENIOR_SAFE.
+/// Anyone may execute (Vault V2's `timelocked()` has no caller check), so C is PERMISSIONLESS once B matures: the old-settle rule is
+/// enforced by phases A and B (they only run after S1, so any caller's earliest C is S1 + 3 days); the check below is a second guard.
 ///
 /// REFUSES to run before the old junior's settle: `OLD_SETTLE_DUE` is the second that settle is due (old lastSettle at
 /// migration + 6 d 23 h = 1794774420, Sun 15 Nov 20:27:00 UTC) and the old junior's `lastSettle` must be at or past it.
@@ -27,6 +29,7 @@ contract ExecuteSenior is Script, Addresses {
         uint256 due = vm.envUint("OLD_SETTLE_DUE");
         require(IOldJunior(vm.envAddress("OLD_JUNIOR")).lastSettle() >= due, "the old junior has not settled yet: do not flip the fee recipient");
 
+        require(address(SeniorReceiveGate(gate).junior()) == junior && address(SeniorReceiveGate(gate).senior()) == address(senior), "gate is not the SeniorReceiveGate(senior, v2)");
         vm.startBroadcast(signer);
         senior.setManagementFeeRecipient(junior);
         senior.setReceiveSharesGate(gate);

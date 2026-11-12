@@ -242,11 +242,17 @@ def phase_checks(script, env, steps, rpc):
         lib_step = next((s for s in steps if s["to"] and s["to"].lower() == CREATE2_DEPLOYER), None)
         if lib_step and lib_step.get("predictedAddress") and lib_step["predictedAddress"].lower() != la.lower():
             sys.exit(f"library CREATE2 address mismatch: forge {lib_step['predictedAddress']} vs computed {la}")
-        pre += [{"label": "USDC.balanceOf(signer) >= 1 USDC (the seed)", "to": USDC_ADDR, "data": call("balanceOf(address)", dep), "gte": 1_000_000},
+        pre += [chk("old junior has settled (S1: lastSettle >= due second): REFUSE otherwise", OLDJ, "lastSettle()", gte=int(env["OLD_SETTLE_DUE"])),
+                {"label": "USDC.balanceOf(signer) >= 1 USDC (the seed)", "to": USDC_ADDR, "data": call("balanceOf(address)", dep), "gte": 1_000_000},
                 chk("senior receive gate not wired yet", S, "receiveSharesGate()", expect=ZERO)]
         if OLDJ:
             pre.append(chk("senior fee recipient is still the old junior", S, "managementFeeRecipient()", expect=addr_word(OLDJ)))
         cap = int(env.get("JUNIOR_CAP", 5_000_000_000)); wcap = int(env.get("WALLET_CAP", 10_000_000_000))
+        # step-level read-backs: the library hash right after it is created (before v2 is), and v2's code embeds the library address
+        if lib_step is not None:
+            lib_step["readbacks"].append({"label": "VenueAdmin runtime code hash equals the build's (CREATE2 library)", "codehash": la, "expect": lib_runtime_hash(la)})
+        j_step = next(st for st in steps if st.get("contractName") == "JuniorVault" and st["to"] is None)
+        j_step["readbacks"].append({"label": "v2 runtime code embeds the VenueAdmin address", "codeof": "$created", "contains": la.lower()})
         v += [{"label": "VenueAdmin runtime code hash (CREATE2 library, linked into v2)", "codehash": la, "expect": lib_runtime_hash(la)},
               chk("v2.owner == junior owner", j, "owner()", expect=addr_word(dep)),
               chk("v2.senior == live senior", j, "senior()", expect=addr_word(S)),
@@ -280,8 +286,11 @@ def phase_checks(script, env, steps, rpc):
     elif script.startswith("06b"):
         j, g = env["JUNIOR"], env["GATE"]
         rec = call("setManagementFeeRecipient(address)", j); gat = call("setReceiveSharesGate(address)", g)
-        pre += [chk("signer is the senior curator", S, "curator()", expect=addr_word(env["DEPLOYER"])),
+        pre += [chk("old junior has settled (S1): REFUSE otherwise; C is permissionless once B matures", OLDJ, "lastSettle()", gte=int(env["OLD_SETTLE_DUE"])),
+                chk("signer is the senior curator", S, "curator()", expect=addr_word(env["DEPLOYER"])),
                 chk("v2 junior has code", j, "senior()", expect=addr_word(S)),
+                chk("gate.junior == v2 (a codeless or wrong gate would brick senior)", g, "junior()", expect=addr_word(j)),
+                chk("gate.senior == senior", g, "senior()", expect=addr_word(S)),
                 chk("senior gate unwired", S, "receiveSharesGate()", expect=ZERO)]
         v += [chk("recipient change submitted (executableAt != 0)", S, "executableAt(bytes)", (rec,), gte=1),
               chk("gate change submitted (executableAt != 0)", S, "executableAt(bytes)", (gat,), gte=1),
@@ -291,6 +300,8 @@ def phase_checks(script, env, steps, rpc):
         j, g = env["JUNIOR"], env["GATE"]
         rec = call("setManagementFeeRecipient(address)", j); gat = call("setReceiveSharesGate(address)", g)
         pre += [chk("old junior has settled (lastSettle >= due second): REFUSE otherwise", OLDJ, "lastSettle()", gte=int(env["OLD_SETTLE_DUE"])),
+                chk("gate.junior == v2", g, "junior()", expect=addr_word(j)),
+                chk("gate.senior == senior", g, "senior()", expect=addr_word(S)),
                 chk("recipient change was submitted", S, "executableAt(bytes)", (rec,), gte=1),
                 chk("gate change was submitted", S, "executableAt(bytes)", (gat,), gte=1)]
         v += [chk("senior fee recipient == v2", S, "managementFeeRecipient()", expect=addr_word(j)),
@@ -308,6 +319,7 @@ def phase_checks(script, env, steps, rpc):
         pre += [chk(f"old junior market {i} position is 0 (RUNBOOK 8a)", oj, "marketAssets(uint256)", (i,), expect=word(0)) for i in range(n)]
         sup = sig4("supply((address,address,address,address,uint256),uint256,uint256,address,bytes)")
         wd = sig4("withdraw((address,address,address,address,uint256),uint256,uint256,address,address)")
+        fes = int(subprocess.run(["cast", "call", j, "felixExpSupply()(uint256)", "--rpc-url", rpc], capture_output=True, text=True, check=True).stdout.split()[0])
         v += [chk("old router.senior", orr, "senior()", expect=addr_word(S)),
               chk("old router.junior == v2", orr, "junior()", expect=addr_word(j)),
               chk("old router.treasury", orr, "treasury()", expect=addr_word(env["TREASURY"])),
@@ -315,6 +327,9 @@ def phase_checks(script, env, steps, rpc):
               chk("old junior Morpho supply rule off", oj, "rules(address,bytes4)", (MORPHO_ADDR, sup), expect=word(0), word_i=0),
               chk("old junior Morpho withdraw rule off", oj, "rules(address,bytes4)", (MORPHO_ADDR, wd), expect=word(0), word_i=0),
               chk("v2 Felix exposure snapshot present", j, "felixExp(uint256)", (0,), expect=addr_word(FELIX), word_i=0),
+              # felixExpSupply is senior's supply at the last snapshot; it was fixed at phase A and senior's supply has grown since (the fee
+              # shares minted at phase C), so a value above the pre-D one proves snapFelixExposure RAN in D (the constructor's snapshot alone cannot)
+              chk("v2.snapFelixExposure ran in D (felixExpSupply moved past its phase-A value)", j, "felixExpSupply()", gte=fes + 1),
               chk("v2 deposits OPEN (last step)", j, "depositsPaused()", expect=word(0))]
     return pre, v
 

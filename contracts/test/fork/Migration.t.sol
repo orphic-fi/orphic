@@ -23,8 +23,9 @@ import {Addresses} from "../../script/Addresses.sol";
 /// The old junior here is the fixed build (the pre-fix bytecode is not in this tree): the same migration steps and read-backs
 /// apply; the live pre-fix old junior is rehearsed on a live-state fork (ops/MIGRATION.md).
 /// Heavy by design: three old-system scripts, four phases and several cold gate checks (about 600k gas each) run in ONE test
-/// transaction, which exceeds the 60M block cap and ran the test out of gas mid-way: gas metering is paused (the per-phase gas that
-/// matters is measured by the replay on anvil, see ops/make_migration.py). The gate's own gas is covered by SeniorReceiveGate.t.sol.
+/// transaction, which exceeds the 60M block cap and ran the test out of gas mid-way: gas metering is paused, so THIS TEST DOES NOT PROVE ANY
+/// GAS FIGURE or that the gate's capped self-call (1.0M) fits: the per-phase gas and the gate under real gas limits are proven only by the
+/// anvil replay (ops/make_migration.py) and SeniorReceiveGate.t.sol.
 contract MigrationTest is Test, Addresses {
     address constant deployer = JUNIOR_OWNER;
     address agent = makeAddr("agent");
@@ -40,7 +41,11 @@ contract MigrationTest is Test, Addresses {
 
     function _asOld() internal {
         vm.pauseGasMetering();
-        vm.createSelectFork(vm.envOr("HYPEREVM_RPC", string("https://rpc.hyperliquid.xyz/evm")), vm.envOr("FORK_BLOCK", uint256(50747000)));
+        // an ARCHIVE rpc is required (block 50747000 is before the live senior): HYPEREVM_RPC has no fallback, a silent switch to latest or to a
+        // non-archive endpoint would test a different world. Set it in the environment, never in the repo.
+        uint256 blk = vm.envOr("FORK_BLOCK", uint256(50747000));
+        require(blk != 0, "FORK_BLOCK must be an explicit block before the live senior");
+        vm.createSelectFork(vm.envString("HYPEREVM_RPC"), blk);
         deal(address(USDC), deployer, 10e6);
         vm.deal(deployer, 10 ether);
         vm.deal(SENIOR_SAFE, 1 ether);
@@ -95,19 +100,41 @@ contract MigrationTest is Test, Addresses {
         bSubmittedAt = block.timestamp;
     }
 
-    /// settle the old junior at its due second, then run C; returns the old junior's fee shares at that point
-    function _settleOldAndExecute(ExecuteSenior c) internal returns (uint256 oldShares) {
+    /// S1: the old junior's first settle at its due second (the keeper's job)
+    function _settleOldS1() internal returns (uint256 due) {
         JuniorVault oj = JuniorVault(oldJunior);
-        vm.warp(oj.lastSettle() + oj.SETTLE_INTERVAL());
+        due = oj.lastSettle() + oj.SETTLE_INTERVAL();
+        vm.setEnv("OLD_SETTLE_DUE", vm.toString(due));
+        // A and B are REFUSED before S1 (C is permissionless once B matures, so B is what keeps C after S1)
+        vm.setEnv("DEPLOYER", vm.toString(deployer));
+        DeployJuniorV2 early = DeployJuniorV2(deployCode("06a_DeployJuniorV2.s.sol:DeployJuniorV2"));
+        vm.expectRevert(bytes("the old junior has not settled yet (S1): deploy v2 after it"));
+        early.run();
+        vm.setEnv("JUNIOR", vm.toString(makeAddr("v2")));
+        vm.setEnv("GATE", vm.toString(makeAddr("gate")));
+        vm.setEnv("DEPLOYER", vm.toString(SENIOR_SAFE));
+        SubmitSenior earlyB = new SubmitSenior();
+        vm.expectRevert(bytes("the old junior has not settled yet (S1): submit after it, C is permissionless once these mature"));
+        earlyB.run();
+        vm.warp(due);
         IVaultV2(senior).accrueInterest();
-        oldShares = IERC20(senior).balanceOf(oldJunior);
         oj.settle();
-        c.run();
+        vm.setEnv("DEPLOYER", vm.toString(deployer));
+    }
+
+    function _toC() internal returns (ExecuteSenior c) {
+        _settleOldS1();
+        _phaseA();
+        _phaseB();
+        vm.warp(bSubmittedAt + 3 days);
+        c = new ExecuteSenior();
     }
 
     function test_freshForkMigration_endState() public {
         _asOld();
         IVaultV2 s = IVaultV2(senior);
+        JuniorVault oj = JuniorVault(oldJunior);
+        _settleOldS1();
         _phaseA();
         JuniorVault v2 = a.junior();
         // after A: deployed beside the old system, nothing wired, v2 deposits closed
@@ -121,21 +148,15 @@ contract MigrationTest is Test, Addresses {
         _phaseB();
         assertEq(s.managementFeeRecipient(), oldJunior, "B must not move the fee recipient");
 
-        // C before the old junior's settle: REFUSED by the script (nothing is executed)
+        // C: permissionless once B matures; here A and B ran after S1, so any caller's C is after S1 + 3 days
         vm.warp(bSubmittedAt + 3 days);
-        JuniorVault oj = JuniorVault(oldJunior);
-        vm.setEnv("OLD_SETTLE_DUE", vm.toString(oj.lastSettle() + oj.SETTLE_INTERVAL()));
         ExecuteSenior c = new ExecuteSenior();
-        vm.expectRevert(bytes("the old junior has not settled yet: do not flip the fee recipient"));
+        uint256 beforeFlip = IERC20(senior).balanceOf(oldJunior);
         c.run();
-        assertEq(s.managementFeeRecipient(), oldJunior, "refused C moved nothing");
-
-        // the old junior's settle (keeper), then C: the old junior keeps the fee up to the flip
-        uint256 oldShares = _settleOldAndExecute(c);
-        assertGt(oldShares, 0, "old junior earned the fee up to the flip");
+        uint256 oldShares = IERC20(senior).balanceOf(oldJunior);
+        assertGt(oldShares, beforeFlip, "the flip accrued the old junior's last fee shares first");
         assertEq(s.managementFeeRecipient(), address(v2), "fee recipient is v2");
         assertEq(s.receiveSharesGate(), address(a.gate()), "gate wired");
-        assertEq(IERC20(senior).balanceOf(oldJunior), oldShares, "the flip minted nothing more for the old junior");
         assertTrue(v2.depositsPaused(), "v2 still closed after C: opens only in D");
 
         // D
@@ -152,6 +173,7 @@ contract MigrationTest is Test, Addresses {
         assertEq(r2.junior(), address(v2));
         assertEq(r2.treasury(), treasury);
         assertEq(SeniorReceiveGate(a.gate()).owner(), SENIOR_SAFE);
+        assertEq(v2.felixExpSupply(), IERC20(senior).totalSupply(), "D's snapshot ran");
 
         // the result works: a v2 deposit, a senior deposit through the gate, fees now reach v2 and not the old junior
         deal(address(USDC), alice, 2_000e6);
@@ -163,7 +185,7 @@ contract MigrationTest is Test, Addresses {
         vm.stopPrank();
         assertGt(v2.balanceOf(alice), 0, "v2 deposit minted shares");
         assertGt(IERC20(senior).balanceOf(alice), 0, "senior deposit passed the gate");
-        vm.warp(block.timestamp + 30 days);
+        vm.warp(block.timestamp + 2 days); // still before v2's own first settle (A + 6d23h)
         s.accrueInterest();
         assertGt(IERC20(senior).balanceOf(address(v2)), 0, "fees now reach v2");
         assertEq(IERC20(senior).balanceOf(oldJunior), oldShares, "and no longer the old junior");
@@ -172,6 +194,7 @@ contract MigrationTest is Test, Addresses {
     /// D refuses before C
     function test_phaseD_refusesBeforeC() public {
         _asOld();
+        _settleOldS1();
         _phaseA();
         _phaseB();
         vm.setEnv("DEPLOYER", vm.toString(deployer));
@@ -183,18 +206,26 @@ contract MigrationTest is Test, Addresses {
     /// D refuses while the old junior holds a Morpho market position (RUNBOOK 8a): the rules stay on
     function test_phaseD_refusesWithOldMarketPosition() public {
         _asOld();
-        _phaseA();
-        _phaseB();
-        vm.warp(bSubmittedAt + 3 days);
-        JuniorVault oj = JuniorVault(oldJunior);
-        vm.setEnv("OLD_SETTLE_DUE", vm.toString(oj.lastSettle() + oj.SETTLE_INTERVAL()));
-        _settleOldAndExecute(new ExecuteSenior());
+        ExecuteSenior c = _toC();
+        c.run();
         vm.setEnv("DEPLOYER", vm.toString(deployer));
         vm.mockCall(oldJunior, abi.encodeCall(JuniorVault.marketAssets, (0)), abi.encode(uint256(1)));
         CutOver d = new CutOver();
         vm.expectRevert(bytes("checklist: the old junior holds a Morpho market position, keep its rules (RUNBOOK 8a)"));
         d.run();
-        (bool oldSupply,) = oj.rules(MORPHO, IMorphoBase.supply.selector);
+        (bool oldSupply,) = JuniorVault(oldJunior).rules(MORPHO, IMorphoBase.supply.selector);
         assertTrue(oldSupply, "rules untouched");
+    }
+
+    /// B refuses a codeless or wrong gate (it would brick senior deposits and withdrawals once wired)
+    function test_phaseB_refusesWrongGate() public {
+        _asOld();
+        _settleOldS1();
+        _phaseA();
+        vm.setEnv("GATE", vm.toString(address(0xdead)));
+        vm.setEnv("DEPLOYER", vm.toString(SENIOR_SAFE));
+        SubmitSenior b = new SubmitSenior();
+        vm.expectRevert(); // calling junior() on a codeless address reverts
+        b.run();
     }
 }

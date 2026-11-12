@@ -11,7 +11,9 @@ import {FeeRouter} from "../src/FeeRouter.sol";
 import {SeniorReceiveGate, IJuniorGateView} from "../src/SeniorReceiveGate.sol";
 import {Addresses} from "./Addresses.sol";
 
-/// Migration phase A (audit fixes 7/8). Signer: JUNIOR_OWNER. Deploys everything the fixed system needs beside the live
+/// Migration phase A (audit fixes 7/8). Signer: JUNIOR_OWNER. RUNS ONLY AFTER the old junior's first settle S1 (OLD_SETTLE_DUE, the
+/// second it is due: old lastSettle + 6 d 23 h = 1794774420, Sun 15 Nov 20:27:00 UTC): v2's own first settle is due 6 d 23 h after this
+/// phase, and v2 must hold the holders' capital before it (they redeposit right after the old junior's second settle S2 = S1 + 6 d 23 h). Deploys everything the fixed system needs beside the live
 /// senior, wires NOTHING on senior (that is phases B and C) and leaves v2 deposits paused (opened in phase D).
 ///   1. JuniorVault v2 (forge links the external library VenueAdmin: a CREATE2 through 0x4e59..956C, skipped if the library
 ///      already exists), seeded with 1 USDC, deposits paused, agent set.
@@ -22,7 +24,7 @@ import {Addresses} from "./Addresses.sol";
 ///   4. SeniorReceiveGate(senior, v2, owner = SENIOR_SAFE). Not wired here.
 /// Big blocks: JuniorVault is ~24 kB (above the 2M small-block gas); the signer turns big blocks on before and off after.
 ///
-/// Env: SENIOR, DEPLOYER (= JUNIOR_OWNER), AGENT, TREASURY, JUNIOR_CAP (default 5_000e6, the live cap), WALLET_CAP (default 10_000e6),
+/// Env: SENIOR, OLD_JUNIOR, OLD_SETTLE_DUE, DEPLOYER (= JUNIOR_OWNER), AGENT, TREASURY, JUNIOR_CAP (default 5_000e6, the live cap), WALLET_CAP (default 10_000e6),
 ///      optional SWEEP_TOKEN, SWEEP_ROUTER, SWEEP_ORACLE, SWEEP_SLIPPAGE_BPS, SWEEP_SEED_PRICE (1e36 scale).
 /// The deployer must hold at least 1 USDC (the seed) and gas.
 contract DeployJuniorV2 is Script, Addresses {
@@ -39,6 +41,7 @@ contract DeployJuniorV2 is Script, Addresses {
         address treasury = vm.envAddress("TREASURY");
         uint256 juniorCap = vm.envOr("JUNIOR_CAP", uint256(5_000e6));
         uint256 walletCap = vm.envOr("WALLET_CAP", uint256(10_000e6));
+        require(IOldJuniorA(vm.envAddress("OLD_JUNIOR")).lastSettle() >= vm.envUint("OLD_SETTLE_DUE"), "the old junior has not settled yet (S1): deploy v2 after it");
         require(IERC20(USDC).balanceOf(deployer) >= 1e6, "deployer holds under 1 USDC: the seed needs it");
         require(senior.curator() == SENIOR_SAFE && senior.owner() == SENIOR_SAFE, "senior is not handed to the Safe: run 01-03 first");
 
@@ -93,4 +96,8 @@ contract DeployJuniorV2 is Script, Addresses {
         require(senior.managementFeeRecipient() != address(junior), "phase A must not flip the recipient");
         console2.log("verify: ok");
     }
+}
+
+interface IOldJuniorA {
+    function lastSettle() external view returns (uint256);
 }

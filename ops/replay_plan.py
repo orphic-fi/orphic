@@ -17,6 +17,7 @@ Plan JSON (written by make_plan.py; ONLY real transactions and read-backs, no vm
      {label, to, data}                     eth_call result is non-zero
      {label, to, data, word:i, expect}     32-byte word i of the eth_call result equals expect (multi-word returns)
      {label, codehash: addr, expect}       keccak256 of the code at addr equals expect (cast codehash)
+     {label, codeof: addr|"$created", contains: 0x<20 bytes>}   the runtime code at addr contains those bytes (a linked library address)
   precheck:   checks run BEFORE the first step; one failing aborts the phase (nothing is sent).
   waitBeforeSeconds / waitFromPlan / notBeforeCall {to,data,plus}: the DECLARED waits. The replay (and only the replay) warps the
      fork's clock so the phase starts no earlier than end-of-(waitFromPlan, a manifest plan file; default: the previous phase)
@@ -68,9 +69,14 @@ def _int(s):
     return int(s, 16) if s.startswith("0x") else int(s)
 
 
-def run_check(rpc, c):
-    """True when the check holds. Prints one line."""
-    if c.get("codehash"):
+def run_check(rpc, c, created=None):
+    """True when the check holds. Prints one line. `created` replaces "$created" (the address the step created)."""
+    if c.get("codeof"):
+        addr = created if c["codeof"] == "$created" else c["codeof"]
+        code = cast(rpc, "code", addr).lower()
+        got = f"{(len(code) - 2) // 2} bytes"
+        ok = len(code) > 2 and c["contains"].lower()[2:] in code
+    elif c.get("codehash"):
         got = cast(rpc, "codehash", c["codehash"])
         ok = got.lower() == c["expect"].lower()
     else:
@@ -127,7 +133,7 @@ def run_plan(plan, rpc, prev_end=None):
         if not ok:
             sys.exit("step failed")
         for rb in s.get("readbacks", []):
-            if not run_check(rpc, rb):
+            if not run_check(rpc, rb, out.get("contractAddress")):
                 sys.exit(f"READBACK FAILED: {rb['label']}")
     for v in plan.get("verify", []):
         if not run_check(rpc, v):

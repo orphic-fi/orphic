@@ -29,7 +29,11 @@ interface IPreFixJunior {
     function execute(address, bytes calldata) external returns (bytes memory);
 }
 
-/// LIVE-STATE rehearsal of the migration (audit fixes 7/8) against the real pre-fix old junior, senior and old router: forge test
+/// LIVE-STATE rehearsal of the migration (audit fixes 7/8) with the DATED calendar encoded from chain state. A and B run only after the old
+/// junior's first settle S1; C is 3 days after B; the holder claims and redeposits right after S2 = S1 + interval, which must come BEFORE
+/// v2's own first settle (A + interval, v2's constructor sets lastSettle = block.timestamp): see test_calendar_*. Gas metering is paused
+/// (the flow exceeds the block cap): this test proves no gas figure; the anvil replay does.
+/// Against the real pre-fix old junior, senior and old router: forge test
 /// --fork-url / HYPEREVM_RPC at a recent block (LIVE_FORK_BLOCK pins one). Valid only while the migration has not been signed: if
 /// senior already has a receive gate it skips. Role holders are pranked, the timelock and the old settle are warped, in this TEST only.
 /// Funding 0x2DBE with USDC is prerequisite 0 (a fork cheat here). The old junior is the live pre-fix bytecode; v2, router v2 and
@@ -58,6 +62,54 @@ contract MigrationLiveTest is Test, Addresses {
         vm.setEnv("TREASURY", vm.toString(TREASURY));
         vm.setEnv("OLD_JUNIOR", vm.toString(address(oldJ)));
         vm.setEnv("OLD_ROUTER", vm.toString(oldRouter));
+        due1 = oldJ.lastSettle() + oldJ.SETTLE_INTERVAL();
+        vm.setEnv("OLD_SETTLE_DUE", vm.toString(due1));
+    }
+
+    /// The calendar from chain state. FAILS if the redeposit after S2 would land after v2's first settle for A = the first UTC midnight
+    /// after S1, and prints the boundaries: the EARLIEST A that still works (A + interval > S2 + window; later A only widens the margin)
+    /// and the LATEST A (B + 3 d <= S2, so C and D are done and v2 is open for the redeposit).
+    function test_calendar_fromChainState() public {
+        _setUp();
+        uint256 interval = oldJ.SETTLE_INTERVAL();
+        uint256 s1 = due1;
+        uint256 s2 = s1 + interval;
+        uint256 a0 = (s1 / DAY + 1) * DAY; // Mon 16 Nov 00:00 UTC when S1 is Sun 15 Nov 20:27
+        uint256 v2Due = a0 + interval; // v2's constructor: lastSettle = block.timestamp
+        console2.log("S1", s1);
+        console2.log("S2", s2);
+        console2.log("A (next UTC midnight after S1)", a0);
+        console2.log("v2 first settle due", v2Due);
+        console2.log("margin over S2 (seconds)", v2Due - s2);
+        assertGt(v2Due, s2 + WINDOW, "the redeposit after S2 would land after v2's first settle: A is too early");
+        uint256 aMin = s2 + WINDOW - interval;
+        uint256 aMax = s2 - 3 days;
+        console2.log("earliest A that works", aMin);
+        console2.log("latest A that works (C and D by S2)", aMax);
+        assertTrue(a0 >= aMin && a0 <= aMax, "A inside its window");
+        assertFalse(aMin - 1 + interval > s2 + WINDOW, "one second earlier than the earliest A fails");
+        assertFalse(aMax + 1 + 3 days <= s2, "one second later than the latest A fails");
+        // the holder's deadline from the CONTRACT's own formula: the latest request priced at S2 (readyAt <= S2), one second later is not
+        uint256 deadline = (s2 / DAY) * DAY - oldJ_NOTICE();
+        uint256 snap = vm.snapshotState();
+        vm.warp(deadline);
+        vm.prank(JUNIOR_OWNER);
+        oldJ.requestExit(1e6);
+        (, uint64 r1,) = oldJ.exitOf(JUNIOR_OWNER);
+        assertLe(uint256(r1), s2, "a request at the deadline is priced at S2");
+        vm.revertToState(snap);
+        vm.warp(deadline + 1);
+        vm.prank(JUNIOR_OWNER);
+        oldJ.requestExit(1e6);
+        (, uint64 r2,) = oldJ.exitOf(JUNIOR_OWNER);
+        assertGt(uint256(r2), s2, "one second later is priced at the settle after S2");
+        console2.log("holder deadline (UTC unix)", deadline);
+    }
+
+    function oldJ_NOTICE() internal view returns (uint256) {
+        (bool ok, bytes memory r) = address(oldJ).staticcall(abi.encodeWithSignature("NOTICE()"));
+        require(ok, "NOTICE");
+        return abi.decode(r, (uint256));
     }
 
     DeployJuniorV2 a;
@@ -65,6 +117,8 @@ contract MigrationLiveTest is Test, Addresses {
     SeniorReceiveGate gate;
     uint256 bAt;
     uint256 due1;
+    uint256 constant DAY = 1 days;
+    uint256 constant WINDOW = 2 hours; // the claim + redeposit are done within this long after S2
 
     function test_liveStateMigration_endState_phaseE_and_gate() public {
         _setUp();
@@ -76,10 +130,23 @@ contract MigrationLiveTest is Test, Addresses {
     }
 
     function _phaseAB() internal {
-        due1 = oldJ.lastSettle() + oldJ.SETTLE_INTERVAL();
         uint256 holderShares = oldJ.balanceOf(JUNIOR_OWNER);
         assertGt(holderShares, 0, "0x2DBE holds the old junior");
+        // the holder's exit request, now (before Sun 15 Nov 00:00 UTC): priced at S2
+        vm.prank(JUNIOR_OWNER);
+        oldJ.requestExit(holderShares);
+        // A and B are REFUSED before S1
         vm.setEnv("DEPLOYER", vm.toString(JUNIOR_OWNER));
+        DeployJuniorV2 early = DeployJuniorV2(deployCode("06a_DeployJuniorV2.s.sol:DeployJuniorV2"));
+        vm.expectRevert(bytes("the old junior has not settled yet (S1): deploy v2 after it"));
+        early.run();
+        // S1: the old junior's real first settle (keeper: accrueInterest + settle) at its due second
+        vm.warp(due1);
+        senior.accrueInterest();
+        oldJ.settle();
+        assertGe(oldJ.lastSettle(), due1);
+        // A = the first UTC midnight after S1
+        vm.warp((due1 / DAY + 1) * DAY);
         a = DeployJuniorV2(deployCode("06a_DeployJuniorV2.s.sol:DeployJuniorV2"));
         a.run();
         v2 = a.junior();
@@ -88,27 +155,15 @@ contract MigrationLiveTest is Test, Addresses {
         vm.setEnv("GATE", vm.toString(address(gate)));
         assertEq(senior.managementFeeRecipient(), address(oldJ), "A moved nothing on senior");
         assertTrue(v2.depositsPaused());
-        // B, and the holder's exit request (12 Nov: priced at the settle after 20 Nov 00:00, i.e. ~22 Nov)
         vm.setEnv("DEPLOYER", vm.toString(SENIOR_SAFE));
         new SubmitSenior().run();
         bAt = block.timestamp;
-        vm.prank(JUNIOR_OWNER);
-        oldJ.requestExit(holderShares);
     }
 
     function _phaseC() internal {
-        // C is refused until the old junior has settled, even after the timelock
+        // C: permissionless once B matures; B ran after S1, so any caller's C is after S1 + 3 days
         vm.warp(bAt + 3 days);
-        vm.setEnv("OLD_SETTLE_DUE", vm.toString(due1));
-        ExecuteSenior c = new ExecuteSenior();
-        vm.expectRevert(bytes("the old junior has not settled yet: do not flip the fee recipient"));
-        c.run();
-        // the old junior's real settle (keeper: accrueInterest + settle) at its due second
-        vm.warp(due1);
-        senior.accrueInterest();
-        oldJ.settle();
-        assertGe(oldJ.lastSettle(), due1);
-        c.run();
+        new ExecuteSenior().run();
         assertEq(senior.managementFeeRecipient(), address(v2), "fee recipient is v2");
         assertEq(senior.receiveSharesGate(), address(gate), "gate wired");
     }
@@ -121,7 +176,7 @@ contract MigrationLiveTest is Test, Addresses {
         deal(USDC, fresh, 100e6);
         vm.startPrank(fresh);
         IERC20(USDC).approve(address(senior), 100e6);
-        vm.expectRevert();
+        vm.expectRevert(abi.encodeWithSignature("CannotReceiveShares()"));
         senior.deposit(100e6, fresh);
         vm.stopPrank();
         vm.clearMockedCalls();
@@ -179,6 +234,15 @@ contract MigrationLiveTest is Test, Addresses {
         assertGt(v2.balanceOf(JUNIOR_OWNER), 0, "redeposited into v2");
         console2.log("deposited into v2 (USDC units)", amt);
         console2.log("v2 shares", v2.balanceOf(JUNIOR_OWNER));
+        // the redeposit (right after S2) landed BEFORE v2's own first settle, which now runs on a funded v2
+        uint256 v2Due = v2.lastSettle() + v2.SETTLE_INTERVAL();
+        assertLt(block.timestamp, v2Due, "v2's first settle must come after the redeposit");
+        console2.log("hours between S2 and v2's first settle", (v2Due - due2) / 3600);
+        vm.warp(v2Due);
+        senior.accrueInterest();
+        v2.settle();
+        assertGt(v2.pricePerShare(), 0, "v2 settled with funds: price > 0");
+        assertGe(v2.totalAssets(), amt, "v2 holds the redeposit");
     }
 }
 

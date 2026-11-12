@@ -14,8 +14,8 @@ Phases, in order (each plan is one signer; waits are declared in the plan JSON, 
   --holder   live-state mode: also rehearses phase E for the only junior holder 0x2DBE (requestExit now; at the old junior's next
            settle: recall Felix + redeem the senior fee shares as the agent would, settle, claimExit, deposit into v2) and prints the
            numbers. Fork-only cheats (impersonation, funding, warps) live in this tool, never in a plan JSON.
-  --demo-refusal <c-execute.json>  after phase B (before the old settle) tries to replay that earlier-generated phase-C plan and
-           shows the replay REFUSING it (precheck: the old junior has not settled), then carries on with the normal order.
+  --demo-refusal <a-deploy.json,b-submit.json>  before S1, tries to replay those earlier-generated plans and shows the replay REFUSING each
+           (precheck: the old junior has not settled), then carries on with the normal order.
 Writes <out-dir>/{a-deploy,b-submit,s-old-settle,c-execute,d-cutover}.json and manifest.json. Refuses any rpc that is not a loopback anvil.
 """
 import json, os, subprocess, sys
@@ -91,6 +91,14 @@ def e_holder(rpc, senior, old_j, v2):
     fsend(rpc, h, USDC, "approve(address,uint256)", v2, amt)
     gd = fsend(rpc, h, v2, "deposit(uint256,address)", amt, h)
     print(f"== E deposit into v2: {amt} units (gas {gd}); v2 shares {fcall(rpc, v2, 'balanceOf(address)(uint256)', h)}; v2 totalAssets {fcall(rpc, v2, 'totalAssets()(uint256)')}; v2 pricePerShare {fcall(rpc, v2, 'pricePerShare()(uint256)')}")
+    s2 = int(fcall(rpc, old_j, "lastSettle()(uint256)")); v2_due = int(fcall(rpc, v2, "lastSettle()(uint256)")) + SETTLE_INTERVAL
+    print(f"== E calendar check: S2 (old settle) at {s2}; v2's first settle is due {v2_due}; the redeposit (right after S2) landed {v2_due - s2} s = {(v2_due - s2)/3600:.2f} h BEFORE it")
+    if v2_due <= s2:
+        sys.exit("v2's first settle would come before the redeposit: the calendar is broken (A too early)")
+    rp.warp_to(rpc, v2_due)
+    fsend(rpc, AGENT, senior, "accrueInterest()")
+    g3 = fsend(rpc, AGENT, v2, "settle()")
+    print(f"== E v2's first settle AFTER funding: gas {g3}; pricePerShare {fcall(rpc, v2, 'pricePerShare()(uint256)')}; totalAssets {fcall(rpc, v2, 'totalAssets()(uint256)')}; settlesLength {fcall(rpc, v2, 'settlesLength()(uint256)')}")
 
 
 def gen(script, name, out, env, rpc):
@@ -108,28 +116,29 @@ def addr_of(plan, name):
 
 
 def main():
-    # a fresh run on a long-lived fork: snapshot first, revert if anything fails, so a rerun starts from the same state
+    # one RPC for the whole run (snapshot, revert and every call): the first http argument, default the loopback anvil
     rpc = next((a for a in sys.argv[2:] if a.startswith("http")), "http://127.0.0.1:8945")
     rp.require_local_anvil(rpc)
+    # snapshot first, revert if anything fails, so a rerun on a long-lived fork starts from the same state
     snap = sh("cast", "rpc", "evm_snapshot", "--rpc-url", rpc).strip('"')
     try:
-        run()
+        run(rpc)
     except BaseException:
-        if snap:
-            sh("cast", "rpc", "evm_revert", snap, "--rpc-url", rpc)
-            print("fork reverted to the pre-run snapshot")
+        sh("cast", "rpc", "evm_revert", snap, "--rpc-url", rpc)
+        print("fork reverted to the pre-run snapshot")
         raise
 
 
-def run():
+def run(rpc):
     demo = None
     if "--demo-refusal" in sys.argv:
-        i = sys.argv.index("--demo-refusal"); demo = sys.argv[i + 1]; del sys.argv[i:i + 2]
-    args = [a for a in sys.argv[1:] if not a.startswith("--")]
+        i = sys.argv.index("--demo-refusal"); demo = sys.argv[i + 1].split(","); del sys.argv[i:i + 2]
+    holder = "--holder" in sys.argv
+    if holder:
+        sys.argv.remove("--holder")
+    args = [a for a in sys.argv[1:] if not a.startswith("--") and not a.startswith("http")]
     fresh = "--fresh" in sys.argv
     out = Path(args[0]); out.mkdir(parents=True, exist_ok=True)
-    rpc = args[1] if len(args) > 1 else "http://127.0.0.1:8945"
-    rp.require_local_anvil(rpc)  # before anything: forks only
     prev_end = None
     base = {"AGENT": AGENT, "TREASURY": TREASURY}
     if fresh:
@@ -164,58 +173,58 @@ def run():
         print("== prerequisite 0 (fork cheat): 0x2DBE funded with 5 USDC; USDC now", fcall(rpc, USDC, "balanceOf(address)(uint256)", JUNIOR_OWNER))
     senior, old_j = base["SENIOR"], base["OLD_JUNIOR"]
     phases = []
-    holder = "--holder" in sys.argv
+    # S1: the old junior's first settle, due lastSettle + SETTLE_INTERVAL. A and B (and so C) only run after it.
+    due1 = int(fcall(rpc, old_j, "lastSettle()(uint256)")) + SETTLE_INTERVAL
+    base["OLD_SETTLE_DUE"] = str(due1)
+    print(f"== S1 (old junior's first settle) is due {due1}")
     if holder:
-        sys.argv.remove("--holder")
+        # E1: the only holder (0x2DBE) asks to exit ALL its shares now (before Sun 15 Nov 00:00 UTC) so the exit is priced at S2. Merges with its dust exit.
+        sh_bal = int(fcall(rpc, old_j, "balanceOf(address)(uint256)", JUNIOR_OWNER))
+        e = fsend(rpc, JUNIOR_OWNER, old_j, "requestExit(uint256)", sh_bal)
+        print(f"== E1 requestExit({sh_bal}) gas {e}; exitOf =", sh("cast", "call", "--rpc-url", rpc, old_j, "exitOf(address)(uint128,uint64,uint32)", JUNIOR_OWNER).replace("\n", " "))
+    for d in demo or []:
+        refused = None
+        try:
+            rp.run_plan(json.load(open(d)), rpc, None)
+        except SystemExit as e:
+            refused = str(e)
+        print(f"DEMO: replaying {Path(d).name} BEFORE the old settle S1 ->", refused)
+        if not (refused or "").startswith("PRECHECK FAILED"):
+            sys.exit(f"the replay did not refuse {d} before S1")
 
-    # A: deploy
+    # S1: permissionless (the keeper sends it). Declared wait: lastSettle + SETTLE_INTERVAL.
+    rp.warp_to(rpc, due1)  # generation needs the clock at the due second
+    ps = {"name": "S1: old junior settle (keeper; permissionless, not a partner signature)", "signer": AGENT, "role": "keeper / anyone", "chainId": 999,
+          "notBeforeCall": {"to": old_j, "data": sh("cast", "calldata", "lastSettle()"), "plus": SETTLE_INTERVAL},
+          "steps": [{"title": "senior.accrueInterest", "what": "Mints the fee shares up to now to the OLD junior (it is still the recipient).", "to": senior,
+                     "data": sh("cast", "calldata", "accrueInterest()"), "value": "0x0", "gas": hex(1_000_000), "readbacks": []},
+                    {"title": "oldJunior.settle", "what": "Weekly settle of the old junior (pre-fix build live; fixed build in the fresh rehearsal).", "to": old_j,
+                     "data": sh("cast", "calldata", "settle()"), "value": "0x0", "gas": hex(1_500_000), "readbacks": []}],
+          "verify": [{"label": "old junior lastSettle >= due second", "to": old_j, "data": sh("cast", "calldata", "lastSettle()"), "gte": due1}]}
+    (out / "s-old-settle.json").write_text(json.dumps(ps, indent=2))
+    prev_end = rp.run_plan(ps, rpc, prev_end)
+    phases.append({"plan": "s-old-settle.json", "role": ps["role"]})
+
+    # A = B = the first UTC midnight after S1 (Mon 16 Nov 00:00 UTC for the live dates): v2's first settle is then due 3.55 h after S2
+    rp.warp_to(rpc, (due1 // 86400 + 1) * 86400)
+
+    # A: deploy (after S1)
     pa = gen("06a_DeployJuniorV2.s.sol", "phase A: deploy v2 junior, router v2, gate", out / "a-deploy.json", dict(base, DEPLOYER=JUNIOR_OWNER), rpc)
     prev_end = rp.run_plan(pa, rpc, prev_end)
     v2, router2, gate = addr_of(pa, "JuniorVault"), addr_of(pa, "FeeRouter"), addr_of(pa, "SeniorReceiveGate")
     base.update(JUNIOR=v2, ROUTER=router2, GATE=gate)
     phases.append({"plan": "a-deploy.json", "role": pa["role"]})
 
-    # B: submit
+    # B: submit (after S1; C is permissionless once it matures, so this is what keeps C after S1)
     pb = gen("06b_SubmitSenior.s.sol", "phase B: submit fee recipient and gate", out / "b-submit.json", dict(base, DEPLOYER=SENIOR_SAFE), rpc)
     prev_end = rp.run_plan(pb, rpc, prev_end)
     phases.append({"plan": "b-submit.json", "role": pb["role"]})
     b_end = prev_end
-    if holder:
-        # E1: the only holder (0x2DBE, 80 ojUSDC) asks to exit ALL its shares now (12 Nov); a request by Sat 14 Nov 23:59 UTC is priced at the
-        # old junior's settle around 22 Nov. Merges with its pending dust exit and restarts the notice.
-        sh_bal = int(fcall(rpc, old_j, "balanceOf(address)(uint256)", JUNIOR_OWNER))
-        e = fsend(rpc, JUNIOR_OWNER, old_j, "requestExit(uint256)", sh_bal)
-        print(f"== E1 requestExit({sh_bal}) gas {e}; exitOf =", sh("cast", "call", "--rpc-url", rpc, old_j, "exitOf(address)(uint128,uint64,uint32)", JUNIOR_OWNER).replace("\n", " "))
 
-    if demo:
-        refused = None
-        try:
-            rp.run_plan(json.load(open(demo)), rpc, b_end)
-        except SystemExit as e:
-            refused = str(e)
-        print("DEMO: replaying phase C BEFORE the old settle ->", refused)
-        if not (refused or "").startswith("PRECHECK FAILED"):
-            sys.exit("the replay did not refuse phase C before the old settle")
-
-    # S: the old junior's settle (permissionless; the keeper sends it). Declared wait: lastSettle + SETTLE_INTERVAL.
-    last = int(sh("cast", "call", old_j, "lastSettle()(uint256)", "--rpc-url", rpc).split()[0])
-    due = last + SETTLE_INTERVAL
-    rp.warp_to(rpc, due)  # generation needs the clock at the due second
-    ps = {"name": "old junior settle (keeper; permissionless, not a partner signature)", "signer": AGENT, "role": "keeper / anyone", "chainId": 999,
-          "notBeforeCall": {"to": old_j, "data": sh("cast", "calldata", "lastSettle()"), "plus": SETTLE_INTERVAL},
-          "steps": [{"title": "senior.accrueInterest", "what": "Mints the fee shares up to now to the OLD junior (it is still the recipient).", "to": senior,
-                     "data": sh("cast", "calldata", "accrueInterest()"), "value": "0x0", "gas": hex(1_000_000), "readbacks": []},
-                    {"title": "oldJunior.settle", "what": "Weekly settle of the old junior (pre-fix build live; fixed build in the fresh rehearsal).", "to": old_j,
-                     "data": sh("cast", "calldata", "settle()"), "value": "0x0", "gas": hex(1_500_000), "readbacks": []}],
-          "verify": [{"label": "old junior lastSettle >= due second", "to": old_j, "data": sh("cast", "calldata", "lastSettle()"), "gte": due}]}
-    (out / "s-old-settle.json").write_text(json.dumps(ps, indent=2))
-    prev_end = rp.run_plan(ps, rpc, prev_end)
-    phases.append({"plan": "s-old-settle.json", "role": ps["role"]})
-
-    # C: execute, +3 days after B and only after the old settle
+    # C: execute, 3 days after B
     rp.warp_to(rpc, b_end + 259200)
-    pc = gen("06c_ExecuteSenior.s.sol", "phase C: execute fee recipient and gate", out / "c-execute.json", dict(base, DEPLOYER=SENIOR_SAFE, OLD_SETTLE_DUE=str(due)), rpc)
-    pc["waitFromPlan"] = "b-submit.json"  # the 3 days run from the end of phase B, not from the old settle
+    pc = gen("06c_ExecuteSenior.s.sol", "phase C: execute fee recipient and gate", out / "c-execute.json", dict(base, DEPLOYER=SENIOR_SAFE), rpc)
+    pc["waitFromPlan"] = "b-submit.json"  # the 3 days run from the end of phase B
     Path(out / "c-execute.json").write_text(json.dumps(pc, indent=2))
     prev_end = rp.run_plan(pc, rpc, b_end)
     phases.append({"plan": "c-execute.json", "role": pc["role"]})

@@ -3,6 +3,7 @@ pragma solidity 0.8.28;
 
 import {Script, console2} from "forge-std/Script.sol";
 import {IVaultV2} from "vault-v2/interfaces/IVaultV2.sol";
+import {SeniorReceiveGate} from "../src/SeniorReceiveGate.sol";
 import {Addresses} from "./Addresses.sol";
 
 /// Migration phase B (audit fixes 7/8). Signer: SENIOR_SAFE (the senior curator). Submits the two timelocked senior
@@ -17,7 +18,10 @@ contract SubmitSenior is Script, Addresses {
         address gate = vm.envAddress("GATE");
         address signer = vm.envAddress("DEPLOYER");
         require(signer == SENIOR_SAFE && senior.curator() == signer, "phase B must be signed by the senior curator");
+        require(IOldJuniorB(vm.envAddress("OLD_JUNIOR")).lastSettle() >= vm.envUint("OLD_SETTLE_DUE"), "the old junior has not settled yet (S1): submit after it, C is permissionless once these mature");
         require(junior.code.length > 0 && gate.code.length > 0, "v2 junior or gate not deployed: run phase A first");
+        // a codeless or wrong gate would brick senior deposits and withdrawals once wired
+        require(address(SeniorReceiveGate(gate).junior()) == junior && address(SeniorReceiveGate(gate).senior()) == address(senior), "gate is not the SeniorReceiveGate(senior, v2)");
 
         bytes memory recipient = abi.encodeCall(IVaultV2.setManagementFeeRecipient, (junior));
         bytes memory gateSet = abi.encodeCall(IVaultV2.setReceiveSharesGate, (gate));
@@ -33,4 +37,8 @@ contract SubmitSenior is Script, Addresses {
         console2.log("executable at", eta);
         console2.log("verify: ok");
     }
+}
+
+interface IOldJuniorB {
+    function lastSettle() external view returns (uint256);
 }
