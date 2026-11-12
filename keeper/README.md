@@ -113,10 +113,10 @@ Dry-run prints the table and writes `ops/last-plan.json`. Live mode:
 Every tick, after the allocation step (the full schedule and its reasons are in `ops/RUNBOOK.md` 6a):
 
 - `feeRouter.distribute()` when the router holds unparked USDC (`NothingToDo` is a skip), then `junior.observeSenior()` when senior's supply is below the recorded minimum, then `junior.snapFelixExposure()` (skipped while a Felix loss is booked and unbilled, or senior is unfunded), then `junior.syncSenior()` when senior's supply moved. Dry-run logs "would call".
-- Liquidity: if junior idle USDC < `reservedAssets + carryOwed()`, every position is recalled through `junior.execute`: Felix, every Morpho market and junior's own senior fee shares. Surplus idle above `reserve` (which includes the carry) is deployed to Felix.
+- Liquidity: if junior idle USDC < `reservedAssets + carryOwed()`, every position is recalled through `junior.execute`: Felix, every Morpho market and junior's own senior fee shares. Surplus idle above `reserve` is deployed to Felix, where `reserve` is the max of (`reservedAssets + carryOwed()` + exits maturing before the next settle), 1% of senior assets and 5 USDC.
 - `coverInProgress()` on junior and `maxRate()` on senior go into the report with `cover in progress: X USDC, about H hours to full recognition`.
 
-Settle tick (the first tick within 3,600 s of `lastSettle + 6 d 23 h`, and every tick after until settled): touch Felix (`execute(Felix.withdraw(0, junior, junior))`), recall every Felix and market position to idle, no redeploys, then `settle()` at the due second when it is at most 20 minutes away, else on the next tick. A failed recall aborts the settle. The report lists the three steps in order under `juniorWeekly.steps`.
+Settle tick (the first tick within 3,600 s of `lastSettle + 6 d 23 h`, and every tick after until settled): touch Felix (`execute(Felix.withdraw(0, junior, junior))`), recall every Felix and market position to idle, no redeploys, then `settle()` at the due second when it is at most 15 minutes away, else on the next tick (a `lastSettle` that moved meanwhile counts as done). `distribute` and the snapshot wait until after the settle. A failed touch, recall, wait or settle is an `error` and an `alerts` entry (red run), the settle is not sent after a failed touch or recall, and nothing is redeployed. The report lists the steps in order under `juniorWeekly.steps`.
 
 Weekly maturity check: `owed = pendingExitShares() * pricePerShare() / 1e18 / 1e12`; a shortfall of junior idle is a WARNING.
 
