@@ -218,6 +218,56 @@ contract SeedPoolTest is Test, Addresses {
         assertGt(avgFdvUsdCents, 5_000 * 100, "sold above the launch price");
     }
 
+    /// Review 1 (M1): liquidity STRADDLING the opening tick is sold ORPH at about the launch price minus the 1% fee (the fee
+    /// accrues to the attacker's own position): the cap is ORPH the seeder accepts selling near the launch price, not a premium.
+    function test_O1_straddlingGapIsSoldAtAboutTheLaunchPrice() public {
+        _env(POOL_ORPH / 20);
+        _attackerInit(hi - 2000);
+        _attackerHypeOnly(hi, hi + 200, 3e24);
+        (uint256 gas,,) = _launcherAlone(POOL_ORPH / 20);
+        vm.recordLogs();
+        s.run();
+        Vm.Log[] memory logs = vm.getRecordedLogs();
+        uint256 spent;
+        uint256 hype;
+        for (uint256 i; i < logs.length; i++) {
+            if (logs[i].topics[0] == SEEDED) (spent, hype) = abi.decode(logs[i].data, (uint256, uint256));
+        }
+        _assertSeededAtPlan(IPositionManager(POSM).nextTokenId() - 1);
+        assertGt(spent, 0);
+        assertLe(spent, POOL_ORPH / 20);
+        uint256 avgFdvUsdCents = 1e9 * hype * (HYPE_USD_E8 / 1e6) / spent;
+        console2.log("straddle: ORPH spent (whole)", spent / 1e18, "HYPE received (1e-3)", hype / 1e15);
+        console2.log("straddle: average FDV of the ORPH sold, USD cents", avgFdvUsdCents, "(launch FDV 500000)");
+        console2.log("launcher.seed gas", gas);
+        assertGt(avgFdvUsdCents, 4_800 * 100, "about the launch price");
+        assertLt(avgFdvUsdCents, 5_100 * 100, "about the launch price");
+    }
+
+    /// Review 1 (M2): the re-price crosses every initialised tick in the gap. Gas of `launcher.seed` against N dust HYPE-only
+    /// positions, each on its own adjacent 200-tick range below the opening tick.
+    function test_O1_seedGasGrowsWithInitialisedTicksInTheGap() public {
+        _env(POOL_ORPH / 20);
+        uint256[5] memory ns = [uint256(0), 10, 25, 50, 100];
+        uint256 prev;
+        for (uint256 k; k < ns.length; k++) {
+            uint256 snap = vm.snapshotState();
+            uint256 n = ns[k];
+            int24 start = hi - int24(int256(200 * (n + 2)));
+            _attackerInit(start);
+            for (uint256 j; j < n; j++) {
+                int24 a = start + int24(int256(200 * (j + 1)));
+                _attackerHypeOnly(a, a + 200, 1);
+            }
+            (uint256 gas, uint256 spent,) = _launcherAlone(POOL_ORPH / 20);
+            console2.log("dust positions in the gap", n, "launcher.seed gas", gas);
+            console2.log("  ORPH spent (wei)", spent);
+            if (k > 0) assertGt(gas, prev, "gas grows with the ticks crossed");
+            prev = gas;
+            vm.revertToState(snap);
+        }
+    }
+
     /// A re-price that needs more than the cap reverts and mints nothing: the pool stays at the attacker's price.
     function test_O1_repriceAboveCapRevertsWithNothingMinted() public {
         _env(10_000_000e18);
