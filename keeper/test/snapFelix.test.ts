@@ -4,12 +4,13 @@ import { juniorAbi } from "../src/abi/junior.js";
 import { felixLossUnbilled, snapFelix } from "../src/exec/junior.js";
 import type { TxSigner } from "../src/exec/signer.js";
 import { cfg } from "./helpers.js";
+import { emptyRevert, panic32, rpcDown } from "./errs.js";
 
 const JUNIOR = "0x2000000000000000000000000000000000000001" as Address;
 const FELIX = "0x8A862fD6c12f9ad34C9c2ff45AB2b6712e8CEa27" as Address;
 const UNIT = 10n ** 24n;
 
-function setup(v: { seniorSupply?: bigint; lost?: bigint; lostBase?: bigint; fraction?: bigint; assetsRef?: bigint; preFix?: boolean }) {
+function setup(v: { seniorSupply?: bigint; lost?: bigint; lostBase?: bigint; fraction?: bigint; assetsRef?: bigint; preFix?: boolean; rpcDownOn?: "felixExpSupply" | "felixExp" | "felixExp-late" }) {
   const c = cfg();
   c.junior = JUNIOR;
   const sends: string[] = [];
@@ -17,10 +18,11 @@ function setup(v: { seniorSupply?: bigint; lost?: bigint; lostBase?: bigint; fra
     call: async () => ({ data: "0x" }),
     readContract: async (a: { functionName: string; args?: bigint[] }) => {
       switch (a.functionName) {
-        case "felixExpSupply": if (v.preFix) throw new Error("reverted"); return 0n;
+        case "felixExpSupply": if (v.preFix) throw emptyRevert(); if (v.rpcDownOn === "felixExpSupply") throw rpcDown(); return 0n;
         case "totalSupply": return v.seniorSupply ?? 316n * 10n ** 18n;
         case "felixExp":
-          if (a.args![0] !== 0n) throw new Error("out of bounds");
+          if (v.rpcDownOn === "felixExp") throw rpcDown();
+          if (a.args![0] !== 0n) { if (v.rpcDownOn === "felixExp-late") throw rpcDown(); throw panic32(); }
           return [FELIX, v.lostBase ?? 0n, v.fraction ?? UNIT / 2n, v.assetsRef ?? 316_000_000n];
         case "lostAssets": return v.lost ?? 0n;
         default: throw new Error(`unexpected ${a.functionName}`);
@@ -67,6 +69,16 @@ describe("K3 Felix snapshot", () => {
     expect(unfunded.sends).toEqual([]);
     const funded = setup({ seniorSupply: 5n * 10n ** 18n });
     expect((await snapFelix(funded.ctx)).called).toBe(true);
+  });
+
+  it("fails closed: any read error other than the array-end Panic skips the snapshot", async () => {
+    for (const rpcDownOn of ["felixExpSupply", "felixExp", "felixExp-late"] as const) {
+      const { sends, ctx } = setup({ rpcDownOn });
+      const r = await snapFelix(ctx);
+      expect(r.called).toBe(false);
+      expect(r.note).toMatch(/not snapshotting/);
+      expect(sends).toEqual([]);
+    }
   });
 
   it("dry-run sends nothing; a pre-fix junior is skipped with a note", async () => {

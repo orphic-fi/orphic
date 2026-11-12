@@ -7,7 +7,7 @@ import { decide, proposeAllocation } from "./engine/allocate.js";
 import { buildPlan, validatePlan } from "./exec/plan.js";
 import { executePlan, weeklyClose, type ExecContext } from "./exec/send.js";
 import type { TxSigner } from "./exec/signer.js";
-import { accrueSenior, juniorWeekly, readJuniorStatus, observeSenior, snapFelix, syncSenior, type JuniorCtx } from "./exec/junior.js";
+import { accrueSenior, juniorWeeklyFinish, juniorWeeklyPrepare, readJuniorStatus, observeSenior, snapFelix, syncSenior, type JuniorCtx } from "./exec/junior.js";
 import { ensureLiquidity, manageJuniorIdle } from "./exec/juniorDeploy.js";
 import { distributeFees } from "./exec/router.js";
 import { sampleOrphPrice } from "./data/orph.js";
@@ -22,6 +22,8 @@ export interface RunDeps {
   signer?: TxSigner;
   /** Where log lines go. console.log by default; the Circuit agent routes them to agent.log. */
   log?: (line: string) => void;
+  /** Test hook for the wait before the due second. Real timers by default. */
+  sleep?: (ms: number) => Promise<void>;
 }
 
 export async function run(opts: RunOptions, cfg: SeniorConfig = loadConfig(opts.configPath), deps: RunDeps = {}): Promise<RunReport> {
@@ -125,24 +127,53 @@ export async function run(opts: RunOptions, cfg: SeniorConfig = loadConfig(opts.
     seniorTotalAssetsFallback: state.totalAssets,
     nowTs: BigInt(Math.floor(opts.now.getTime() / 1000)),
     log,
+    sleep: deps.sleep,
   };
   let juniorSync: RunReport["juniorSync"];
   let juniorAccrue: RunReport["juniorAccrue"];
   let juniorStatus: RunReport["juniorStatus"];
-  // Daily nudge first, so a sync in the same tick sees the freshly minted fee shares.
+  // Settle tick first (the touch runs before anything else junior-side; a settle tick that fails stays a settle tick):
+  // the first tick within an hour of the due second touches Felix and recalls every position. Part 2 below waits for
+  // the due second and settles. Snapshot and distribute wait until after the settle, so the state the settle reads is
+  // not moved by them.
+  let juniorWeeklyResult: RunReport["juniorWeekly"];
+  try {
+    juniorWeeklyResult = await juniorWeeklyPrepare(jctx);
+  } catch (err) {
+    // The state could not be read, so we cannot tell whether this is a settle tick: assume it is and redeploy nothing.
+    juniorWeeklyResult = { checked: false, settleDue: true, note: `junior weekly failed: ${(err as Error).message}` };
+    log(juniorWeeklyResult.note);
+    warnings.push(juniorWeeklyResult.note);
+  }
+  const settleTick = !!juniorWeeklyResult?.settleDue;
+  // Daily nudge, so a sync in the same tick sees the freshly minted fee shares.
   try {
     juniorAccrue = await accrueSenior(jctx);
   } catch (err) {
     juniorAccrue = { called: false, note: `accrue failed: ${(err as Error).message}` };
     log(juniorAccrue.note);
   }
-  // K4, every tick: flush the FeeRouter (small pushes), then record senior's lowest supply before the sync below.
+  // K4: flush the FeeRouter (small pushes) and K3: Felix exposure snapshot, unless a Felix loss is booked and unbilled.
   let feeDistribute: RunReport["feeDistribute"];
-  try {
-    feeDistribute = await distributeFees(jctx);
-  } catch (err) {
-    feeDistribute = { called: false, note: `distribute failed: ${(err as Error).message}` };
-    log(feeDistribute.note);
+  let juniorSnap: RunReport["juniorSnap"];
+  const flushAndSnap = async () => {
+    try {
+      feeDistribute = await distributeFees(jctx);
+    } catch (err) {
+      feeDistribute = { called: false, note: `distribute failed: ${(err as Error).message}` };
+      log(feeDistribute.note);
+    }
+    try {
+      juniorSnap = await snapFelix(jctx);
+    } catch (err) {
+      juniorSnap = { called: false, note: `snapFelixExposure failed: ${(err as Error).message}` };
+      log(juniorSnap.note);
+    }
+  };
+  if (!settleTick) await flushAndSnap();
+  else {
+    feeDistribute = { called: false, note: "settle tick: distribute waits until after settle()" };
+    juniorSnap = { called: false, note: "settle tick: snapshot waits until after settle()" };
   }
   let juniorObserve: RunReport["juniorObserve"];
   try {
@@ -150,14 +181,6 @@ export async function run(opts: RunOptions, cfg: SeniorConfig = loadConfig(opts.
   } catch (err) {
     juniorObserve = { called: false, note: `observeSenior failed: ${(err as Error).message}` };
     log(juniorObserve.note);
-  }
-  // K3: Felix exposure snapshot every tick, unless a Felix loss is booked and unbilled. Before the settle tick's touch.
-  let juniorSnap: RunReport["juniorSnap"];
-  try {
-    juniorSnap = await snapFelix(jctx);
-  } catch (err) {
-    juniorSnap = { called: false, note: `snapFelixExposure failed: ${(err as Error).message}` };
-    log(juniorSnap.note);
   }
   try {
     juniorSync = await syncSenior(jctx);
@@ -171,31 +194,34 @@ export async function run(opts: RunOptions, cfg: SeniorConfig = loadConfig(opts.
     juniorStatus = { enabled: true, note: `junior status read failed: ${(err as Error).message}` };
     warnings.push(juniorStatus.note);
   }
-  // K2, every tick: idle must cover reservedAssets + carryOwed(), else every position is recalled.
+  // K2, every tick: idle must cover reservedAssets + carryOwed(), else every position is recalled. A failed check
+  // (e.g. an RPC error reading carryOwed) is UNKNOWN: nothing is redeployed this tick.
   let juniorLiquidity: RunReport["juniorLiquidity"];
   try {
     juniorLiquidity = await ensureLiquidity({ ...jctx, log });
+    for (const e of juniorLiquidity.recall?.errors ?? []) warnings.push(e);
   } catch (err) {
-    juniorLiquidity = { checked: false, note: `liquidity check failed: ${(err as Error).message}` };
+    juniorLiquidity = { checked: false, failed: true, note: `liquidity check failed: ${(err as Error).message}` };
     warnings.push(juniorLiquidity.note);
   }
-  // Junior settle runs on the first tick after the contract allows it (lastSettle + 7d - 1h), whatever the hour: the
-  // seed settle happened on a Sunday evening, so a Sunday-midnight-only window would skip a week. juniorWeekly is a
-  // read until settle is due; when due it recalls junior's Felix position and settles.
-  let juniorWeeklyResult: RunReport["juniorWeekly"];
-  try {
-    juniorWeeklyResult = await juniorWeekly(jctx);
-  } catch (err) {
-    juniorWeeklyResult = { checked: false, note: `junior weekly failed: ${(err as Error).message}` };
-    log(juniorWeeklyResult.note);
+  // Part 2 of the settle tick: wait for the due second and settle (when it is at most 15 min away). Never throws.
+  if (settleTick) {
+    juniorWeeklyResult = await juniorWeeklyFinish(jctx, juniorWeeklyResult!);
+    if (juniorWeeklyResult.settleTx || juniorWeeklyResult.alreadySettled) await flushAndSnap();
+  }
+  // A failed settle tick is not a green run: error (exit 1) and the alert path (exit 2).
+  const settleAlerts: string[] = [];
+  if (juniorWeeklyResult?.error) {
+    settleAlerts.push(juniorWeeklyResult.error);
+    error = error ?? juniorWeeklyResult.error;
   }
   // Junior idle: deploy excess to Felix or pull back to the reserve. Skipped on a settle tick, where the recall
   // before settle takes precedence (the next hourly tick redeploys the excess).
   let juniorIdle: RunReport["juniorIdle"];
-  if (opts.weekly || juniorWeeklyResult?.settleDue) {
+  if (opts.weekly || settleTick) {
     juniorIdle = { checked: false, action: "skipped", note: "settle tick: idle management deferred to the next hour" };
-  } else if (juniorLiquidity?.short) {
-    juniorIdle = { checked: false, action: "skipped", note: "liquidity recall this tick: idle management deferred to the next hour" };
+  } else if (juniorLiquidity?.short || juniorLiquidity?.failed) {
+    juniorIdle = { checked: false, action: "skipped", note: "liquidity recall or unknown liquidity state this tick: idle management deferred to the next hour" };
   } else {
     try {
       juniorIdle = await manageJuniorIdle({ ...jctx, log });
@@ -263,7 +289,7 @@ export async function run(opts: RunOptions, cfg: SeniorConfig = loadConfig(opts.
     juniorWeekly: juniorWeeklyResult,
     orphPrice,
     drift,
-    alerts: drift?.alerts ?? [],
+    alerts: [...(drift?.alerts ?? []), ...settleAlerts],
     bookApy: bookApy(proposal),
     error,
   };

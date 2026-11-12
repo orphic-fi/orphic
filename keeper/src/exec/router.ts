@@ -2,6 +2,7 @@ import { encodeFunctionData, type Address, type Hex } from "viem";
 import { isPlaceholder } from "../config.js";
 import { erc20Abi } from "../abi/erc20.js";
 import { feeRouterAbi } from "../abi/feeRouter.js";
+import { NOTHING_TO_DO, revertSelector } from "./errors.js";
 import { sendCall, type SignerCtx } from "./send.js";
 
 export interface DistributeResult {
@@ -42,7 +43,8 @@ export async function distributeFees(ctx: SignerCtx & { log?: (l: string) => voi
     log(`distribute: ${unparkedUsdc} USDC split; sent ${hash}`);
     return { called: true, txHash: hash, unparkedUsdc, note: `distributed ${unparkedUsdc} USDC` };
   } catch (err) {
-    if (/NothingToDo/.test((err as Error).message)) return { called: false, unparkedUsdc, note: "NothingToDo (flushed by someone else); skipped" };
+    // Matched on the 4-byte error selector of the revert data, never on message text.
+    if (revertSelector(err) === NOTHING_TO_DO) return { called: false, unparkedUsdc, note: "NothingToDo (flushed by someone else); skipped" };
     throw err;
   }
 }

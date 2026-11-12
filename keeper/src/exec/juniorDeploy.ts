@@ -21,6 +21,7 @@ import { sendCall, type SignerCtx } from "./send.js";
 import { encodeMarketParams } from "../data/state.js";
 import { morphoBlueAbi } from "../abi/morphoBlue.js";
 import { keccak256 } from "viem";
+import { isMissingFunction } from "./errors.js";
 
 export const COVER_BUFFER_BPS = 100n; // 1% of senior assets kept idle for a settle-day cover bill
 export const MIN_RESERVE = 5_000_000n; // 5 USDC
@@ -41,7 +42,6 @@ const erc4626 = parseAbi([
 ]);
 
 const morphoWithdrawAbi = parseAbi([
-  "function position(bytes32 id, address user) view returns (uint256 supplyShares, uint128 borrowShares, uint128 collateral)",
   "function withdraw((address loanToken, address collateralToken, address oracle, address irm, uint256 lltv) marketParams, uint256 assets, uint256 shares, address onBehalf, address receiver) returns (uint256, uint256)",
 ]);
 
@@ -49,6 +49,19 @@ const seniorRedeemAbi = parseAbi([
   "function balanceOf(address) view returns (uint256)",
   "function redeem(uint256 shares, address receiver, address owner) returns (uint256)",
 ]);
+
+/**
+ * junior.carryOwed(), 0 on a pre-fix junior that has no such function. Any other read error (an RPC failure) is UNKNOWN
+ * and is rethrown: the caller then redeploys nothing that tick instead of guessing there is no debt.
+ */
+export async function readCarryOwed(c: PublicClient, junior: Address): Promise<bigint> {
+  try {
+    return await c.readContract({ address: junior, abi: juniorAbi, functionName: "carryOwed" });
+  } catch (err) {
+    if (isMissingFunction(err)) return 0n;
+    throw err;
+  }
+}
 
 export interface IdleInputs {
   idle: bigint; // junior USDC balance
@@ -112,8 +125,7 @@ export async function readIdleInputs(ctx: IdleCtx): Promise<IdleInputs> {
   const c = ctx.client!;
   const junior = ctx.cfg.junior as Address;
   const felix = ctx.cfg.felix.address;
-  // carryOwed does not exist on a pre-fix junior build: no debt there.
-  const carry = c.readContract({ address: junior, abi: juniorAbi, functionName: "carryOwed" }).catch(() => 0n);
+  const carry = readCarryOwed(c, junior);
   const [carryOwed, idle, reserved, pending, pps, seniorAssets, felixShares, felixWithdrawable, allowance] = await Promise.all([
     carry,
     c.readContract({ address: ctx.cfg.usdc, abi: erc20Full, functionName: "balanceOf", args: [junior] }),
@@ -266,7 +278,12 @@ export async function recallAll(ctx: IdleCtx, opts: { seniorShares: boolean }): 
 
   await step("Felix", () => recallFromFelix(ctx));
 
-  const n = Number(await c.readContract({ address: junior, abi: juniorAbi, functionName: "marketsLength" }));
+  // Every read sits inside a step, so a failed read is a recorded error and never an exception that skips the rest.
+  let n = 0;
+  await step("markets", async () => {
+    n = Number(await c.readContract({ address: junior, abi: juniorAbi, functionName: "marketsLength" }));
+    return { note: `${n} registered` };
+  });
   for (let i = 0; i < n; i++) {
     await step(`market ${i}`, async () => {
       const assets = await c.readContract({ address: junior, abi: juniorAbi, functionName: "marketAssets", args: [BigInt(i)] });
@@ -274,22 +291,16 @@ export async function recallAll(ctx: IdleCtx, opts: { seniorShares: boolean }): 
       const [loanToken, collateralToken, oracle, irm, lltv] = await c.readContract({ address: junior, abi: juniorAbi, functionName: "markets", args: [BigInt(i)] });
       const mp = { loanToken, collateralToken, oracle, irm, lltv };
       const id = keccak256(encodeMarketParams(mp));
-      const [position, m] = await Promise.all([
-        c.readContract({ address: ctx.cfg.morphoBlue, abi: morphoWithdrawAbi, functionName: "position", args: [id, junior] }),
-        c.readContract({ address: ctx.cfg.morphoBlue, abi: morphoBlueAbi, functionName: "market", args: [id] }),
-      ]);
+      const m = await c.readContract({ address: ctx.cfg.morphoBlue, abi: morphoBlueAbi, functionName: "market", args: [id] });
+      // Always by ASSETS, capped by the market's live liquidity: a by-shares withdraw of the whole position can ask for
+      // a hair more than the liquidity read a moment ago (interest accrues between the read and the transaction).
+      // expectedSupplyAssets rounds down, so withdrawing that many assets never needs more shares than junior holds.
       const liquidity = m[0] - m[2];
-      // Whole position by shares when the market can pay it, else what the market can pay right now.
-      const all = assets <= liquidity;
-      const amount = all ? assets : liquidity;
+      const amount = assets < liquidity ? assets : liquidity;
       const verb = `recall ${(Number(amount) / 1e6).toFixed(2)} of ${(Number(assets) / 1e6).toFixed(2)} USDC from market ${i}`;
       if (amount === 0n) return { note: "market illiquid; nothing recalled" };
       if (ctx.dryRun) return { note: `dry-run: would ${verb}` };
-      const data = encodeFunctionData({
-        abi: morphoWithdrawAbi,
-        functionName: "withdraw",
-        args: [mp, all ? 0n : amount, all ? position[0] : 0n, junior, junior],
-      });
+      const data = encodeFunctionData({ abi: morphoWithdrawAbi, functionName: "withdraw", args: [mp, amount, 0n, junior, junior] });
       const hash = await sendCall(ctx, junior, encodeFunctionData({ abi: juniorAbi, functionName: "execute", args: [ctx.cfg.morphoBlue, data] }), `junior.execute -> morpho withdraw ${i}`);
       return { txHash: hash, note: verb };
     });
@@ -311,6 +322,8 @@ export async function recallAll(ctx: IdleCtx, opts: { seniorShares: boolean }): 
 
 export interface LiquidityResult {
   checked: boolean;
+  /** The check itself failed (unknown state): the caller redeploys nothing this tick. */
+  failed?: boolean;
   idleUsdc?: number;
   owedUsdc?: number;
   short?: boolean;
@@ -332,7 +345,7 @@ export async function ensureLiquidity(ctx: IdleCtx): Promise<LiquidityResult> {
   const [idle, reserved, carry] = await Promise.all([
     c.readContract({ address: ctx.cfg.usdc, abi: erc20Full, functionName: "balanceOf", args: [junior] }),
     c.readContract({ address: junior, abi: juniorAbi, functionName: "reservedAssets" }),
-    c.readContract({ address: junior, abi: juniorAbi, functionName: "carryOwed" }).catch(() => 0n),
+    readCarryOwed(c, junior),
   ]);
   const owed = reserved + carry;
   const base = { checked: true, idleUsdc: Number(idle) / 1e6, owedUsdc: Number(owed) / 1e6 };

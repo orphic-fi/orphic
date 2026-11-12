@@ -4,6 +4,7 @@ import { juniorAbi } from "../src/abi/junior.js";
 import { SETTLE_INTERVAL, juniorWeekly, settleTickDue, type JuniorCtx } from "../src/exec/junior.js";
 import type { TxSigner } from "../src/exec/signer.js";
 import { cfg } from "./helpers.js";
+import { callReverted } from "./errs.js";
 
 const U = 1_000_000n;
 const JUNIOR = "0x2000000000000000000000000000000000000001" as Address;
@@ -14,19 +15,22 @@ const erc4626 = parseAbi(["function withdraw(uint256,address,address)"]);
 const morphoW = parseAbi(["function withdraw((address,address,address,address,uint256),uint256,uint256,address,address) returns (uint256,uint256)"]);
 
 /** A fake chain: a clock, a Felix position, one Morpho market position. sends are recorded with the clock at send time. */
-function world(opts: { chainNow: bigint; failMarketRecall?: boolean }) {
-  const w = { clock: opts.chainNow, sends: [] as { what: string; at: bigint }[] };
+function world(opts: { chainNow: bigint; failMarketRecall?: boolean; settledOnRead?: number; tooSoonAtSimulate?: boolean }) {
+  const w = { clock: opts.chainNow, sends: [] as { what: string; at: bigint }[], lastSettleReads: 0 };
   const c = cfg();
   c.junior = JUNIOR;
   const felix = c.felix.address.toLowerCase();
   const client = {
     getBlock: async () => ({ timestamp: w.clock }),
-    call: async () => ({ data: "0x" }),
+    call: async (a: { data?: Hex }) => {
+      if (opts.tooSoonAtSimulate && a.data && decodeFunctionData({ abi: juniorAbi, data: a.data }).functionName === "settle") throw callReverted("TooSoon()");
+      return { data: "0x" };
+    },
     readContract: async (a: { address: string; functionName: string; args?: unknown[] }) => {
       switch (a.functionName) {
         case "pendingExitShares": return 0n;
         case "pricePerShare": return 10n ** 18n;
-        case "lastSettle": return LAST;
+        case "lastSettle": w.lastSettleReads++; return opts.settledOnRead && w.lastSettleReads >= opts.settledOnRead ? DUE + 5n : LAST;
         case "balanceOf": return a.address.toLowerCase() === felix ? 50n * U : 100n * U; // Felix shares / junior idle
         case "maxWithdraw": return 50n * U;
         case "convertToAssets": return 50n * U;
@@ -113,6 +117,40 @@ describe("K1 settle tick", () => {
     expect(w.sends.map((s) => s.what)).toEqual(["touch", "felix-withdraw 50", "market-withdraw", "settle"]);
   });
 
+  it("S2: lastSettle already moved when the wait ends: someone else settled, success, nothing sent", async () => {
+    const now = DUE - 600n;
+    const { w, ctx } = world({ chainNow: now, settledOnRead: 2 }); // read 1 = prepare, read 2 = the re-read before sending
+    const r = await juniorWeekly(ctx(now));
+    expect(r.alreadySettled).toBe(true);
+    expect(r.error).toBeUndefined();
+    expect(w.sends.map((s) => s.what)).not.toContain("settle");
+  });
+
+  it("S2/S4: a TooSoon simulate (decoded from the revert selector) with lastSettle moved is success", async () => {
+    const now = DUE - 600n;
+    const { ctx } = world({ chainNow: now, tooSoonAtSimulate: true, settledOnRead: 3 });
+    const r = await juniorWeekly(ctx(now));
+    expect(r.alreadySettled).toBe(true);
+    expect(r.error).toBeUndefined();
+  });
+
+  it("S4: TooSoon with lastSettle unmoved is a failure, reported, not a pass", async () => {
+    const now = DUE - 600n;
+    const { ctx } = world({ chainNow: now, tooSoonAtSimulate: true });
+    const r = await juniorWeekly(ctx(now));
+    expect(r.alreadySettled).toBeUndefined();
+    expect(r.error).toMatch(/TooSoon but lastSettle did not move/);
+  });
+
+  it("S3: the in-tick wait is at most 15 minutes", async () => {
+    const { SETTLE_MAX_WAIT } = await import("../src/exec/junior.js");
+    expect(SETTLE_MAX_WAIT).toBe(900n);
+    const now = DUE - 901n;
+    const { w, ctx } = world({ chainNow: now });
+    await juniorWeekly(ctx(now));
+    expect(w.sends.map((s) => s.what)).not.toContain("settle"); // 901 s away: the next tick settles
+  });
+
   it("does nothing more than 1h before due", async () => {
     const now = DUE - 7200n;
     const { w, ctx } = world({ chainNow: now });
@@ -124,7 +162,9 @@ describe("K1 settle tick", () => {
   it("never settles when a recall failed", async () => {
     const now = DUE - 600n;
     const { w, ctx } = world({ chainNow: now, failMarketRecall: true });
-    await expect(juniorWeekly(ctx(now))).rejects.toThrow(/recall failed/);
+    const r = await juniorWeekly(ctx(now));
+    expect(r.error).toMatch(/recall failed/);
+    expect(r.settleDue).toBe(true); // still a settle tick: the caller redeploys nothing
     expect(w.sends.map((s) => s.what)).not.toContain("settle");
   });
 

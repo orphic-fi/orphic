@@ -5,6 +5,7 @@ import { vaultV2Abi } from "../abi/vaultV2.js";
 import { erc20Abi } from "../abi/erc20.js";
 import { sendCall, type SignerCtx } from "./send.js";
 import { recallAll, touchFelix } from "./juniorDeploy.js";
+import { TOO_SOON, isMissingFunction, isPanic, revertSelector } from "./errors.js";
 
 const WAD = 10n ** 18n;
 export const SETTLE_PERIOD = 7n * 24n * 3600n;
@@ -13,8 +14,8 @@ export const SETTLE_GRACE = 3600n;
 export const SETTLE_INTERVAL = SETTLE_PERIOD - SETTLE_GRACE;
 /** The settle sequence (touch, recall) starts on the first tick that is within this of the due second. */
 export const SETTLE_LEAD = 3600n;
-/** The keeper waits in-tick for the due second only when it is at most this far away (fits a 30 min Action job). */
-export const SETTLE_MAX_WAIT = 1200n;
+/** The keeper waits in-tick for the due second only when it is at most this far away (15 min: the whole Action job must fit its 30 min timeout with margin). */
+export const SETTLE_MAX_WAIT = 900n;
 
 // ---------------------------------------------------------------------------
 // Pure math (unit tested)
@@ -141,7 +142,8 @@ export async function observeSenior(ctx: JuniorCtx): Promise<SyncResult> {
   let min: bigint;
   try {
     min = await ctx.client.readContract({ address: ctx.cfg.junior as Address, abi: juniorAbi, functionName: "seniorSupplyMin" });
-  } catch {
+  } catch (err) {
+    if (!isMissingFunction(err)) throw err; // an RPC error is not "pre-fix": do not guess
     return { called: false, note: "junior has no seniorSupplyMin (pre-fix build); observeSenior skipped" };
   }
   const supply = await ctx.client.readContract({ address: ctx.cfg.vault as Address, abi: vaultV2Abi, functionName: "totalSupply" });
@@ -224,7 +226,8 @@ export async function accrueSenior(ctx: JuniorCtx): Promise<SyncResult> {
 }
 
 const PRICE_UNIT = 10n ** 24n;
-const MAX_FELIX_ENTRIES = 32;
+/** Safety bound for the felixExp scan; the array ends at the first out-of-bounds Panic(0x32), so this is only reached on a bug. */
+const MAX_FELIX_ENTRIES = 256;
 const lostAssetsAbi = parseAbi(["function lostAssets() view returns (uint256)"]);
 
 /** One Felix vault in junior's exposure snapshot, with Felix's `lostAssets` read now. */
@@ -257,20 +260,24 @@ export async function snapFelix(ctx: JuniorCtx): Promise<SyncResult> {
     log(`snapFelixExposure: skip (${note})`);
     return { called: false, note };
   };
-  // A pre-fix junior has no snapshot at all.
+  // A pre-fix junior has no snapshot at all. Any OTHER read error means the state is unknown: fail closed, no snapshot.
   try {
     await c.readContract({ address: junior, abi: juniorAbi, functionName: "felixExpSupply" });
-  } catch {
-    return skip("junior has no snapFelixExposure (pre-fix build)");
+  } catch (err) {
+    if (isMissingFunction(err)) return skip("junior has no snapFelixExposure (pre-fix build)");
+    return skip(`felixExpSupply read failed (${(err as Error).message.split("\n")[0]}); not snapshotting on unknown state`);
   }
   if ((await c.readContract({ address: ctx.cfg.vault as Address, abi: vaultV2Abi, functionName: "totalSupply" })) === 0n) return skip("senior is not funded yet");
+  // Read felixExp(i) until the decoded Panic(0x32) of the array end. Any other failure, or no end in sight, skips the tick.
   const entries: FelixEntry[] = [];
-  for (let i = 0; i < MAX_FELIX_ENTRIES; i++) {
+  for (let i = 0; ; i++) {
+    if (i >= MAX_FELIX_ENTRIES) return skip(`felixExp has no end within ${MAX_FELIX_ENTRIES} entries; not snapshotting`);
     let e: readonly [Address, bigint, bigint, bigint];
     try {
       e = await c.readContract({ address: junior, abi: juniorAbi, functionName: "felixExp", args: [BigInt(i)] });
-    } catch {
-      break; // past the end of the array
+    } catch (err) {
+      if (isPanic(err, 0x32n)) break; // past the end of the array
+      return skip(`felixExp(${i}) read failed (${(err as Error).message.split("\n")[0]}); not snapshotting on unknown state`);
     }
     const lost = await c.readContract({ address: e[0], abi: lostAssetsAbi, functionName: "lostAssets" });
     entries.push({ lostBase: e[1], fraction: e[2], assetsRef: e[3], lost });
@@ -299,16 +306,22 @@ export interface JuniorWeeklyResult {
   note: string;
   recall?: string;
   recallTx?: Hex;
+  /** Due second of this settle (set on a settle tick). */
+  dueTs?: string;
+  /** The settle was already done by someone else (lastSettle moved): success, not failure. */
+  alreadySettled?: boolean;
+  /** The settle tick failed (touch, recall, wait or settle). The tick is still a settle tick: nothing is redeployed. */
+  error?: string;
   /** The settle tick in the order it ran (or would run): touch, recall, settle. */
   steps?: string[];
 }
 
 /**
- * Weekly: check junior idle USDC covers maturing exits, warn on a shortfall
- * (the agent must bring funds back via junior.execute; not implemented here),
- * then call settle() when lastSettle + 7 days - 1 hour has passed.
+ * Weekly, part 1 (start of the junior section): check junior idle USDC covers maturing exits, decide whether this tick
+ * is a settle tick and, if so, touch Felix and recall every position. Never throws once the tick is known to be a settle
+ * tick: a failure lands in `error` with `settleDue` still true, so the caller redeploys nothing.
  */
-export async function juniorWeekly(ctx: JuniorCtx): Promise<JuniorWeeklyResult> {
+export async function juniorWeeklyPrepare(ctx: JuniorCtx): Promise<JuniorWeeklyResult> {
   const log = ctx.log ?? ((l: string) => console.log(l));
   if (!juniorEnabled(ctx.cfg)) {
     log("junior weekly: junior is a placeholder; skipped");
@@ -344,28 +357,59 @@ export async function juniorWeekly(ctx: JuniorCtx): Promise<JuniorWeeklyResult> 
   }
 
   const nowTs = ctx.nowTs ?? BigInt(Math.floor(Date.now() / 1000));
-  // settleDue = "this tick runs the settle sequence" (the idle step then redeploys nothing until settle has happened).
+  // settleDue = "this tick is a settle tick" (the caller redeploys nothing until settle has happened, whatever happens below).
   result.settleDue = settleTickDue(nowTs, lastSettle);
   if (!result.settleDue) {
     result.note = `settle not due (lastSettle ${lastSettle})`;
     log(`junior weekly: ${result.note}`);
     return result;
   }
-  const dueTs = lastSettle + SETTLE_INTERVAL;
+  result.dueTs = (lastSettle + SETTLE_INTERVAL).toString();
   const steps: string[] = [];
   result.steps = steps;
   const sctx = { cfg: ctx.cfg, dryRun: ctx.dryRun, client: ctx.client, signer: ctx.signer, agentPrivateKey: ctx.agentPrivateKey, log };
   // 1. Touch Felix so a pending bad debt is booked in lostAssets, 2. recall every position to idle, so cover and
-  // matured exits are paid in full. Both happen before the due second; the hourly idle step redeploys after settle.
+  // matured exits are paid in full. Both happen before the due second. The touch runs first of everything on the tick.
   if (!isPlaceholder(ctx.cfg.vault)) {
-    const touch = await touchFelix(sctx);
-    steps.push(`1 touch: ${touch.note}`);
-    const recall = await recallAll(sctx, { seniorShares: false });
-    steps.push(`2 recall: ${recall.note}`);
-    result.recall = recall.note;
-    if (recall.txHashes.length) result.recallTx = recall.txHashes[recall.txHashes.length - 1];
-    if (recall.errors.length) throw new Error(`settle aborted, recall failed: ${recall.errors.join("; ")}`);
+    const errors: string[] = [];
+    try {
+      const touch = await touchFelix(sctx);
+      steps.push(`1 touch: ${touch.note}`);
+    } catch (err) {
+      errors.push(`touch failed: ${(err as Error).message.split("\n")[0]}`);
+      steps.push(`1 touch: ${errors[errors.length - 1]}`);
+    }
+    // The recall is the safety property, so it is attempted even when the touch failed.
+    try {
+      const recall = await recallAll(sctx, { seniorShares: false });
+      steps.push(`2 recall: ${recall.note}`);
+      result.recall = recall.note;
+      if (recall.txHashes.length) result.recallTx = recall.txHashes[recall.txHashes.length - 1];
+      errors.push(...recall.errors);
+    } catch (err) {
+      errors.push(`recall failed: ${(err as Error).message.split("\n")[0]}`);
+      steps.push(`2 recall: ${errors[errors.length - 1]}`);
+    }
+    if (errors.length) {
+      result.error = `settle tick failed before settle: ${errors.join("; ")}`;
+      result.note = result.error;
+      log(`junior weekly: ${result.error}`);
+    }
   }
+  return result;
+}
+
+/**
+ * Weekly, part 2: wait for the due second (only when it is at most SETTLE_MAX_WAIT away) and call settle(). A
+ * `lastSettle` newer than the one the tick started with means someone else settled: success. Never throws.
+ */
+export async function juniorWeeklyFinish(ctx: JuniorCtx, result: JuniorWeeklyResult): Promise<JuniorWeeklyResult> {
+  const log = ctx.log ?? ((l: string) => console.log(l));
+  if (!result.settleDue || result.error || !result.dueTs || !ctx.client) return result;
+  const steps = (result.steps ??= []);
+  const dueTs = BigInt(result.dueTs);
+  const startSettle = BigInt(result.lastSettle!);
+  const nowTs = ctx.nowTs ?? BigInt(Math.floor(Date.now() / 1000));
   const wait = dueTs - nowTs;
   if (wait > SETTLE_MAX_WAIT) {
     steps.push(`3 settle: due in ${wait}s, more than ${SETTLE_MAX_WAIT}s away; the next tick settles`);
@@ -379,18 +423,43 @@ export async function juniorWeekly(ctx: JuniorCtx): Promise<JuniorWeeklyResult> 
     log("junior weekly: would call junior.settle() at the due second (dry-run)");
     return result;
   }
-  // Wait for CHAIN time (what the contract compares), not wall time.
-  const sleep = ctx.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
-  const giveUp = Date.now() + Number(SETTLE_MAX_WAIT + 120n) * 1000;
-  for (;;) {
-    const chainTs = (await ctx.client.getBlock()).timestamp;
-    if (chainTs >= dueTs) break;
-    if (!ctx.sleep && Date.now() > giveUp) throw new Error("chain time did not reach the settle due second; the next tick settles");
-    await sleep(Math.min(Number(dueTs - chainTs), 5) * 1000);
+  const c = ctx.client;
+  const junior = ctx.cfg.junior as Address;
+  const settledMeanwhile = async () => (await c.readContract({ address: junior, abi: juniorAbi, functionName: "lastSettle" })) > startSettle;
+  try {
+    // Wait for CHAIN time (what the contract compares), not wall time.
+    const sleep = ctx.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
+    const giveUp = Date.now() + Number(SETTLE_MAX_WAIT + 60n) * 1000;
+    for (;;) {
+      const chainTs = (await c.getBlock()).timestamp;
+      if (chainTs >= dueTs) break;
+      if (!ctx.sleep && Date.now() > giveUp) throw new Error("chain time did not reach the settle due second");
+      await sleep(Math.min(Number(dueTs - chainTs), 5) * 1000);
+    }
+    if (await settledMeanwhile()) {
+      result.alreadySettled = true;
+    } else {
+      try {
+        result.settleTx = await send(ctx, "settle");
+      } catch (err) {
+        // Someone else settled first (a TooSoon simulate, or a revert at send): success when lastSettle moved.
+        if (await settledMeanwhile()) result.alreadySettled = true;
+        else throw revertSelector(err) === TOO_SOON ? new Error("settle refused with TooSoon but lastSettle did not move") : err;
+      }
+    }
+    steps.push(result.alreadySettled ? "3 settle: already settled by someone else" : "3 settle: sent at the due second");
+    result.note = result.alreadySettled ? "settle already done by someone else" : "settle sent";
+    log(`junior weekly: ${result.note}${result.settleTx ? ` ${result.settleTx}` : ""}`);
+  } catch (err) {
+    result.error = `settle failed: ${(err as Error).message.split("\n")[0]}`;
+    result.note = result.error;
+    steps.push(`3 settle: ${result.error}`);
+    log(`junior weekly: ${result.error}`);
   }
-  result.settleTx = await send(ctx, "settle");
-  steps.push("3 settle: sent at the due second");
-  result.note = "settle sent";
-  log(`junior settle sent ${result.settleTx}`);
   return result;
+}
+
+/** Both parts back to back (tests, and any caller that needs no work in between). */
+export async function juniorWeekly(ctx: JuniorCtx): Promise<JuniorWeeklyResult> {
+  return juniorWeeklyFinish(ctx, await juniorWeeklyPrepare(ctx));
 }

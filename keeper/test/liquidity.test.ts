@@ -4,13 +4,14 @@ import { juniorAbi } from "../src/abi/junior.js";
 import { ensureLiquidity, reserveFor, type IdleInputs } from "../src/exec/juniorDeploy.js";
 import type { TxSigner } from "../src/exec/signer.js";
 import { cfg } from "./helpers.js";
+import { emptyRevert, rpcDown } from "./errs.js";
 
 const U = 1_000_000n;
 const JUNIOR = "0x2000000000000000000000000000000000000001" as Address;
 const AGENT = "0x3000000000000000000000000000000000000003" as Address;
 const redeemAbi = parseAbi(["function redeem(uint256,address,address)"]);
 
-function setup(v: { idle: bigint; reserved?: bigint; carry?: bigint | "absent"; seniorShares?: bigint }) {
+function setup(v: { idle: bigint; reserved?: bigint; carry?: bigint | "absent" | "rpc-error"; seniorShares?: bigint }) {
   const c = cfg();
   c.junior = JUNIOR;
   const felix = c.felix.address.toLowerCase();
@@ -23,7 +24,7 @@ function setup(v: { idle: bigint; reserved?: bigint; carry?: bigint | "absent"; 
       switch (a.functionName) {
         case "balanceOf": return addr === felix ? 50n * U : addr === senior ? v.seniorShares ?? 0n : v.idle;
         case "reservedAssets": return v.reserved ?? 0n;
-        case "carryOwed": if (v.carry === "absent") throw new Error("reverted"); return v.carry ?? 0n;
+        case "carryOwed": if (v.carry === "absent") throw emptyRevert(); if (v.carry === "rpc-error") throw rpcDown(); return v.carry ?? 0n;
         case "maxWithdraw": return 50n * U;
         case "convertToAssets": return 50n * U;
         case "marketsLength": return 1n;
@@ -69,11 +70,15 @@ describe("K2 liquidity", () => {
     expect((await ensureLiquidity(setup({ idle: 10n * U, carry: "absent" }).ctx)).short).toBe(false);
   });
 
+  it("an RPC error reading carryOwed is UNKNOWN, not zero: the check throws so nothing is redeployed", async () => {
+    await expect(ensureLiquidity(setup({ idle: 10n * U, carry: "rpc-error" }).ctx)).rejects.toThrow();
+  });
+
   it("dry-run sends nothing but names every venue it would recall", async () => {
     const { sends, ctx } = setup({ idle: 1n * U, reserved: 60n * U, seniorShares: 13n });
     const r = await ensureLiquidity({ ...ctx, dryRun: true });
     expect(sends).toEqual([]);
-    expect(r.recall!.steps.map((s) => s.split(":")[0])).toEqual(["Felix", "market 0", "senior fee shares"]);
+    expect(r.recall!.steps.map((s) => s.split(":")[0])).toEqual(["Felix", "markets", "market 0", "senior fee shares"]);
   });
 
   it("the idle reserve keeps what junior owes senior, so the hourly redeploy never takes it", () => {
