@@ -56,6 +56,8 @@ cast call 0xD7217E5687FF1071356C780b5fe4803D9D967da7 "isVaultV2(address)(bool)" 
 ```
 
 ## 2. Sunday: deploy junior and router (step 2 of 3)
+(Live since 8 Nov. To move to the fixed junior, router and gate see `MIGRATION.md`; script `06a` deploys them beside the live senior.)
+
 
 What it does: deploys JuniorVault (owner DEPLOYER, cap $75k, senior = step 1 vault), seeds it with 1 USDC of dead shares, pauses deposits, sets the agent, registers the four Morpho markets plus Felix and the senior vault as its valuation universe and venue list, sets the agent allowlist (Morpho supply/withdraw, Felix deposit/redeem/withdraw, senior redeem/withdraw, USDC approvals to Morpho and Felix only). Deploys FeeRouter with recipients senior / junior / treasury and keeper = AGENT.
 
@@ -80,6 +82,8 @@ Read-back: `managementFeeRecipient() == JUNIOR`, `managementFee() == 158548959`,
 After step 3, caps and adapters cannot change for 3 days. That is the point.
 
 ## 3a. Senior receive-shares gate (curator; audit fixes 4/8, wired in 7/8)
+**The migration plan (`MIGRATION.md`, scripts `06a` to `06d`) deploys the gate and wires it together with the new fee recipient; follow that, not the steps below, for the live system.** The steps below are the manual equivalent and the gate owner rules.
+
 Not part of Sunday's launch script. Needs the senior curator key (hardware wallet) and a 3-day wait. Closes C7, C3b, C3 late buyer; see LIMITATIONS L15 and DECISIONS D43 for what it costs.
 
 1. Deploy `SeniorReceiveGate(senior, junior, owner)` where `owner` is the senior curator. The constructor reverts `WrongPair` unless `junior.senior() == senior`.
@@ -99,6 +103,7 @@ I run `forge test --match-contract DeployTest` against the live addresses (env `
 - Front end: `web/src/config/addresses.ts` with the addresses, `DEPLOYED = true`, deploy to the orphic.fi host. Write buttons stay disabled by `OPENS_LABEL` until Monday.
 
 ## 5a. Monday: ORPH and the pool (step 4 and 5)
+(Phase G of `MIGRATION.md`: independent of the junior migration; `setStakeToken` then goes on junior v2.)
 
 Step 4, `04_DeployORPH.s.sol`: ORPH (1B, no owner), two OZ timelocks (treasury 15%, incentives 10%, 3-day delay, admin = TREASURY_ADMIN), TeamVesting (15%, 2 years, 6-month cliff, beneficiary TEAM), 60% to POOL_SEEDER (the Safe).
 ```
@@ -194,6 +199,7 @@ Anyone can call `settle()`; the keeper runs the settle tick of 6a item 6 (touch 
 - If the agent key leaks: the above, then rotate the GitHub secret. The key could only have moved funds between allowlisted venues and the contract.
 
 ## 8a. Owner hardening (junior owner, hardware wallet, and senior curator)
+(Item 1 for the old junior is phase D of `MIGRATION.md`, behind a checklist that every market position is 0; v2 is deployed without those rules.)
 1. **Remove the two Morpho rules the shipped keeper never uses** (audit A9b/A9f). The keeper only deploys junior's USDC to Felix; Morpho supply and withdraw on junior's markets are unused attack surface for a leaked agent key. From the junior owner:
    `cast send $JUNIOR "setRule(address,bytes4,bool,uint256)" $MORPHO 0xa99aad89 false 224` (supply)
    `cast send $JUNIOR "setRule(address,bytes4,bool,uint256)" $MORPHO 0x5c2bea49 false 256` (withdraw)

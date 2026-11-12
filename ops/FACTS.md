@@ -22,6 +22,22 @@ Live test (same day): 316 USDC into senior (all in Felix), 80 USDC into junior, 
 Hyperliquid L1: 0x2DBE has an approved API agent "orphic-deploy" 0x23354F1bcd8dD322778628696C3E9912588b6203 (valid 180 days) used to toggle big blocks; to be removed by Cashout. Big blocks are off.
 Gas: our transactions paid 0.1 gwei; at 22:00 UTC the base fee was 56 gwei, so the Rotator's gas-aware HOLD is working as intended.
 
+## 0a. Fixed system (audit fixes 7/8, NOT deployed; placeholders)
+
+Nothing below exists on chain yet. Every `<…>` is filled by hand after the phase that creates it, from the plan's read-backs; never fill one with a computed or guessed value other than where stated. Procedure and signer per step: `MIGRATION.md`.
+
+| Contract | Address | Created by |
+|---|---|---|
+| VenueAdmin (external library, CREATE2 via `0x4e59b44847b379578588920ca78fbf26c0b4956c`, salt 0) | **0x4Ec02Cfb29E387F6BbCBACF266C7213646DE94dC** (computed from this build, **no code on chain on 12 Nov**; runtime code hash expected `0xa6e33d97df8578d49cb8ccc8615a18b8957b95de2939e7eb5314e14c110c693d` once deployed) | phase A, step 1 |
+| JuniorVault v2 | `<JUNIOR_V2: set after phase A>` | phase A (CREATE from `0x2DBE`, depends on its nonce) |
+| FeeRouter v2 | `<ROUTER_V2: set after phase A>` | phase A |
+| SeniorReceiveGate | `<GATE: set after phase A>` (owner `0x9EDf…5F29`) | phase A |
+| Old junior / old router | unchanged: `0x20D5…7F2E` / `0xC2d2…aA37` (old router recipients repointed to v2 in phase D) | |
+
+The VenueAdmin address depends on the exact build: orphic `fixes/main` `5e6bf23` (sources as of commit `35b48b9` for `VenueAdmin.sol`), solc 0.8.28, `optimizer_runs` 200, `via_ir` false, `evm_version` cancun, metadata hash on. Any edit to `VenueAdmin.sol`, to a library it imports or to the compiler settings changes it: recompute with `cast create2 --deployer 0x4e59b44847b379578588920ca78fbf26c0b4956c --salt 0x00..00 --init-code $(jq -r .bytecode.object out/VenueAdmin.sol/VenueAdmin.json)`, and deploy v2 from the same build. Read `cast codehash` of it after phase A before trusting v2. The CREATE2 deployer `0x4e59…956C` has code on HyperEVM (read-only `eth_getCode`, 12 Nov).
+
+Measured on a fork of the live state (12 Nov, block 51,034,654): phase A deploys cost 1.50M (library), 6.48M (JuniorVault, **big block**), 2.10M (FeeRouter, **big block**), 1.12M (gate); phases B, C, D steps are all at most 0.45M gas. Read-only live facts that shaped the plan: senior performance fee 0 and recipient 0x0; management fee recipient the old junior; receive gate unset; timelock 259,200 s on `setManagementFeeRecipient`, `setReceiveSharesGate` and `setPerformanceFeeRecipient`; old router balance 0 and fed by nothing; `0x2DBE` USDC 0.0195, HYPE 0.50, nonce 27; `0x9EDf` no code, HYPE 0.218, nonce 1.
+
 ## 1. HyperEVM (chain 999): Morpho
 
 | Contract | Address | How verified |
