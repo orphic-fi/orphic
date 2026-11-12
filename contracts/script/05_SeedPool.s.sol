@@ -15,7 +15,7 @@ import {SeedLauncher} from "../src/SeedLauncher.sol";
 import {Addresses} from "./Addresses.sol";
 
 /// Step 5. One Uniswap v4 pool on HyperEVM: native HYPE / ORPH, 1% fee, tick spacing 200, no hook.
-/// Single-sided ORPH position (all 600M) from the minimum tick up to the opening price, owned by the Safe.
+/// Single-sided ORPH position (all 600M) from the minimum tick up to the opening price, owned by NFT_OWNER (a contract).
 /// Buyers push the price down in ORPH-per-HYPE terms (ORPH gets dearer) and walk into the range.
 ///
 /// Three transactions: deploy the SeedLauncher, ORPH.approve(launcher, 600M), launcher.seed(...). The seed is ONE
@@ -24,7 +24,9 @@ import {Addresses} from "./Addresses.sol";
 /// to SEED_CAP_ORPH, and reverts above that (nothing is minted).
 ///
 /// Env: DEPLOYER (holds the 600M ORPH; the hardware wallet), ORPH, HYPE_USD_E8 (HYPE price in USD with 8 decimals,
-///      read from the Morpho API at deploy time), FDV_USD (default 5000), SEED_CAP_ORPH (wei, default 0 = refuse any re-price that sells ORPH; <= 600M ORPH).
+///      read from the Morpho API at deploy time), HYPE_USD_REF_E8 (the same price from an INDEPENDENT source; the script
+///      refuses a difference over 20%), FDV_USD (default 5000), NFT_OWNER (default SENIOR_SAFE; must have code: a Safe or
+///      timelock, never an EOA), SEED_CAP_ORPH (wei, default 0 = refuse any re-price that sells ORPH; <= 600M ORPH).
 ///      Uniswap v4 addresses verified on-chain 7 Nov.
 contract SeedPool is Script, Addresses {
     address public constant POOL_MANAGER = 0x12D4Fd9C5DeDd00ab8a0bCe2CF0167bbf94b6B1F;
@@ -59,8 +61,10 @@ contract SeedPool is Script, Addresses {
         l.deployer = vm.envAddress("DEPLOYER");
         l.orph = vm.envAddress("ORPH");
         uint256 hypeUsdE8 = vm.envUint("HYPE_USD_E8");
-        l.nftOwner = SENIOR_SAFE;
+        l.nftOwner = vm.envOr("NFT_OWNER", SENIOR_SAFE);
         l.cap = vm.envOr("SEED_CAP_ORPH", uint256(0));
+        require(l.nftOwner.code.length > 0, "NFT_OWNER has no code: the position NFT must sit in a Safe or timelock");
+        _requireBand(hypeUsdE8, vm.envUint("HYPE_USD_REF_E8"));
         require(l.cap <= POOL_ORPH, "SEED_CAP_ORPH above the pool ORPH");
         require(IERC20(l.orph).balanceOf(l.deployer) >= POOL_ORPH, "deployer lacks the pool ORPH");
         console2.log("SEED_CAP_ORPH  ", l.cap);
@@ -86,6 +90,13 @@ contract SeedPool is Script, Addresses {
         console2.log("ORPH spent re-pricing", r.spent);
         console2.log("HYPE received        ", r.hype);
         _verify(l, r);
+    }
+
+    function _requireBand(uint256 hypeUsdE8, uint256 refE8) internal view {
+        uint256 diff = hypeUsdE8 > refE8 ? hypeUsdE8 - refE8 : refE8 - hypeUsdE8;
+        require(diff * 100 <= 20 * refE8, "HYPE_USD_E8 is more than 20% from HYPE_USD_REF_E8");
+        console2.log("HYPE_USD_E8    ", hypeUsdE8);
+        console2.log("HYPE_USD_REF_E8", refE8);
     }
 
     /// Opening price: ORPH per HYPE such that SUPPLY is worth fdvUsd. Both tokens have 18 decimals.

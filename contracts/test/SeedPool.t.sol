@@ -246,6 +246,57 @@ contract SeedPoolTest is Test, Addresses {
         assertEq(orph.balanceOf(deployer), 1_000_000_000e18);
     }
 
+    /// O4(d): the position NFT must sit in a contract. An EOA (today's SENIOR_SAFE on mainnet) is refused before anything is broadcast.
+    function test_O4d_eoaNftOwnerReverts() public {
+        _env(0);
+        vm.setEnv("NFT_OWNER", vm.toString(makeAddr("an EOA")));
+        uint256 nextId = IPositionManager(POSM).nextTokenId();
+        vm.expectRevert(bytes("NFT_OWNER has no code: the position NFT must sit in a Safe or timelock"));
+        s.run();
+        // the default owner (SENIOR_SAFE) without code is refused the same way
+        vm.etch(SENIOR_SAFE, "");
+        vm.setEnv("NFT_OWNER", vm.toString(SENIOR_SAFE));
+        vm.expectRevert(bytes("NFT_OWNER has no code: the position NFT must sit in a Safe or timelock"));
+        s.run();
+        assertEq(IPositionManager(POSM).nextTokenId(), nextId, "nothing was minted");
+        assertEq(orph.balanceOf(deployer), 1_000_000_000e18, "nothing moved");
+    }
+
+    /// O4(d): a contract owner other than SENIOR_SAFE works and receives the NFT.
+    function test_O4d_contractNftOwnerReceivesTheNft() public {
+        _env(0);
+        address safe = address(mlr); // any contract: stands in for a Safe or a timelock
+        vm.setEnv("NFT_OWNER", vm.toString(safe));
+        s.run();
+        assertEq(IERC721(POSM).ownerOf(IPositionManager(POSM).nextTokenId() - 1), safe);
+    }
+
+    function _price(uint256 price, uint256 ref) internal {
+        _env(0);
+        vm.setEnv("HYPE_USD_E8", vm.toString(price));
+        vm.setEnv("HYPE_USD_REF_E8", vm.toString(ref));
+    }
+
+    /// O2(c): HYPE_USD_E8 must be within 20% of the independent reference.
+    function test_O2c_priceBand() public {
+        uint256 ref = HYPE_USD_E8;
+        bytes memory band = bytes("HYPE_USD_E8 is more than 20% from HYPE_USD_REF_E8");
+        uint256[4] memory bad = [ref * 10, ref / 10, ref * 121 / 100, ref * 79 / 100]; // x10, /10, +21%, -21%
+        for (uint256 i; i < bad.length; i++) {
+            _price(bad[i], ref);
+            vm.expectRevert(band);
+            s.run();
+        }
+        uint256[2] memory edge = [ref * 120 / 100, ref * 80 / 100]; // +20%, -20%: pass and seed
+        for (uint256 i; i < edge.length; i++) {
+            uint256 snap = vm.snapshotState();
+            _price(edge[i], ref);
+            s.run();
+            assertEq(IERC721(POSM).ownerOf(IPositionManager(POSM).nextTokenId() - 1), SENIOR_SAFE);
+            vm.revertToState(snap);
+        }
+    }
+
     function test_planIsDeterministic() public {
         (, uint160 sqrtP0, int24 lo0, int24 hi0, uint128 liq) = s.plan(address(0xBEEF), HYPE_USD_E8, 5_000);
         // 1 HYPE = 7.6M ORPH -> sqrt(7.6e6) * 2^96 is about 2.18e32
