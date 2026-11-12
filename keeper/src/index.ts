@@ -7,7 +7,7 @@ import { decide, proposeAllocation } from "./engine/allocate.js";
 import { buildPlan, validatePlan } from "./exec/plan.js";
 import { executePlan, weeklyClose, type ExecContext } from "./exec/send.js";
 import type { TxSigner } from "./exec/signer.js";
-import { accrueSenior, juniorWeekly, readJuniorStatus, syncSenior, type JuniorCtx } from "./exec/junior.js";
+import { accrueSenior, juniorWeekly, readJuniorStatus, snapFelix, syncSenior, type JuniorCtx } from "./exec/junior.js";
 import { ensureLiquidity, manageJuniorIdle } from "./exec/juniorDeploy.js";
 import { sampleOrphPrice } from "./data/orph.js";
 import { checkSeniorDrift } from "./exec/drift.js";
@@ -135,6 +135,14 @@ export async function run(opts: RunOptions, cfg: SeniorConfig = loadConfig(opts.
     juniorAccrue = { called: false, note: `accrue failed: ${(err as Error).message}` };
     log(juniorAccrue.note);
   }
+  // K3: Felix exposure snapshot every tick, unless a Felix loss is booked and unbilled. Before the settle tick's touch.
+  let juniorSnap: RunReport["juniorSnap"];
+  try {
+    juniorSnap = await snapFelix(jctx);
+  } catch (err) {
+    juniorSnap = { called: false, note: `snapFelixExposure failed: ${(err as Error).message}` };
+    log(juniorSnap.note);
+  }
   try {
     juniorSync = await syncSenior(jctx);
   } catch (err) {
@@ -230,6 +238,7 @@ export async function run(opts: RunOptions, cfg: SeniorConfig = loadConfig(opts.
     weeklyClose: weekly,
     juniorSync,
     juniorAccrue,
+    juniorSnap,
     juniorStatus,
     juniorIdle,
     juniorLiquidity,

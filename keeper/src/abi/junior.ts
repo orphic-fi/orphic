@@ -29,4 +29,18 @@ export const juniorAbi = [
     ],
   },
   { type: "function", name: "carryOwed", stateMutability: "view", inputs: [], outputs: [{ name: "", type: "uint256" }] },
+  { type: "function", name: "snapFelixExposure", stateMutability: "nonpayable", inputs: [], outputs: [] },
+  { type: "function", name: "felixExpSupply", stateMutability: "view", inputs: [], outputs: [{ name: "", type: "uint256" }] },
+  {
+    type: "function",
+    name: "felixExp",
+    stateMutability: "view",
+    inputs: [{ name: "", type: "uint256" }],
+    outputs: [
+      { name: "vault", type: "address" },
+      { name: "lostBase", type: "uint96" },
+      { name: "fraction", type: "uint128" },
+      { name: "assetsRef", type: "uint128" },
+    ],
+  },
 ] as const;

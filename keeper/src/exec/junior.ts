@@ -1,4 +1,4 @@
-import { encodeFunctionData, type Address, type Hex, type PublicClient } from "viem";
+import { encodeFunctionData, parseAbi, type Address, type Hex, type PublicClient } from "viem";
 import { isPlaceholder, type SeniorConfig } from "../config.js";
 import { juniorAbi } from "../abi/junior.js";
 import { vaultV2Abi } from "../abi/vaultV2.js";
@@ -193,6 +193,68 @@ export async function accrueSenior(ctx: JuniorCtx): Promise<SyncResult> {
   const hash = await sendCall(ctx, senior, encodeFunctionData({ abi: vaultV2Abi, functionName: "accrueInterest" }), "accrueInterest");
   log(`accrue: senior.accrueInterest() sent ${hash} (${d.reason})`);
   return { called: true, txHash: hash, note: `accrueInterest sent: ${d.reason}` };
+}
+
+const PRICE_UNIT = 10n ** 24n;
+const MAX_FELIX_ENTRIES = 32;
+const lostAssetsAbi = parseAbi(["function lostAssets() view returns (uint256)"]);
+
+/** One Felix vault in junior's exposure snapshot, with Felix's `lostAssets` read now. */
+export interface FelixEntry {
+  lostBase: bigint;
+  fraction: bigint;
+  assetsRef: bigint;
+  lost: bigint;
+}
+
+/**
+ * Junior's own 1 ppm guard (JuniorVault._felixOwed, SeniorReceiveGate item 3): a Felix loss is booked and unbilled when
+ * (lostAssets - lostBase) * fraction / 1e24 * 1e6 > assetsRef for any entry. Smaller bumps are Felix rounding.
+ */
+export function felixLossUnbilled(entries: FelixEntry[]): boolean {
+  return entries.some((e) => e.lost > e.lostBase && ((e.lost - e.lostBase) * e.fraction) / PRICE_UNIT * 1_000_000n > e.assetsRef);
+}
+
+/**
+ * K3, every tick: junior.snapFelixExposure() (agent key) keeps the Felix exposure current. Skipped while a Felix loss
+ * is booked and unbilled (a snapshot then lets a flash deposit shrink the bill, L11 item 3) until a settle bills it,
+ * and while senior holds nothing (the constructor's snapshot has fraction 0; the first real one needs funded senior).
+ */
+export async function snapFelix(ctx: JuniorCtx): Promise<SyncResult> {
+  const log = ctx.log ?? ((l: string) => console.log(l));
+  if (!juniorEnabled(ctx.cfg) || isPlaceholder(ctx.cfg.vault) || !ctx.client) return { called: false, note: "placeholder or no client; Felix snapshot skipped" };
+  const c = ctx.client;
+  const junior = ctx.cfg.junior as Address;
+  const skip = (note: string): SyncResult => {
+    log(`snapFelixExposure: skip (${note})`);
+    return { called: false, note };
+  };
+  // A pre-fix junior has no snapshot at all.
+  try {
+    await c.readContract({ address: junior, abi: juniorAbi, functionName: "felixExpSupply" });
+  } catch {
+    return skip("junior has no snapFelixExposure (pre-fix build)");
+  }
+  if ((await c.readContract({ address: ctx.cfg.vault as Address, abi: vaultV2Abi, functionName: "totalSupply" })) === 0n) return skip("senior is not funded yet");
+  const entries: FelixEntry[] = [];
+  for (let i = 0; i < MAX_FELIX_ENTRIES; i++) {
+    let e: readonly [Address, bigint, bigint, bigint];
+    try {
+      e = await c.readContract({ address: junior, abi: juniorAbi, functionName: "felixExp", args: [BigInt(i)] });
+    } catch {
+      break; // past the end of the array
+    }
+    const lost = await c.readContract({ address: e[0], abi: lostAssetsAbi, functionName: "lostAssets" });
+    entries.push({ lostBase: e[1], fraction: e[2], assetsRef: e[3], lost });
+  }
+  if (felixLossUnbilled(entries)) return skip("a Felix loss is booked and unbilled; waiting for the settle that bills it");
+  if (ctx.dryRun) {
+    log("snapFelixExposure: would call junior.snapFelixExposure() (dry-run)");
+    return { called: false, note: "dry-run: snapFelixExposure not sent" };
+  }
+  const hash = await sendCall(ctx, junior, encodeFunctionData({ abi: juniorAbi, functionName: "snapFelixExposure" }), "snapFelixExposure");
+  log(`snapFelixExposure sent ${hash}`);
+  return { called: true, txHash: hash, note: "snapFelixExposure sent" };
 }
 
 export interface JuniorWeeklyResult {
