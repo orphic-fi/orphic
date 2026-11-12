@@ -152,7 +152,7 @@ Every tick (hourly; the GitHub keeper also fires at :37, which is harmless becau
 7. Watchdog (every run): alerts on any junior Morpho-market position (the keeper only uses Felix), on an `agent()` that is not `EXPECTED_AGENT`, and on a senior `receiveSharesGate` that differs from `expectedReceiveSharesGate` in the config (zero address while none is wired).
 If the keeper is down, anyone can call `syncSenior()`, `observeSenior()`, `distribute()` and `settle()`; `snapFelixExposure()` and the recalls need the agent or owner.
 
-## 7. Weekly settle (Sundays, 00:00 UTC window)
+## 7. Weekly settle (every 6 d 23 h from the last settle)
 Anyone can call `settle()`; the keeper runs the settle tick of 6a item 6 (touch Felix, recall every position, settle at the due second), not a Sunday-midnight-only window. Before it the recall makes junior idle USDC cover `pendingExitShares * pricePerShare` for exits maturing that day and the cover bill. After it: read `pricePerShare()`, `reservedAssets()`, `pricedExitShares()`, `Settled` event, and the `Cover` event if any. Post the numbers on the agents page.
 
 ## 7a. Router sweeps
