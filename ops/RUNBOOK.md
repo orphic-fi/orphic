@@ -16,7 +16,7 @@ Chains
 
 ## 0. Saturday night: prerequisites you do (keys involved)
 
-0.1 Put the deployer on big blocks. HyperEVM small blocks are about 3M gas; the deploy needs up to 10M per transaction. This is a HyperCore exchange action, not an EVM transaction. With the official Python SDK (`pip install hyperliquid-python-sdk`):
+0.1 Put the deployer on big blocks. HyperEVM small blocks are 2M gas; the deploy needs up to 10M per transaction. This is a HyperCore exchange action, not an EVM transaction. With the official Python SDK (`pip install hyperliquid-python-sdk`):
 ```
 from hyperliquid.exchange import Exchange
 from eth_account import Account
@@ -128,7 +128,7 @@ Measured on the fork (`test_O1_*`, $38 HYPE, cap 5% = 30M ORPH):
 - Position straddling the opening tick (HYPE-only `[hi, hi+200)`, liquidity 3e24): the launcher sold 18.57M ORPH for 2.424 HYPE at an average FDV of **$4,961** against the launch $5,000, i.e. about the launch price minus the 1% fee (the fee accrues to the attacker's own position). Seeds at the plan, 534,860 gas.
 - Position placed well below the opening tick (liquidity 1e24 in `[hi-1800, hi-1600)`, 3.96 HYPE): 25.52M ORPH sold at an average FDV of $5,893 (a badly placed position pays more), 572,000 gas.
 - A cap of 10M ORPH against that second position reverts and mints nothing (pool left at the attacker's price, deployer's ORPH intact).
-- Gas against dust positions (one tiny HYPE-only position per 200-tick range in the gap): 0 positions 462,438; 10 830,766; 25 1,291,113; 50 2,054,300; 100 3,581,024 (about 31k gas per initialised range). Small blocks carry about 3M (step 0.1): seed in a big block (`usingBigBlocks`) whenever the gap holds more than about 50 initialised ranges. If the seed would exceed 30M gas, pre-cross the gap first with ordinary capped swaps (not atomic: the launcher has no multi-step re-price).
+- Gas against dust positions (one tiny HYPE-only position per 200-tick range in the gap): 0 positions 462,438; 10 830,766; 25 1,291,113; 50 2,054,300; 100 3,581,024 (about 31k gas per initialised range). Small blocks carry 2M (step 0.1): the 50-range case (2,054,300) already exceeds it. Rule: if anything is initialised in the gap, check the measured curve (about 31k gas per range above the 462k base); at about 2M, i.e. more than about 45 initialised ranges, seed in a big block (`usingBigBlocks`). If the seed would exceed 30M gas, pre-cross the gap first with ordinary capped swaps (not atomic: the launcher has no multi-step re-price).
 Set `SEED_CAP_ORPH` (wei, e.g. 30M ORPH = `30000000000000000000000000`) from what the gap needs, with a margin you accept selling at about the launch price.
 
 **Read back on chain after the broadcast.** `_verify` runs only in forge's local simulation, not on chain. Check by hand with read-only calls: `StateView.getSlot0(poolId)` sqrtPrice equals the plan; `PositionManager.ownerOf(tokenId) == NFT_OWNER`; `getPositionLiquidity(tokenId)` is the plan (or positive and below it if ORPH was spent); the `Seeded(tokenId, nftOwner, orphSpent, hypeReceived)` event in the seed transaction's receipt (`cast receipt <tx>`) carries the spent ORPH and received HYPE; `ORPH.balanceOf(PoolManager)` within 1 ppm of 6e26.

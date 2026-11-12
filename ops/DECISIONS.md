@@ -39,7 +39,7 @@ Senior absolute cap $425k on each adapter id (sum of market caps above that is b
 `stakePerAsset` = ORPH wei per 1 USDC, set when `setStakeToken` turns the gate on, adjustable by owner afterwards. Stakes are released pro rata to principal leaving, in full on full exit, at the amount staked (not re-quoted).
 
 ## D12. Big blocks (Claude, found by tests)
-HyperEVM small blocks carry about 3M gas. Vault V2 creation needs more; the whole deploy sequence used 27.4M across three transactions on the fork. The deployer address must send the HyperCore `evmUserModify {usingBigBlocks: true}` action before Sunday's step 1. Runbook item 0.
+HyperEVM small blocks carry 2M gas. Vault V2 creation needs more; the whole deploy sequence used 27.4M across three transactions on the fork. The deployer address must send the HyperCore `evmUserModify {usingBigBlocks: true}` action before Sunday's step 1. Runbook item 0.
 
 ## D13. Flow page needs an Orphic version (Claude)
 `hl_usdc_tranche_vault_250k.html` names other projects and uses design-note numbers. Public "how it works" page is rewritten with Orphic's numbers before publish. Not shipped as is.
