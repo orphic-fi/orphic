@@ -4,11 +4,17 @@ import { juniorAbi } from "../abi/junior.js";
 import { vaultV2Abi } from "../abi/vaultV2.js";
 import { erc20Abi } from "../abi/erc20.js";
 import { sendCall, type SignerCtx } from "./send.js";
-import { recallFromFelix } from "./juniorDeploy.js";
+import { recallAll, touchFelix } from "./juniorDeploy.js";
 
 const WAD = 10n ** 18n;
 export const SETTLE_PERIOD = 7n * 24n * 3600n;
 export const SETTLE_GRACE = 3600n;
+/** JuniorVault.SETTLE_INTERVAL: settle() is allowed from lastSettle + this. */
+export const SETTLE_INTERVAL = SETTLE_PERIOD - SETTLE_GRACE;
+/** The settle sequence (touch, recall) starts on the first tick that is within this of the due second. */
+export const SETTLE_LEAD = 3600n;
+/** The keeper waits in-tick for the due second only when it is at most this far away (fits a 30 min Action job). */
+export const SETTLE_MAX_WAIT = 1200n;
 
 // ---------------------------------------------------------------------------
 // Pure math (unit tested)
@@ -42,6 +48,11 @@ export function settleDue(nowTs: bigint, lastSettle: bigint): boolean {
   return nowTs >= lastSettle + SETTLE_PERIOD - SETTLE_GRACE;
 }
 
+/** True on the tick that must start the settle sequence: the due second is within SETTLE_LEAD, or already past. */
+export function settleTickDue(nowTs: bigint, lastSettle: bigint): boolean {
+  return nowTs + SETTLE_LEAD >= lastSettle + SETTLE_INTERVAL;
+}
+
 // ---------------------------------------------------------------------------
 // Reads
 // ---------------------------------------------------------------------------
@@ -62,6 +73,8 @@ export interface JuniorCtx extends SignerCtx {
   seniorTotalAssetsFallback?: number;
   nowTs?: bigint;
   log?: (line: string) => void;
+  /** Injected in tests; real timers by default. */
+  sleep?: (ms: number) => Promise<void>;
 }
 
 export function juniorEnabled(cfg: SeniorConfig): boolean {
@@ -196,6 +209,8 @@ export interface JuniorWeeklyResult {
   note: string;
   recall?: string;
   recallTx?: Hex;
+  /** The settle tick in the order it ran (or would run): touch, recall, settle. */
+  steps?: string[];
 }
 
 /**
@@ -239,25 +254,52 @@ export async function juniorWeekly(ctx: JuniorCtx): Promise<JuniorWeeklyResult> 
   }
 
   const nowTs = ctx.nowTs ?? BigInt(Math.floor(Date.now() / 1000));
-  result.settleDue = settleDue(nowTs, lastSettle);
+  // settleDue = "this tick runs the settle sequence" (the idle step then redeploys nothing until settle has happened).
+  result.settleDue = settleTickDue(nowTs, lastSettle);
   if (!result.settleDue) {
     result.note = `settle not due (lastSettle ${lastSettle})`;
     log(`junior weekly: ${result.note}`);
     return result;
   }
-  // Before settling, bring everything junior parked in Felix back to idle so the cover bill and matured exits
-  // can be paid in full. The hourly idle step redeploys the excess afterwards.
+  const dueTs = lastSettle + SETTLE_INTERVAL;
+  const steps: string[] = [];
+  result.steps = steps;
+  const sctx = { cfg: ctx.cfg, dryRun: ctx.dryRun, client: ctx.client, signer: ctx.signer, agentPrivateKey: ctx.agentPrivateKey, log };
+  // 1. Touch Felix so a pending bad debt is booked in lostAssets, 2. recall every position to idle, so cover and
+  // matured exits are paid in full. Both happen before the due second; the hourly idle step redeploys after settle.
   if (!isPlaceholder(ctx.cfg.vault)) {
-    const recall = await recallFromFelix({ cfg: ctx.cfg, dryRun: ctx.dryRun, client: ctx.client, signer: ctx.signer, agentPrivateKey: ctx.agentPrivateKey, log });
+    const touch = await touchFelix(sctx);
+    steps.push(`1 touch: ${touch.note}`);
+    const recall = await recallAll(sctx, { seniorShares: false });
+    steps.push(`2 recall: ${recall.note}`);
     result.recall = recall.note;
-    if (recall.txHash) result.recallTx = recall.txHash;
+    if (recall.txHashes.length) result.recallTx = recall.txHashes[recall.txHashes.length - 1];
+    if (recall.errors.length) throw new Error(`settle aborted, recall failed: ${recall.errors.join("; ")}`);
   }
-  if (ctx.dryRun) {
-    result.note = "dry-run: settle not sent";
-    log("junior weekly: would call junior.settle() (dry-run)");
+  const wait = dueTs - nowTs;
+  if (wait > SETTLE_MAX_WAIT) {
+    steps.push(`3 settle: due in ${wait}s, more than ${SETTLE_MAX_WAIT}s away; the next tick settles`);
+    result.note = `recalled; settle due in ${wait}s, next tick settles`;
+    log(`junior weekly: ${result.note}`);
     return result;
   }
+  if (ctx.dryRun) {
+    steps.push(`3 settle: would wait ${wait > 0n ? wait : 0n}s for the due second, then call junior.settle() (dry-run)`);
+    result.note = "dry-run: settle not sent";
+    log("junior weekly: would call junior.settle() at the due second (dry-run)");
+    return result;
+  }
+  // Wait for CHAIN time (what the contract compares), not wall time.
+  const sleep = ctx.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
+  const giveUp = Date.now() + Number(SETTLE_MAX_WAIT + 120n) * 1000;
+  for (;;) {
+    const chainTs = (await ctx.client.getBlock()).timestamp;
+    if (chainTs >= dueTs) break;
+    if (!ctx.sleep && Date.now() > giveUp) throw new Error("chain time did not reach the settle due second; the next tick settles");
+    await sleep(Math.min(Number(dueTs - chainTs), 5) * 1000);
+  }
   result.settleTx = await send(ctx, "settle");
+  steps.push("3 settle: sent at the due second");
   result.note = "settle sent";
   log(`junior settle sent ${result.settleTx}`);
   return result;

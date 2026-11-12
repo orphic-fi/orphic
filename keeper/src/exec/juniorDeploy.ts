@@ -18,6 +18,9 @@ import { isPlaceholder, type SeniorConfig } from "../config.js";
 import { juniorAbi } from "../abi/junior.js";
 import { vaultV2Abi } from "../abi/vaultV2.js";
 import { sendCall, type SignerCtx } from "./send.js";
+import { encodeMarketParams } from "../data/state.js";
+import { morphoBlueAbi } from "../abi/morphoBlue.js";
+import { keccak256 } from "viem";
 
 export const COVER_BUFFER_BPS = 100n; // 1% of senior assets kept idle for a settle-day cover bill
 export const MIN_RESERVE = 5_000_000n; // 5 USDC
@@ -35,6 +38,16 @@ const erc4626 = parseAbi([
   "function maxWithdraw(address owner) view returns (uint256)",
   "function balanceOf(address) view returns (uint256)",
   "function convertToAssets(uint256 shares) view returns (uint256)",
+]);
+
+const morphoWithdrawAbi = parseAbi([
+  "function position(bytes32 id, address user) view returns (uint256 supplyShares, uint128 borrowShares, uint128 collateral)",
+  "function withdraw((address loanToken, address collateralToken, address oracle, address irm, uint256 lltv) marketParams, uint256 assets, uint256 shares, address onBehalf, address receiver) returns (uint256, uint256)",
+]);
+
+const seniorRedeemAbi = parseAbi([
+  "function balanceOf(address) view returns (uint256)",
+  "function redeem(uint256 shares, address receiver, address owner) returns (uint256)",
 ]);
 
 export interface IdleInputs {
@@ -194,4 +207,100 @@ export async function recallFromFelix(ctx: IdleCtx): Promise<{ txHash?: Hex; not
   const hash = await execute(ctx, felix, encodeFunctionData({ abi: erc4626, functionName: "withdraw", args: [amount, junior, junior] }));
   log(`junior recall: ${verb}; sent ${hash}`);
   return { txHash: hash, note: verb };
+}
+
+/**
+ * Touch Felix so a bad debt it has not booked yet lands in `lostAssets` before junior is valued at the settle (L11
+ * item 4). Felix (MetaMorpho v1.1) runs its accrual, which writes `lostAssets`, on every deposit/withdraw/redeem.
+ * `withdraw(0, junior, junior)` through junior.execute is the cheapest safe touch: it needs no USDC and no approval,
+ * cannot lower idle, and the Felix withdraw rule with junior pinned as receiver already allows it.
+ */
+export async function touchFelix(ctx: IdleCtx): Promise<{ txHash?: Hex; note: string }> {
+  const log = ctx.log ?? (() => undefined);
+  const junior = ctx.cfg.junior as Address;
+  const felix = ctx.cfg.felix.address;
+  if (ctx.dryRun) {
+    log("junior touch: would call Felix.withdraw(0, junior, junior) through junior.execute so a pending bad debt is booked (dry-run)");
+    return { note: "dry-run: would touch Felix (withdraw 0)" };
+  }
+  const hash = await execute(ctx, felix, encodeFunctionData({ abi: erc4626, functionName: "withdraw", args: [0n, junior, junior] }));
+  log(`junior touch: Felix accrual run; sent ${hash}`);
+  return { txHash: hash, note: "Felix touched (withdraw 0)" };
+}
+
+export interface RecallResult {
+  txHashes: Hex[];
+  /** One line per venue, in the order they were recalled. */
+  steps: string[];
+  /** Venues whose recall failed (a revert, not an illiquid venue). */
+  errors: string[];
+  note: string;
+}
+
+/**
+ * Bring every junior position back to idle: Felix, every `junior.markets()` Morpho market and (only when asked) the
+ * senior fee shares junior holds. Each venue is tried independently so one failure never blocks the others.
+ */
+export async function recallAll(ctx: IdleCtx, opts: { seniorShares: boolean }): Promise<RecallResult> {
+  const log = ctx.log ?? (() => undefined);
+  const out: RecallResult = { txHashes: [], steps: [], errors: [], note: "" };
+  if (!ctx.client) return { ...out, note: "no RPC client; recall skipped" };
+  const c = ctx.client;
+  const junior = ctx.cfg.junior as Address;
+  const step = async (venue: string, fn: () => Promise<{ txHash?: Hex; note: string }>) => {
+    try {
+      const r = await fn();
+      if (r.txHash) out.txHashes.push(r.txHash);
+      out.steps.push(`${venue}: ${r.note}`);
+    } catch (err) {
+      const m = `${venue}: recall failed: ${(err as Error).message.split("\n")[0]}`;
+      out.errors.push(m);
+      out.steps.push(m);
+      log(`junior recall: ${m}`);
+    }
+  };
+
+  await step("Felix", () => recallFromFelix(ctx));
+
+  const n = Number(await c.readContract({ address: junior, abi: juniorAbi, functionName: "marketsLength" }));
+  for (let i = 0; i < n; i++) {
+    await step(`market ${i}`, async () => {
+      const assets = await c.readContract({ address: junior, abi: juniorAbi, functionName: "marketAssets", args: [BigInt(i)] });
+      if (assets === 0n) return { note: "no position" };
+      const [loanToken, collateralToken, oracle, irm, lltv] = await c.readContract({ address: junior, abi: juniorAbi, functionName: "markets", args: [BigInt(i)] });
+      const mp = { loanToken, collateralToken, oracle, irm, lltv };
+      const id = keccak256(encodeMarketParams(mp));
+      const [position, m] = await Promise.all([
+        c.readContract({ address: ctx.cfg.morphoBlue, abi: morphoWithdrawAbi, functionName: "position", args: [id, junior] }),
+        c.readContract({ address: ctx.cfg.morphoBlue, abi: morphoBlueAbi, functionName: "market", args: [id] }),
+      ]);
+      const liquidity = m[0] - m[2];
+      // Whole position by shares when the market can pay it, else what the market can pay right now.
+      const all = assets <= liquidity;
+      const amount = all ? assets : liquidity;
+      const verb = `recall ${(Number(amount) / 1e6).toFixed(2)} of ${(Number(assets) / 1e6).toFixed(2)} USDC from market ${i}`;
+      if (amount === 0n) return { note: "market illiquid; nothing recalled" };
+      if (ctx.dryRun) return { note: `dry-run: would ${verb}` };
+      const data = encodeFunctionData({
+        abi: morphoWithdrawAbi,
+        functionName: "withdraw",
+        args: [mp, all ? 0n : amount, all ? position[0] : 0n, junior, junior],
+      });
+      const hash = await sendCall(ctx, junior, encodeFunctionData({ abi: juniorAbi, functionName: "execute", args: [ctx.cfg.morphoBlue, data] }), `junior.execute -> morpho withdraw ${i}`);
+      return { txHash: hash, note: verb };
+    });
+  }
+
+  if (opts.seniorShares && !isPlaceholder(ctx.cfg.vault)) {
+    const senior = ctx.cfg.vault as Address;
+    await step("senior fee shares", async () => {
+      const shares = await c.readContract({ address: senior, abi: seniorRedeemAbi, functionName: "balanceOf", args: [junior] });
+      if (shares === 0n) return { note: "no senior shares held" };
+      if (ctx.dryRun) return { note: `dry-run: would redeem ${shares.toString()} senior shares` };
+      const hash = await execute(ctx, senior, encodeFunctionData({ abi: seniorRedeemAbi, functionName: "redeem", args: [shares, junior, junior] }));
+      return { txHash: hash, note: `redeemed ${shares.toString()} senior shares` };
+    });
+  }
+  out.note = out.steps.join("; ");
+  return out;
 }

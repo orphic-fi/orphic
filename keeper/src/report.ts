@@ -88,6 +88,7 @@ export function humanSummary(report: Omit<RunReport, "summary">): string[] {
   if (report.juniorSync) out.push(`syncSenior: ${report.juniorSync.note}`);
   if (report.juniorWeekly?.warning) out.push(report.juniorWeekly.warning);
   if (report.juniorWeekly) out.push(`junior weekly: ${report.juniorWeekly.note}`);
+  for (const st of report.juniorWeekly?.steps ?? []) out.push(`  settle tick ${st}`);
   if (report.weeklyClose) out.push(`weekly close: ${report.weeklyClose.note}`);
   if (report.orphPrice) {
     out.push(`orph price: ${report.orphPrice.note}`);
