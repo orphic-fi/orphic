@@ -3298,12 +3298,12 @@ var init_transaction = __esm({
       }
     };
     TransactionExecutionError = class extends BaseError2 {
-      constructor(cause, { account, docsPath: docsPath6, chain, data, gas, gasPrice, maxFeePerGas, maxPriorityFeePerGas, nonce, to, value }) {
+      constructor(cause, { account, docsPath: docsPath6, chain: chain2, data, gas, gasPrice, maxFeePerGas, maxPriorityFeePerGas, nonce, to, value }) {
         const prettyArgs = prettyPrint({
-          chain: chain && `${chain?.name} (id: ${chain?.id})`,
+          chain: chain2 && `${chain2?.name} (id: ${chain2?.id})`,
           from: account?.address,
           to,
-          value: typeof value !== "undefined" && `${formatEther(value)} ${chain?.nativeCurrency?.symbol || "ETH"}`,
+          value: typeof value !== "undefined" && `${formatEther(value)} ${chain2?.nativeCurrency?.symbol || "ETH"}`,
           data,
           gas,
           gasPrice: typeof gasPrice !== "undefined" && `${formatGwei(gasPrice)} gwei`,
@@ -3388,12 +3388,12 @@ var init_contract = __esm({
     init_transaction();
     init_utils3();
     CallExecutionError = class extends BaseError2 {
-      constructor(cause, { account: account_, docsPath: docsPath6, chain, data, gas, gasPrice, maxFeePerGas, maxPriorityFeePerGas, nonce, to, value, stateOverride }) {
+      constructor(cause, { account: account_, docsPath: docsPath6, chain: chain2, data, gas, gasPrice, maxFeePerGas, maxPriorityFeePerGas, nonce, to, value, stateOverride }) {
         const account = account_ ? parseAccount(account_) : void 0;
         let prettyArgs = prettyPrint({
           from: account?.address,
           to,
-          value: typeof value !== "undefined" && `${formatEther(value)} ${chain?.nativeCurrency?.symbol || "ETH"}`,
+          value: typeof value !== "undefined" && `${formatEther(value)} ${chain2?.nativeCurrency?.symbol || "ETH"}`,
           data,
           gas,
           gasPrice: typeof gasPrice !== "undefined" && `${formatGwei(gasPrice)} gwei`,
@@ -5964,16 +5964,16 @@ function weierstrass(curveDef) {
       throw new Error("options.strict was renamed to lowS");
     if (format !== void 0 && format !== "compact" && format !== "der")
       throw new Error("format must be compact or der");
-    const isHex2 = typeof sg === "string" || isBytes3(sg);
-    const isObj = !isHex2 && !format && typeof sg === "object" && sg !== null && typeof sg.r === "bigint" && typeof sg.s === "bigint";
-    if (!isHex2 && !isObj)
+    const isHex3 = typeof sg === "string" || isBytes3(sg);
+    const isObj = !isHex3 && !format && typeof sg === "object" && sg !== null && typeof sg.r === "bigint" && typeof sg.s === "bigint";
+    if (!isHex3 && !isObj)
       throw new Error("invalid signature, expected Uint8Array, hex string or Signature instance");
     let _sig = void 0;
     let P;
     try {
       if (isObj)
         _sig = new Signature(sg.r, sg.s);
-      if (isHex2) {
+      if (isHex3) {
         try {
           if (format !== "compact")
             _sig = Signature.fromDER(sg);
@@ -7467,8 +7467,8 @@ var init_chain = __esm({
   "node_modules/viem/_esm/errors/chain.js"() {
     init_base();
     ChainDoesNotSupportContract = class extends BaseError2 {
-      constructor({ blockNumber, chain, contract }) {
-        super(`Chain "${chain.name}" does not support contract "${contract.name}".`, {
+      constructor({ blockNumber, chain: chain2, contract }) {
+        super(`Chain "${chain2.name}" does not support contract "${contract.name}".`, {
           metaMessages: [
             "This could be due to any of the following:",
             ...blockNumber && contract.blockCreated && contract.blockCreated > blockNumber ? [
@@ -7482,11 +7482,11 @@ var init_chain = __esm({
       }
     };
     ChainMismatchError = class extends BaseError2 {
-      constructor({ chain, currentChainId }) {
-        super(`The current chain of the wallet (id: ${currentChainId}) does not match the target chain for the transaction (id: ${chain.id} \u2013 ${chain.name}).`, {
+      constructor({ chain: chain2, currentChainId }) {
+        super(`The current chain of the wallet (id: ${currentChainId}) does not match the target chain for the transaction (id: ${chain2.id} \u2013 ${chain2.name}).`, {
           metaMessages: [
             `Current Chain ID:  ${currentChainId}`,
-            `Expected Chain ID: ${chain.id} \u2013 ${chain.name}`
+            `Expected Chain ID: ${chain2.id} \u2013 ${chain2.name}`
           ],
           name: "ChainMismatchError"
         });
@@ -7543,17 +7543,17 @@ var init_encodeDeployData = __esm({
 });
 
 // node_modules/viem/_esm/utils/chain/getChainContractAddress.js
-function getChainContractAddress({ blockNumber, chain, contract: name }) {
-  const contract = chain?.contracts?.[name];
+function getChainContractAddress({ blockNumber, chain: chain2, contract: name }) {
+  const contract = chain2?.contracts?.[name];
   if (!contract)
     throw new ChainDoesNotSupportContract({
-      chain,
+      chain: chain2,
       contract: { name }
     });
   if (blockNumber && contract.blockCreated && contract.blockCreated > blockNumber)
     throw new ChainDoesNotSupportContract({
       blockNumber,
-      chain,
+      chain: chain2,
       contract: {
         name,
         blockCreated: contract.blockCreated
@@ -8374,11 +8374,11 @@ init_formatGwei();
 init_base();
 init_transaction();
 var EstimateGasExecutionError = class extends BaseError2 {
-  constructor(cause, { account, docsPath: docsPath6, chain, data, gas, gasPrice, maxFeePerGas, maxPriorityFeePerGas, nonce, to, value }) {
+  constructor(cause, { account, docsPath: docsPath6, chain: chain2, data, gas, gasPrice, maxFeePerGas, maxPriorityFeePerGas, nonce, to, value }) {
     const prettyArgs = prettyPrint({
       from: account?.address,
       to,
-      value: typeof value !== "undefined" && `${formatEther(value)} ${chain?.nativeCurrency?.symbol || "ETH"}`,
+      value: typeof value !== "undefined" && `${formatEther(value)} ${chain2?.nativeCurrency?.symbol || "ETH"}`,
       data,
       gas,
       gasPrice: typeof gasPrice !== "undefined" && `${formatGwei(gasPrice)} gwei`,
@@ -8606,9 +8606,9 @@ async function estimateMaxPriorityFeePerGas(client, args) {
   return internal_estimateMaxPriorityFeePerGas(client, args);
 }
 async function internal_estimateMaxPriorityFeePerGas(client, args) {
-  const { block: block_, chain = client.chain, request } = args || {};
+  const { block: block_, chain: chain2 = client.chain, request } = args || {};
   try {
-    const maxPriorityFeePerGas = chain?.fees?.maxPriorityFeePerGas ?? chain?.fees?.defaultPriorityFee;
+    const maxPriorityFeePerGas = chain2?.fees?.maxPriorityFeePerGas ?? chain2?.fees?.defaultPriorityFee;
     if (typeof maxPriorityFeePerGas === "function") {
       const block = block_ || await getAction(client, getBlock, "getBlock")({});
       const maxPriorityFeePerGas_ = await maxPriorityFeePerGas({
@@ -8645,15 +8645,15 @@ async function estimateFeesPerGas(client, args) {
   return internal_estimateFeesPerGas(client, args);
 }
 async function internal_estimateFeesPerGas(client, args) {
-  const { block: block_, chain = client.chain, request, type = "eip1559" } = args || {};
+  const { block: block_, chain: chain2 = client.chain, request, type = "eip1559" } = args || {};
   const baseFeeMultiplier = await (async () => {
-    if (typeof chain?.fees?.baseFeeMultiplier === "function")
-      return chain.fees.baseFeeMultiplier({
+    if (typeof chain2?.fees?.baseFeeMultiplier === "function")
+      return chain2.fees.baseFeeMultiplier({
         block: block_,
         client,
         request
       });
-    return chain?.fees?.baseFeeMultiplier ?? 1.2;
+    return chain2?.fees?.baseFeeMultiplier ?? 1.2;
   })();
   if (baseFeeMultiplier < 1)
     throw new BaseFeeScalarError();
@@ -8661,8 +8661,8 @@ async function internal_estimateFeesPerGas(client, args) {
   const denominator = 10 ** decimals;
   const multiply = (base) => base * BigInt(Math.ceil(baseFeeMultiplier * denominator)) / BigInt(denominator);
   const block = block_ ? block_ : await getAction(client, getBlock, "getBlock")({});
-  if (typeof chain?.fees?.estimateFeesPerGas === "function") {
-    const fees = await chain.fees.estimateFeesPerGas({
+  if (typeof chain2?.fees?.estimateFeesPerGas === "function") {
+    const fees = await chain2.fees.estimateFeesPerGas({
       block: block_,
       client,
       multiply,
@@ -8677,7 +8677,7 @@ async function internal_estimateFeesPerGas(client, args) {
       throw new Eip1559FeesNotSupportedError();
     const maxPriorityFeePerGas = typeof request?.maxPriorityFeePerGas === "bigint" ? request.maxPriorityFeePerGas : await internal_estimateMaxPriorityFeePerGas(client, {
       block,
-      chain,
+      chain: chain2,
       request
     });
     const baseFeePerGas = multiply(block.baseFeePerGas);
@@ -9172,7 +9172,7 @@ var defaultParameters = [
   "type"
 ];
 async function prepareTransactionRequest(client, args) {
-  const { account: account_ = client.account, blobs, chain, gas, kzg, nonce, nonceManager, parameters = defaultParameters, type } = args;
+  const { account: account_ = client.account, blobs, chain: chain2, gas, kzg, nonce, nonceManager, parameters = defaultParameters, type } = args;
   const account = account_ ? parseAccount(account_) : account_;
   const request = { ...args, ...account ? { from: account?.address } : {} };
   let block;
@@ -9186,8 +9186,8 @@ async function prepareTransactionRequest(client, args) {
   async function getChainId2() {
     if (chainId)
       return chainId;
-    if (chain)
-      return chain.id;
+    if (chain2)
+      return chain2.id;
     if (typeof args.chainId !== "undefined")
       return args.chainId;
     const chainId_ = await getAction(client, getChainId, "getChainId")({});
@@ -9245,7 +9245,7 @@ async function prepareTransactionRequest(client, args) {
         const block2 = await getBlock2();
         const { maxFeePerGas, maxPriorityFeePerGas } = await internal_estimateFeesPerGas(client, {
           block: block2,
-          chain,
+          chain: chain2,
           request
         });
         if (typeof args.maxPriorityFeePerGas === "undefined" && args.maxFeePerGas && args.maxFeePerGas < maxPriorityFeePerGas)
@@ -9261,7 +9261,7 @@ async function prepareTransactionRequest(client, args) {
       const block2 = await getBlock2();
       const { gasPrice: gasPrice_ } = await internal_estimateFeesPerGas(client, {
         block: block2,
-        chain,
+        chain: chain2,
         request,
         type: "legacy"
       });
@@ -10107,11 +10107,11 @@ init_base();
 
 // node_modules/viem/_esm/utils/chain/assertCurrentChain.js
 init_chain();
-function assertCurrentChain({ chain, currentChainId }) {
-  if (!chain)
+function assertCurrentChain({ chain: chain2, currentChainId }) {
+  if (!chain2)
     throw new ChainNotFoundError();
-  if (currentChainId !== chain.id)
-    throw new ChainMismatchError({ chain, currentChainId });
+  if (currentChainId !== chain2.id)
+    throw new ChainMismatchError({ chain: chain2, currentChainId });
 }
 
 // node_modules/viem/_esm/utils/errors/getTransactionError.js
@@ -10148,7 +10148,7 @@ async function sendRawTransaction(client, { serializedTransaction }) {
 // node_modules/viem/_esm/actions/wallet/sendTransaction.js
 var supportsWalletNamespace = new LruMap(128);
 async function sendTransaction(client, parameters) {
-  const { account: account_ = client.account, chain = client.chain, accessList, authorizationList, blobs, data, gas, gasPrice, maxFeePerBlobGas, maxFeePerGas, maxPriorityFeePerGas, nonce, value, ...rest } = parameters;
+  const { account: account_ = client.account, chain: chain2 = client.chain, accessList, authorizationList, blobs, data, gas, gasPrice, maxFeePerBlobGas, maxFeePerGas, maxPriorityFeePerGas, nonce, value, ...rest } = parameters;
   if (typeof account_ === "undefined")
     throw new AccountNotFoundError({
       docsPath: "/docs/actions/wallet/sendTransaction"
@@ -10169,11 +10169,11 @@ async function sendTransaction(client, parameters) {
     })();
     if (account?.type === "json-rpc" || account === null) {
       let chainId;
-      if (chain !== null) {
+      if (chain2 !== null) {
         chainId = await getAction(client, getChainId, "getChainId")({});
         assertCurrentChain({
           currentChainId: chainId,
-          chain
+          chain: chain2
         });
       }
       const chainFormat = client.chain?.formatters?.transactionRequest?.format;
@@ -10232,7 +10232,7 @@ async function sendTransaction(client, parameters) {
         accessList,
         authorizationList,
         blobs,
-        chain,
+        chain: chain2,
         data,
         gas,
         gasPrice,
@@ -10246,7 +10246,7 @@ async function sendTransaction(client, parameters) {
         ...rest,
         to
       });
-      const serializer = chain?.serializers?.transaction;
+      const serializer = chain2?.serializers?.transaction;
       const serializedTransaction = await account.signTransaction(request, {
         serializer
       });
@@ -10375,8 +10375,8 @@ var abi = [
 
 // node_modules/viem/_esm/actions/wallet/addChain.js
 init_toHex();
-async function addChain(client, { chain }) {
-  const { id, name, nativeCurrency, rpcUrls, blockExplorers } = chain;
+async function addChain(client, { chain: chain2 }) {
+  const { id, name, nativeCurrency, rpcUrls, blockExplorers } = chain2;
   await client.request({
     method: "wallet_addEthereumChain",
     params: [
@@ -10412,10 +10412,10 @@ function uid(length = 11) {
 // node_modules/viem/_esm/clients/createClient.js
 function createClient(parameters) {
   const { batch, cacheTime = parameters.pollingInterval ?? 4e3, ccipRead, key = "base", name = "Base Client", pollingInterval = 4e3, type = "base" } = parameters;
-  const chain = parameters.chain;
+  const chain2 = parameters.chain;
   const account = parameters.account ? parseAccount(parameters.account) : void 0;
   const { config, request, value } = parameters.transport({
-    chain,
+    chain: chain2,
     pollingInterval
   });
   const transport = { ...config, ...value };
@@ -10424,7 +10424,7 @@ function createClient(parameters) {
     batch,
     cacheTime,
     ccipRead,
-    chain,
+    chain: chain2,
     key,
     name,
     pollingInterval,
@@ -10781,11 +10781,11 @@ function getHttpRpcClient(url, options = {}) {
 // node_modules/viem/_esm/clients/transports/http.js
 function http(url, config = {}) {
   const { batch, fetchOptions, key = "http", name = "HTTP JSON-RPC", onFetchRequest, onFetchResponse, retryDelay } = config;
-  return ({ chain, retryCount: retryCount_, timeout: timeout_ }) => {
+  return ({ chain: chain2, retryCount: retryCount_, timeout: timeout_ }) => {
     const { batchSize = 1e3, wait: wait2 = 0 } = typeof batch === "object" ? batch : {};
     const retryCount = config.retryCount ?? retryCount_;
     const timeout = timeout_ ?? config.timeout ?? 1e4;
-    const url_ = url || chain?.rpcUrls.default.http[0];
+    const url_ = url || chain2?.rpcUrls.default.http[0];
     if (!url_)
       throw new UrlRequiredError();
     const rpcClient = getHttpRpcClient(url_, {
@@ -13355,7 +13355,7 @@ init_toHex();
 init_transactionRequest();
 init_assertRequest();
 async function signTransaction(client, parameters) {
-  const { account: account_ = client.account, chain = client.chain, ...transaction } = parameters;
+  const { account: account_ = client.account, chain: chain2 = client.chain, ...transaction } = parameters;
   if (!account_)
     throw new AccountNotFoundError({
       docsPath: "/docs/actions/wallet/signTransaction"
@@ -13366,12 +13366,12 @@ async function signTransaction(client, parameters) {
     ...parameters
   });
   const chainId = await getAction(client, getChainId, "getChainId")({});
-  if (chain !== null)
+  if (chain2 !== null)
     assertCurrentChain({
       currentChainId: chainId,
-      chain
+      chain: chain2
     });
-  const formatters = chain?.formatters || client.chain?.formatters;
+  const formatters = chain2?.formatters || client.chain?.formatters;
   const format = formatters?.transactionRequest?.format || formatTransactionRequest;
   if (account.signTransaction)
     return account.signTransaction({
@@ -13476,6 +13476,7 @@ var zeroAddress = "0x0000000000000000000000000000000000000000";
 // node_modules/viem/_esm/index.js
 init_encodeAbiParameters();
 init_encodeFunctionData();
+init_toFunctionSelector();
 init_keccak256();
 
 // src/config.ts
@@ -14814,6 +14815,46 @@ var juniorAbi = [
   { type: "function", name: "seniorSupplyMin", stateMutability: "view", inputs: [], outputs: [{ name: "", type: "uint256" }] }
 ];
 
+// src/exec/errors.ts
+function chain(err) {
+  const out = [];
+  let e = err;
+  for (let i = 0; e && typeof e === "object" && i < 10; i++) {
+    out.push(e);
+    e = e.cause;
+  }
+  return out;
+}
+var isHex2 = (v) => typeof v === "string" && /^0x([0-9a-fA-F]{2})*$/.test(v);
+function revertData(err) {
+  for (const e of chain(err)) {
+    for (const v of [e.raw, e.data, e.data?.data]) if (isHex2(v) && v.length >= 10) return v;
+  }
+  return void 0;
+}
+function revertSelector(err) {
+  return revertData(err)?.slice(0, 10).toLowerCase();
+}
+var selectorOf = (signature) => toFunctionSelector(signature).toLowerCase();
+var NOTHING_TO_DO = selectorOf("NothingToDo()");
+var TOO_SOON = selectorOf("TooSoon()");
+function isPanic(err, code) {
+  for (const e of chain(err)) {
+    const d2 = e.data;
+    if (d2 && typeof d2 === "object" && d2.errorName === "Panic" && d2.args?.[0] === code) return true;
+  }
+  const d = revertData(err);
+  return !!d && d.slice(0, 10).toLowerCase() === "0x4e487b71" && d.length >= 74 && BigInt(`0x${d.slice(10, 74)}`) === code;
+}
+var TRANSPORT = /* @__PURE__ */ new Set(["HttpRequestError", "TimeoutError", "WebSocketRequestError", "RpcRequestError", "InvalidParamsRpcError", "InternalRpcError"]);
+function isMissingFunction(err) {
+  if (revertData(err)) return false;
+  if (chain(err).some((e) => typeof e.data === "object" && e.data !== null && "errorName" in e.data)) return false;
+  const names = chain(err).map((e) => String(e.name));
+  if (names.some((n) => TRANSPORT.has(n))) return false;
+  return names.includes("ContractFunctionZeroDataError") || names.includes("ContractFunctionRevertedError");
+}
+
 // src/exec/juniorDeploy.ts
 var COVER_BUFFER_BPS = 100n;
 var MIN_RESERVE = 5000000n;
@@ -14831,13 +14872,20 @@ var erc4626 = parseAbi([
   "function convertToAssets(uint256 shares) view returns (uint256)"
 ]);
 var morphoWithdrawAbi = parseAbi([
-  "function position(bytes32 id, address user) view returns (uint256 supplyShares, uint128 borrowShares, uint128 collateral)",
   "function withdraw((address loanToken, address collateralToken, address oracle, address irm, uint256 lltv) marketParams, uint256 assets, uint256 shares, address onBehalf, address receiver) returns (uint256, uint256)"
 ]);
 var seniorRedeemAbi = parseAbi([
   "function balanceOf(address) view returns (uint256)",
   "function redeem(uint256 shares, address receiver, address owner) returns (uint256)"
 ]);
+async function readCarryOwed(c, junior) {
+  try {
+    return await c.readContract({ address: junior, abi: juniorAbi, functionName: "carryOwed" });
+  } catch (err) {
+    if (isMissingFunction(err)) return 0n;
+    throw err;
+  }
+}
 function reserveFor(i) {
   const coverBuffer = i.seniorAssets * COVER_BUFFER_BPS / 10000n;
   let r = i.reserved + i.carryOwed + i.owedToMaturing;
@@ -14865,7 +14913,7 @@ async function readIdleInputs(ctx) {
   const c = ctx.client;
   const junior = ctx.cfg.junior;
   const felix = ctx.cfg.felix.address;
-  const carry = c.readContract({ address: junior, abi: juniorAbi, functionName: "carryOwed" }).catch(() => 0n);
+  const carry = readCarryOwed(c, junior);
   const [carryOwed, idle, reserved, pending, pps, seniorAssets, felixShares, felixWithdrawable, allowance] = await Promise.all([
     carry,
     c.readContract({ address: ctx.cfg.usdc, abi: erc20Full, functionName: "balanceOf", args: [junior] }),
@@ -14988,7 +15036,11 @@ async function recallAll(ctx, opts) {
     }
   };
   await step("Felix", () => recallFromFelix(ctx));
-  const n = Number(await c.readContract({ address: junior, abi: juniorAbi, functionName: "marketsLength" }));
+  let n = 0;
+  await step("markets", async () => {
+    n = Number(await c.readContract({ address: junior, abi: juniorAbi, functionName: "marketsLength" }));
+    return { note: `${n} registered` };
+  });
   for (let i = 0; i < n; i++) {
     await step(`market ${i}`, async () => {
       const assets = await c.readContract({ address: junior, abi: juniorAbi, functionName: "marketAssets", args: [BigInt(i)] });
@@ -14996,21 +15048,13 @@ async function recallAll(ctx, opts) {
       const [loanToken, collateralToken, oracle, irm, lltv] = await c.readContract({ address: junior, abi: juniorAbi, functionName: "markets", args: [BigInt(i)] });
       const mp = { loanToken, collateralToken, oracle, irm, lltv };
       const id = keccak256(encodeMarketParams(mp));
-      const [position, m] = await Promise.all([
-        c.readContract({ address: ctx.cfg.morphoBlue, abi: morphoWithdrawAbi, functionName: "position", args: [id, junior] }),
-        c.readContract({ address: ctx.cfg.morphoBlue, abi: morphoBlueAbi, functionName: "market", args: [id] })
-      ]);
+      const m = await c.readContract({ address: ctx.cfg.morphoBlue, abi: morphoBlueAbi, functionName: "market", args: [id] });
       const liquidity = m[0] - m[2];
-      const all = assets <= liquidity;
-      const amount = all ? assets : liquidity;
+      const amount = assets < liquidity ? assets : liquidity;
       const verb = `recall ${(Number(amount) / 1e6).toFixed(2)} of ${(Number(assets) / 1e6).toFixed(2)} USDC from market ${i}`;
       if (amount === 0n) return { note: "market illiquid; nothing recalled" };
       if (ctx.dryRun) return { note: `dry-run: would ${verb}` };
-      const data = encodeFunctionData({
-        abi: morphoWithdrawAbi,
-        functionName: "withdraw",
-        args: [mp, all ? 0n : amount, all ? position[0] : 0n, junior, junior]
-      });
+      const data = encodeFunctionData({ abi: morphoWithdrawAbi, functionName: "withdraw", args: [mp, amount, 0n, junior, junior] });
       const hash2 = await sendCall(ctx, junior, encodeFunctionData({ abi: juniorAbi, functionName: "execute", args: [ctx.cfg.morphoBlue, data] }), `junior.execute -> morpho withdraw ${i}`);
       return { txHash: hash2, note: verb };
     });
@@ -15037,7 +15081,7 @@ async function ensureLiquidity(ctx) {
   const [idle, reserved, carry] = await Promise.all([
     c.readContract({ address: ctx.cfg.usdc, abi: erc20Full, functionName: "balanceOf", args: [junior] }),
     c.readContract({ address: junior, abi: juniorAbi, functionName: "reservedAssets" }),
-    c.readContract({ address: junior, abi: juniorAbi, functionName: "carryOwed" }).catch(() => 0n)
+    readCarryOwed(c, junior)
   ]);
   const owed = reserved + carry;
   const base = { checked: true, idleUsdc: Number(idle) / 1e6, owedUsdc: Number(owed) / 1e6 };
@@ -15053,7 +15097,7 @@ var SETTLE_PERIOD = 7n * 24n * 3600n;
 var SETTLE_GRACE = 3600n;
 var SETTLE_INTERVAL = SETTLE_PERIOD - SETTLE_GRACE;
 var SETTLE_LEAD = 3600n;
-var SETTLE_MAX_WAIT = 1200n;
+var SETTLE_MAX_WAIT = 900n;
 function hoursToRecognition(coverInProgress, totalAssets, maxRate) {
   if (coverInProgress <= 0n) return 0;
   const perHour = totalAssets * maxRate * 3600n / WAD3;
@@ -15113,7 +15157,8 @@ async function observeSenior(ctx) {
   let min;
   try {
     min = await ctx.client.readContract({ address: ctx.cfg.junior, abi: juniorAbi, functionName: "seniorSupplyMin" });
-  } catch {
+  } catch (err) {
+    if (!isMissingFunction(err)) throw err;
     return { called: false, note: "junior has no seniorSupplyMin (pre-fix build); observeSenior skipped" };
   }
   const supply = await ctx.client.readContract({ address: ctx.cfg.vault, abi: vaultV2Abi, functionName: "totalSupply" });
@@ -15183,7 +15228,7 @@ async function accrueSenior(ctx) {
   return { called: true, txHash: hash2, note: `accrueInterest sent: ${d.reason}` };
 }
 var PRICE_UNIT = 10n ** 24n;
-var MAX_FELIX_ENTRIES = 32;
+var MAX_FELIX_ENTRIES = 256;
 var lostAssetsAbi = parseAbi(["function lostAssets() view returns (uint256)"]);
 function felixLossUnbilled(entries) {
   return entries.some((e) => e.lost > e.lostBase && (e.lost - e.lostBase) * e.fraction / PRICE_UNIT * 1000000n > e.assetsRef);
@@ -15199,17 +15244,20 @@ async function snapFelix(ctx) {
   };
   try {
     await c.readContract({ address: junior, abi: juniorAbi, functionName: "felixExpSupply" });
-  } catch {
-    return skip("junior has no snapFelixExposure (pre-fix build)");
+  } catch (err) {
+    if (isMissingFunction(err)) return skip("junior has no snapFelixExposure (pre-fix build)");
+    return skip(`felixExpSupply read failed (${err.message.split("\n")[0]}); not snapshotting on unknown state`);
   }
   if (await c.readContract({ address: ctx.cfg.vault, abi: vaultV2Abi, functionName: "totalSupply" }) === 0n) return skip("senior is not funded yet");
   const entries = [];
-  for (let i = 0; i < MAX_FELIX_ENTRIES; i++) {
+  for (let i = 0; ; i++) {
+    if (i >= MAX_FELIX_ENTRIES) return skip(`felixExp has no end within ${MAX_FELIX_ENTRIES} entries; not snapshotting`);
     let e;
     try {
       e = await c.readContract({ address: junior, abi: juniorAbi, functionName: "felixExp", args: [BigInt(i)] });
-    } catch {
-      break;
+    } catch (err) {
+      if (isPanic(err, 0x32n) || isMissingFunction(err)) break;
+      return skip(`felixExp(${i}) read failed (${err.message.split("\n")[0]}); not snapshotting on unknown state`);
     }
     const lost = await c.readContract({ address: e[0], abi: lostAssetsAbi, functionName: "lostAssets" });
     entries.push({ lostBase: e[1], fraction: e[2], assetsRef: e[3], lost });
@@ -15223,7 +15271,7 @@ async function snapFelix(ctx) {
   log(`snapFelixExposure sent ${hash2}`);
   return { called: true, txHash: hash2, note: "snapFelixExposure sent" };
 }
-async function juniorWeekly(ctx) {
+async function juniorWeeklyPrepare(ctx) {
   const log = ctx.log ?? ((l) => console.log(l));
   if (!juniorEnabled(ctx.cfg)) {
     log("junior weekly: junior is a placeholder; skipped");
@@ -15263,19 +15311,44 @@ async function juniorWeekly(ctx) {
     log(`junior weekly: ${result.note}`);
     return result;
   }
-  const dueTs = lastSettle + SETTLE_INTERVAL;
+  result.dueTs = (lastSettle + SETTLE_INTERVAL).toString();
   const steps = [];
   result.steps = steps;
   const sctx = { cfg: ctx.cfg, dryRun: ctx.dryRun, client: ctx.client, signer: ctx.signer, agentPrivateKey: ctx.agentPrivateKey, log };
   if (!isPlaceholder(ctx.cfg.vault)) {
-    const touch = await touchFelix(sctx);
-    steps.push(`1 touch: ${touch.note}`);
-    const recall = await recallAll(sctx, { seniorShares: false });
-    steps.push(`2 recall: ${recall.note}`);
-    result.recall = recall.note;
-    if (recall.txHashes.length) result.recallTx = recall.txHashes[recall.txHashes.length - 1];
-    if (recall.errors.length) throw new Error(`settle aborted, recall failed: ${recall.errors.join("; ")}`);
+    const errors = [];
+    try {
+      const touch = await touchFelix(sctx);
+      steps.push(`1 touch: ${touch.note}`);
+    } catch (err) {
+      errors.push(`touch failed: ${err.message.split("\n")[0]}`);
+      steps.push(`1 touch: ${errors[errors.length - 1]}`);
+    }
+    try {
+      const recall = await recallAll(sctx, { seniorShares: false });
+      steps.push(`2 recall: ${recall.note}`);
+      result.recall = recall.note;
+      if (recall.txHashes.length) result.recallTx = recall.txHashes[recall.txHashes.length - 1];
+      errors.push(...recall.errors);
+    } catch (err) {
+      errors.push(`recall failed: ${err.message.split("\n")[0]}`);
+      steps.push(`2 recall: ${errors[errors.length - 1]}`);
+    }
+    if (errors.length) {
+      result.error = `settle tick failed before settle: ${errors.join("; ")}`;
+      result.note = result.error;
+      log(`junior weekly: ${result.error}`);
+    }
   }
+  return result;
+}
+async function juniorWeeklyFinish(ctx, result) {
+  const log = ctx.log ?? ((l) => console.log(l));
+  if (!result.settleDue || result.error || !result.dueTs || !ctx.client) return result;
+  const steps = result.steps ??= [];
+  const dueTs = BigInt(result.dueTs);
+  const startSettle = BigInt(result.lastSettle);
+  const nowTs = ctx.nowTs ?? BigInt(Math.floor(Date.now() / 1e3));
   const wait2 = dueTs - nowTs;
   if (wait2 > SETTLE_MAX_WAIT) {
     steps.push(`3 settle: due in ${wait2}s, more than ${SETTLE_MAX_WAIT}s away; the next tick settles`);
@@ -15289,18 +15362,37 @@ async function juniorWeekly(ctx) {
     log("junior weekly: would call junior.settle() at the due second (dry-run)");
     return result;
   }
-  const sleep = ctx.sleep ?? ((ms) => new Promise((r) => setTimeout(r, ms)));
-  const giveUp = Date.now() + Number(SETTLE_MAX_WAIT + 120n) * 1e3;
-  for (; ; ) {
-    const chainTs = (await ctx.client.getBlock()).timestamp;
-    if (chainTs >= dueTs) break;
-    if (!ctx.sleep && Date.now() > giveUp) throw new Error("chain time did not reach the settle due second; the next tick settles");
-    await sleep(Math.min(Number(dueTs - chainTs), 5) * 1e3);
+  const c = ctx.client;
+  const junior = ctx.cfg.junior;
+  const settledMeanwhile = async () => await c.readContract({ address: junior, abi: juniorAbi, functionName: "lastSettle" }) > startSettle;
+  try {
+    const sleep = ctx.sleep ?? ((ms) => new Promise((r) => setTimeout(r, ms)));
+    const giveUp = Date.now() + Number(SETTLE_MAX_WAIT + 60n) * 1e3;
+    for (; ; ) {
+      const chainTs = (await c.getBlock()).timestamp;
+      if (chainTs >= dueTs) break;
+      if (!ctx.sleep && Date.now() > giveUp) throw new Error("chain time did not reach the settle due second");
+      await sleep(Math.min(Number(dueTs - chainTs), 5) * 1e3);
+    }
+    if (await settledMeanwhile()) {
+      result.alreadySettled = true;
+    } else {
+      try {
+        result.settleTx = await send(ctx, "settle");
+      } catch (err) {
+        if (await settledMeanwhile()) result.alreadySettled = true;
+        else throw revertSelector(err) === TOO_SOON ? new Error("settle refused with TooSoon but lastSettle did not move") : err;
+      }
+    }
+    steps.push(result.alreadySettled ? "3 settle: already settled by someone else" : "3 settle: sent at the due second");
+    result.note = result.alreadySettled ? "settle already done by someone else" : "settle sent";
+    log(`junior weekly: ${result.note}${result.settleTx ? ` ${result.settleTx}` : ""}`);
+  } catch (err) {
+    result.error = `settle failed: ${err.message.split("\n")[0]}`;
+    result.note = result.error;
+    steps.push(`3 settle: ${result.error}`);
+    log(`junior weekly: ${result.error}`);
   }
-  result.settleTx = await send(ctx, "settle");
-  steps.push("3 settle: sent at the due second");
-  result.note = "settle sent";
-  log(`junior settle sent ${result.settleTx}`);
   return result;
 }
 
@@ -15336,7 +15428,7 @@ async function distributeFees(ctx) {
     log(`distribute: ${unparkedUsdc} USDC split; sent ${hash2}`);
     return { called: true, txHash: hash2, unparkedUsdc, note: `distributed ${unparkedUsdc} USDC` };
   } catch (err) {
-    if (/NothingToDo/.test(err.message)) return { called: false, unparkedUsdc, note: "NothingToDo (flushed by someone else); skipped" };
+    if (revertSelector(err) === NOTHING_TO_DO) return { called: false, unparkedUsdc, note: "NothingToDo (flushed by someone else); skipped" };
     throw err;
   }
 }
@@ -15666,11 +15758,21 @@ async function run(opts, cfg = loadConfig(opts.configPath), deps = {}) {
     agentPrivateKey: opts.agentPrivateKey,
     seniorTotalAssetsFallback: state.totalAssets,
     nowTs: BigInt(Math.floor(opts.now.getTime() / 1e3)),
-    log
+    log,
+    sleep: deps.sleep
   };
   let juniorSync;
   let juniorAccrue;
   let juniorStatus;
+  let juniorWeeklyResult;
+  try {
+    juniorWeeklyResult = await juniorWeeklyPrepare(jctx);
+  } catch (err) {
+    juniorWeeklyResult = { checked: false, settleDue: true, note: `junior weekly failed: ${err.message}` };
+    log(juniorWeeklyResult.note);
+    warnings.push(juniorWeeklyResult.note);
+  }
+  const settleTick = !!juniorWeeklyResult?.settleDue;
   try {
     juniorAccrue = await accrueSenior(jctx);
   } catch (err) {
@@ -15678,11 +15780,25 @@ async function run(opts, cfg = loadConfig(opts.configPath), deps = {}) {
     log(juniorAccrue.note);
   }
   let feeDistribute;
-  try {
-    feeDistribute = await distributeFees(jctx);
-  } catch (err) {
-    feeDistribute = { called: false, note: `distribute failed: ${err.message}` };
-    log(feeDistribute.note);
+  let juniorSnap;
+  const flushAndSnap = async () => {
+    try {
+      feeDistribute = await distributeFees(jctx);
+    } catch (err) {
+      feeDistribute = { called: false, note: `distribute failed: ${err.message}` };
+      log(feeDistribute.note);
+    }
+    try {
+      juniorSnap = await snapFelix(jctx);
+    } catch (err) {
+      juniorSnap = { called: false, note: `snapFelixExposure failed: ${err.message}` };
+      log(juniorSnap.note);
+    }
+  };
+  if (!settleTick) await flushAndSnap();
+  else {
+    feeDistribute = { called: false, note: "settle tick: distribute waits until after settle()" };
+    juniorSnap = { called: false, note: "settle tick: snapshot waits until after settle()" };
   }
   let juniorObserve;
   try {
@@ -15690,13 +15806,6 @@ async function run(opts, cfg = loadConfig(opts.configPath), deps = {}) {
   } catch (err) {
     juniorObserve = { called: false, note: `observeSenior failed: ${err.message}` };
     log(juniorObserve.note);
-  }
-  let juniorSnap;
-  try {
-    juniorSnap = await snapFelix(jctx);
-  } catch (err) {
-    juniorSnap = { called: false, note: `snapFelixExposure failed: ${err.message}` };
-    log(juniorSnap.note);
   }
   try {
     juniorSync = await syncSenior(jctx);
@@ -15713,22 +15822,25 @@ async function run(opts, cfg = loadConfig(opts.configPath), deps = {}) {
   let juniorLiquidity;
   try {
     juniorLiquidity = await ensureLiquidity({ ...jctx, log });
+    for (const e of juniorLiquidity.recall?.errors ?? []) warnings.push(e);
   } catch (err) {
-    juniorLiquidity = { checked: false, note: `liquidity check failed: ${err.message}` };
+    juniorLiquidity = { checked: false, failed: true, note: `liquidity check failed: ${err.message}` };
     warnings.push(juniorLiquidity.note);
   }
-  let juniorWeeklyResult;
-  try {
-    juniorWeeklyResult = await juniorWeekly(jctx);
-  } catch (err) {
-    juniorWeeklyResult = { checked: false, note: `junior weekly failed: ${err.message}` };
-    log(juniorWeeklyResult.note);
+  if (settleTick) {
+    juniorWeeklyResult = await juniorWeeklyFinish(jctx, juniorWeeklyResult);
+    if (juniorWeeklyResult.settleTx || juniorWeeklyResult.alreadySettled) await flushAndSnap();
+  }
+  const settleAlerts = [];
+  if (juniorWeeklyResult?.error) {
+    settleAlerts.push(juniorWeeklyResult.error);
+    error = error ?? juniorWeeklyResult.error;
   }
   let juniorIdle;
-  if (opts.weekly || juniorWeeklyResult?.settleDue) {
+  if (opts.weekly || settleTick) {
     juniorIdle = { checked: false, action: "skipped", note: "settle tick: idle management deferred to the next hour" };
-  } else if (juniorLiquidity?.short) {
-    juniorIdle = { checked: false, action: "skipped", note: "liquidity recall this tick: idle management deferred to the next hour" };
+  } else if (juniorLiquidity?.short || juniorLiquidity?.failed) {
+    juniorIdle = { checked: false, action: "skipped", note: "liquidity recall or unknown liquidity state this tick: idle management deferred to the next hour" };
   } else {
     try {
       juniorIdle = await manageJuniorIdle({ ...jctx, log });
@@ -15790,7 +15902,7 @@ async function run(opts, cfg = loadConfig(opts.configPath), deps = {}) {
     juniorWeekly: juniorWeeklyResult,
     orphPrice,
     drift,
-    alerts: drift?.alerts ?? [],
+    alerts: [...drift?.alerts ?? [], ...settleAlerts],
     bookApy: bookApy(proposal),
     error
   };
