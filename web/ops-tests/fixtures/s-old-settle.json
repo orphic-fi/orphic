@@ -1,0 +1,39 @@
+{
+  "name": "S1: old junior settle (keeper; permissionless, not a partner signature)",
+  "signer": "0xC772F0ea992236dA71Fa30b8899D71B680866956",
+  "role": "keeper / anyone",
+  "chainId": 999,
+  "notBeforeCall": {
+    "to": "0x20D5F4f78858D257eA047EB5F47773E361697F2E",
+    "data": "0x95fa99c7",
+    "plus": 601200
+  },
+  "steps": [
+    {
+      "title": "senior.accrueInterest",
+      "what": "Mints the fee shares up to now to the OLD junior (it is still the recipient).",
+      "to": "0x3F7382bd8BFC6C548CAa2D7B4dfCe628B12A9759",
+      "data": "0xa6afed95",
+      "value": "0x0",
+      "gas": "0xf4240",
+      "readbacks": []
+    },
+    {
+      "title": "oldJunior.settle",
+      "what": "Weekly settle of the old junior (pre-fix build live; fixed build in the fresh rehearsal).",
+      "to": "0x20D5F4f78858D257eA047EB5F47773E361697F2E",
+      "data": "0x11da60b4",
+      "value": "0x0",
+      "gas": "0x16e360",
+      "readbacks": []
+    }
+  ],
+  "verify": [
+    {
+      "label": "old junior lastSettle >= due second",
+      "to": "0x20D5F4f78858D257eA047EB5F47773E361697F2E",
+      "data": "0x95fa99c7",
+      "gte": 1794774420
+    }
+  ]
+}

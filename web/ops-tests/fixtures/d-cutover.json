@@ -1,0 +1,228 @@
+{
+  "name": "phase D: cut-over",
+  "deployer": "0x2DBE1Ba83084dAF698Acea79CBAfe0493f42FecC",
+  "chainId": 999,
+  "script": "06d_CutOver.s.sol",
+  "steps": [
+    {
+      "title": "call  setRecipients(address,address,address)",
+      "what": "Repoint the old fee router's recipients (senior, v2 junior, treasury).",
+      "to": "0xc2d2c5e56798bfd0eec67eec12ddc2b521b1aa37",
+      "data": "0xfcd0251b0000000000000000000000003f7382bd8bfc6c548caa2d7b4dfce628b12a9759000000000000000000000000e502ba6d40b3296a6bf709592ae1b74ba6f5a931000000000000000000000000ba08a51bb1bb49e9840eb55511e8880f95306a40",
+      "value": "0x0",
+      "gas": "0xf775",
+      "readbacks": [],
+      "contractName": null,
+      "predictedAddress": null,
+      "arguments": [
+        "0x3F7382bd8BFC6C548CAa2D7B4dfCe628B12A9759",
+        "0xe502BA6d40b3296A6bf709592AE1B74Ba6F5a931",
+        "0xba08A51bb1BB49E9840Eb55511E8880F95306A40"
+      ],
+      "needsBigBlock": false
+    },
+    {
+      "title": "call  setDepositsPaused(bool)",
+      "what": "Junior deposits paused until the checklist is done.",
+      "to": "0x20d5f4f78858d257ea047eb5f47773e361697f2e",
+      "data": "0x1c481e2d0000000000000000000000000000000000000000000000000000000000000001",
+      "value": "0x0",
+      "gas": "0xc118",
+      "readbacks": [],
+      "contractName": null,
+      "predictedAddress": null,
+      "arguments": [
+        "true"
+      ],
+      "needsBigBlock": false
+    },
+    {
+      "title": "call  setRule(address,bytes4,bool,uint256)",
+      "what": "Allow one (target, selector) for the agent, with the receiver word that must equal junior.",
+      "to": "0x20d5f4f78858d257ea047eb5f47773e361697f2e",
+      "data": "0x5a40a0b900000000000000000000000068e37de8d93d3496ae143f2e900490f6280c57cda99aad8900000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000e0",
+      "value": "0x0",
+      "gas": "0xc072",
+      "readbacks": [],
+      "contractName": null,
+      "predictedAddress": null,
+      "arguments": [
+        "0x68e37dE8d93d3496ae143F2E900490f6280C57cD",
+        "0xa99aad89",
+        "false",
+        "224"
+      ],
+      "needsBigBlock": false
+    },
+    {
+      "title": "call  setRule(address,bytes4,bool,uint256)",
+      "what": "Allow one (target, selector) for the agent, with the receiver word that must equal junior.",
+      "to": "0x20d5f4f78858d257ea047eb5f47773e361697f2e",
+      "data": "0x5a40a0b900000000000000000000000068e37de8d93d3496ae143f2e900490f6280c57cd5c2bea490000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000100",
+      "value": "0x0",
+      "gas": "0xc072",
+      "readbacks": [],
+      "contractName": null,
+      "predictedAddress": null,
+      "arguments": [
+        "0x68e37dE8d93d3496ae143F2E900490f6280C57cD",
+        "0x5c2bea49",
+        "false",
+        "256"
+      ],
+      "needsBigBlock": false
+    },
+    {
+      "title": "call  snapFelixExposure()",
+      "what": "Take the Felix exposure snapshot on the v2 junior.",
+      "to": "0xe502ba6d40b3296a6bf709592ae1b74ba6f5a931",
+      "data": "0x23ea60f9",
+      "value": "0x0",
+      "gas": "0xb416e",
+      "readbacks": [],
+      "contractName": null,
+      "predictedAddress": null,
+      "arguments": [],
+      "needsBigBlock": false
+    },
+    {
+      "title": "call  setDepositsPaused(bool)",
+      "what": "Junior deposits paused until the checklist is done.",
+      "to": "0xe502ba6d40b3296a6bf709592ae1b74ba6f5a931",
+      "data": "0x1c481e2d0000000000000000000000000000000000000000000000000000000000000000",
+      "value": "0x0",
+      "gas": "0xc104",
+      "readbacks": [],
+      "contractName": null,
+      "predictedAddress": null,
+      "arguments": [
+        "false"
+      ],
+      "needsBigBlock": false
+    }
+  ],
+  "signer": "0x2DBE1Ba83084dAF698Acea79CBAfe0493f42FecC",
+  "role": "JUNIOR_OWNER",
+  "nonce": 36,
+  "bigBlocks": false,
+  "precheck": [
+    {
+      "label": "senior fee recipient == v2 (phase C done)",
+      "to": "0x3F7382bd8BFC6C548CAa2D7B4dfCe628B12A9759",
+      "data": "0x6d9a3010",
+      "expect": "0x000000000000000000000000e502ba6d40b3296a6bf709592ae1b74ba6f5a931"
+    },
+    {
+      "label": "senior receive gate == new gate",
+      "to": "0x3F7382bd8BFC6C548CAa2D7B4dfCe628B12A9759",
+      "data": "0x7e729ac4",
+      "expect": "0x0000000000000000000000004937314ed838f78e12e234b30ef4fd98b83a39fa"
+    },
+    {
+      "label": "gate lets a fresh account in",
+      "to": "0x4937314Ed838F78e12e234B30eF4Fd98b83A39FA",
+      "data": "0x98c9b49c000000000000000000000000000000000000000000000000000000000000beef",
+      "expect": "0x0000000000000000000000000000000000000000000000000000000000000001"
+    },
+    {
+      "label": "v2 deposits still paused",
+      "to": "0xe502BA6d40b3296A6bf709592AE1B74Ba6F5a931",
+      "data": "0x60da3e83",
+      "expect": "0x0000000000000000000000000000000000000000000000000000000000000001"
+    },
+    {
+      "label": "old junior market 0 position is 0 (RUNBOOK 8a)",
+      "to": "0x20D5F4f78858D257eA047EB5F47773E361697F2E",
+      "data": "0xab36378e0000000000000000000000000000000000000000000000000000000000000000",
+      "expect": "0x0000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+      "label": "old junior market 1 position is 0 (RUNBOOK 8a)",
+      "to": "0x20D5F4f78858D257eA047EB5F47773E361697F2E",
+      "data": "0xab36378e0000000000000000000000000000000000000000000000000000000000000001",
+      "expect": "0x0000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+      "label": "old junior market 2 position is 0 (RUNBOOK 8a)",
+      "to": "0x20D5F4f78858D257eA047EB5F47773E361697F2E",
+      "data": "0xab36378e0000000000000000000000000000000000000000000000000000000000000002",
+      "expect": "0x0000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+      "label": "old junior market 3 position is 0 (RUNBOOK 8a)",
+      "to": "0x20D5F4f78858D257eA047EB5F47773E361697F2E",
+      "data": "0xab36378e0000000000000000000000000000000000000000000000000000000000000003",
+      "expect": "0x0000000000000000000000000000000000000000000000000000000000000000"
+    }
+  ],
+  "verify": [
+    {
+      "label": "old router.senior",
+      "to": "0xC2d2C5e56798Bfd0EEc67EEC12ddC2b521b1aA37",
+      "data": "0xf15086e5",
+      "expect": "0x0000000000000000000000003f7382bd8bfc6c548caa2d7b4dfce628b12a9759"
+    },
+    {
+      "label": "old router.junior == v2",
+      "to": "0xC2d2C5e56798Bfd0EEc67EEC12ddC2b521b1aA37",
+      "data": "0xeab77ac9",
+      "expect": "0x000000000000000000000000e502ba6d40b3296a6bf709592ae1b74ba6f5a931"
+    },
+    {
+      "label": "old router.treasury",
+      "to": "0xC2d2C5e56798Bfd0EEc67EEC12ddC2b521b1aA37",
+      "data": "0x61d027b3",
+      "expect": "0x000000000000000000000000ba08a51bb1bb49e9840eb55511e8880f95306a40"
+    },
+    {
+      "label": "old junior deposits paused",
+      "to": "0x20D5F4f78858D257eA047EB5F47773E361697F2E",
+      "data": "0x60da3e83",
+      "expect": "0x0000000000000000000000000000000000000000000000000000000000000001"
+    },
+    {
+      "label": "old junior Morpho supply rule off",
+      "to": "0x20D5F4f78858D257eA047EB5F47773E361697F2E",
+      "data": "0xa38b80db00000000000000000000000068e37de8d93d3496ae143f2e900490f6280c57cda99aad8900000000000000000000000000000000000000000000000000000000",
+      "expect": "0x0000000000000000000000000000000000000000000000000000000000000000",
+      "word": 0
+    },
+    {
+      "label": "old junior Morpho withdraw rule off",
+      "to": "0x20D5F4f78858D257eA047EB5F47773E361697F2E",
+      "data": "0xa38b80db00000000000000000000000068e37de8d93d3496ae143f2e900490f6280c57cd5c2bea4900000000000000000000000000000000000000000000000000000000",
+      "expect": "0x0000000000000000000000000000000000000000000000000000000000000000",
+      "word": 0
+    },
+    {
+      "label": "v2 Felix exposure snapshot present",
+      "to": "0xe502BA6d40b3296A6bf709592AE1B74Ba6F5a931",
+      "data": "0x5b23d3fe0000000000000000000000000000000000000000000000000000000000000000",
+      "expect": "0x0000000000000000000000008a862fd6c12f9ad34c9c2ff45ab2b6712e8cea27",
+      "word": 0
+    },
+    {
+      "label": "v2.snapFelixExposure ran in D (felixExpSupply moved past its phase-A value)",
+      "to": "0xe502BA6d40b3296A6bf709592AE1B74Ba6F5a931",
+      "data": "0x1800dcc0",
+      "gte": 316030032503690467599
+    },
+    {
+      "label": "v2 deposits OPEN (last step)",
+      "to": "0xe502BA6d40b3296A6bf709592AE1B74Ba6F5a931",
+      "data": "0x60da3e83",
+      "expect": "0x0000000000000000000000000000000000000000000000000000000000000000"
+    }
+  ],
+  "logs": [
+    "== Logs ==",
+    "  verify: ok",
+    "==========================",
+    "Estimated max fee per gas: 0.018496461 gwei",
+    "Estimated base fee per gas: 0.00924823 gwei",
+    "Estimated max priority fee per gas: 0.000000001 gwei",
+    "Estimated total gas used for script: 831977",
+    "Estimated amount required: 0.000015388630133397 HYPE",
+    "=========================="
+  ]
+}
