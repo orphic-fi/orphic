@@ -1,0 +1,107 @@
+{
+  "name": "phase C: execute fee recipient and gate",
+  "deployer": "0x9EDfDc92A46adbfa7b6189295376bEF4599c5F29",
+  "chainId": 999,
+  "script": "06c_ExecuteSenior.s.sol",
+  "steps": [
+    {
+      "title": "call  setManagementFeeRecipient(address)",
+      "what": "Management fee goes to junior.",
+      "to": "0x3f7382bd8bfc6c548caa2d7b4dfce628b12a9759",
+      "data": "0x9faae4640000000000000000000000009c265f8fa3cc4ec68a2491c7135a649f2b58269b",
+      "value": "0x0",
+      "gas": "0xb44bf",
+      "readbacks": [],
+      "contractName": null,
+      "predictedAddress": null,
+      "arguments": [
+        "0x9c265F8FA3CC4ec68a2491C7135A649F2B58269B"
+      ],
+      "needsBigBlock": false
+    },
+    {
+      "title": "call  setReceiveSharesGate(address)",
+      "what": "Wire the senior receive-shares gate (timelocked on senior).",
+      "to": "0x3f7382bd8bfc6c548caa2d7b4dfce628b12a9759",
+      "data": "0x2cb19f980000000000000000000000008bf671db51d28d1ce01b0c002de3bc33573bd8d3",
+      "value": "0x0",
+      "gas": "0x15908",
+      "readbacks": [],
+      "contractName": null,
+      "predictedAddress": null,
+      "arguments": [
+        "0x8Bf671dB51d28D1Ce01b0C002De3BC33573Bd8D3"
+      ],
+      "needsBigBlock": false
+    }
+  ],
+  "signer": "0x9EDfDc92A46adbfa7b6189295376bEF4599c5F29",
+  "role": "SENIOR_SAFE (anyone may execute)",
+  "nonce": 3,
+  "bigBlocks": false,
+  "precheck": [
+    {
+      "label": "old junior has settled (lastSettle >= due second): REFUSE otherwise",
+      "to": "0x20D5F4f78858D257eA047EB5F47773E361697F2E",
+      "data": "0x95fa99c7",
+      "gte": 1794774420
+    },
+    {
+      "label": "recipient change was submitted",
+      "to": "0x3F7382bd8BFC6C548CAa2D7B4dfCe628B12A9759",
+      "data": "0x8639fb07000000000000000000000000000000000000000000000000000000000000002000000000000000000000000000000000000000000000000000000000000000249faae4640000000000000000000000009c265f8fa3cc4ec68a2491c7135a649f2b58269b00000000000000000000000000000000000000000000000000000000",
+      "gte": 1
+    },
+    {
+      "label": "gate change was submitted",
+      "to": "0x3F7382bd8BFC6C548CAa2D7B4dfCe628B12A9759",
+      "data": "0x8639fb07000000000000000000000000000000000000000000000000000000000000002000000000000000000000000000000000000000000000000000000000000000242cb19f980000000000000000000000008bf671db51d28d1ce01b0c002de3bc33573bd8d300000000000000000000000000000000000000000000000000000000",
+      "gte": 1
+    }
+  ],
+  "verify": [
+    {
+      "label": "senior fee recipient == v2",
+      "to": "0x3F7382bd8BFC6C548CAa2D7B4dfCe628B12A9759",
+      "data": "0x6d9a3010",
+      "expect": "0x0000000000000000000000009c265f8fa3cc4ec68a2491c7135a649f2b58269b"
+    },
+    {
+      "label": "senior receive gate == new gate",
+      "to": "0x3F7382bd8BFC6C548CAa2D7B4dfCe628B12A9759",
+      "data": "0x7e729ac4",
+      "expect": "0x0000000000000000000000008bf671db51d28d1ce01b0c002de3bc33573bd8d3"
+    },
+    {
+      "label": "fresh account can receive shares (normal times)",
+      "to": "0x8Bf671dB51d28D1Ce01b0C002De3BC33573Bd8D3",
+      "data": "0x98c9b49c000000000000000000000000000000000000000000000000000000000000beef",
+      "expect": "0x0000000000000000000000000000000000000000000000000000000000000001"
+    },
+    {
+      "label": "pending recipient change consumed",
+      "to": "0x3F7382bd8BFC6C548CAa2D7B4dfCe628B12A9759",
+      "data": "0x8639fb07000000000000000000000000000000000000000000000000000000000000002000000000000000000000000000000000000000000000000000000000000000249faae4640000000000000000000000009c265f8fa3cc4ec68a2491c7135a649f2b58269b00000000000000000000000000000000000000000000000000000000",
+      "expect": "0x0000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+      "label": "pending gate change consumed",
+      "to": "0x3F7382bd8BFC6C548CAa2D7B4dfCe628B12A9759",
+      "data": "0x8639fb07000000000000000000000000000000000000000000000000000000000000002000000000000000000000000000000000000000000000000000000000000000242cb19f980000000000000000000000008bf671db51d28d1ce01b0c002de3bc33573bd8d300000000000000000000000000000000000000000000000000000000",
+      "expect": "0x0000000000000000000000000000000000000000000000000000000000000000"
+    }
+  ],
+  "waitBeforeSeconds": 259200,
+  "logs": [
+    "== Logs ==",
+    "  verify: ok",
+    "==========================",
+    "Estimated max fee per gas: 0.07717027 gwei",
+    "Estimated base fee per gas: 0.013585135 gwei",
+    "Estimated max priority fee per gas: 0.05 gwei",
+    "Estimated total gas used for script: 689020",
+    "Estimated amount required: 0.0000531718594354 HYPE",
+    "=========================="
+  ],
+  "waitFromPlan": "b-submit.json"
+}
