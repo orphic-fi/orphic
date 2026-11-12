@@ -226,7 +226,7 @@ export async function accrueSenior(ctx: JuniorCtx): Promise<SyncResult> {
 }
 
 const PRICE_UNIT = 10n ** 24n;
-/** Safety bound for the felixExp scan; the array ends at the first out-of-bounds Panic(0x32), so this is only reached on a bug. */
+/** Safety bound for the felixExp scan; the array ends at the first out-of-bounds revert, so this is only reached on a bug. */
 const MAX_FELIX_ENTRIES = 256;
 const lostAssetsAbi = parseAbi(["function lostAssets() view returns (uint256)"]);
 
@@ -268,7 +268,7 @@ export async function snapFelix(ctx: JuniorCtx): Promise<SyncResult> {
     return skip(`felixExpSupply read failed (${(err as Error).message.split("\n")[0]}); not snapshotting on unknown state`);
   }
   if ((await c.readContract({ address: ctx.cfg.vault as Address, abi: vaultV2Abi, functionName: "totalSupply" })) === 0n) return skip("senior is not funded yet");
-  // Read felixExp(i) until the decoded Panic(0x32) of the array end. Any other failure, or no end in sight, skips the tick.
+  // Read felixExp(i) until the array-end revert. Any other failure, or no end in sight, skips the tick.
   const entries: FelixEntry[] = [];
   for (let i = 0; ; i++) {
     if (i >= MAX_FELIX_ENTRIES) return skip(`felixExp has no end within ${MAX_FELIX_ENTRIES} entries; not snapshotting`);
@@ -276,7 +276,10 @@ export async function snapFelix(ctx: JuniorCtx): Promise<SyncResult> {
     try {
       e = await c.readContract({ address: junior, abi: juniorAbi, functionName: "felixExp", args: [BigInt(i)] });
     } catch (err) {
-      if (isPanic(err, 0x32n)) break; // past the end of the array
+      // Past the end of the array: a public array getter reverts with NO data there (measured on the fork), and a Panic(0x32)
+      // is accepted too. felixExpSupply was read above, so the function exists; a transport error or a revert that carries
+      // other data is NOT the end and skips the tick.
+      if (isPanic(err, 0x32n) || isMissingFunction(err)) break;
       return skip(`felixExp(${i}) read failed (${(err as Error).message.split("\n")[0]}); not snapshotting on unknown state`);
     }
     const lost = await c.readContract({ address: e[0], abi: lostAssetsAbi, functionName: "lostAssets" });

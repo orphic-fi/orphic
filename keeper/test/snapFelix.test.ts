@@ -4,13 +4,13 @@ import { juniorAbi } from "../src/abi/junior.js";
 import { felixLossUnbilled, snapFelix } from "../src/exec/junior.js";
 import type { TxSigner } from "../src/exec/signer.js";
 import { cfg } from "./helpers.js";
-import { emptyRevert, panic32, rpcDown } from "./errs.js";
+import { callReverted, emptyRevert, panic32, rpcDown } from "./errs.js";
 
 const JUNIOR = "0x2000000000000000000000000000000000000001" as Address;
 const FELIX = "0x8A862fD6c12f9ad34C9c2ff45AB2b6712e8CEa27" as Address;
 const UNIT = 10n ** 24n;
 
-function setup(v: { seniorSupply?: bigint; lost?: bigint; lostBase?: bigint; fraction?: bigint; assetsRef?: bigint; preFix?: boolean; rpcDownOn?: "felixExpSupply" | "felixExp" | "felixExp-late" }) {
+function setup(v: { seniorSupply?: bigint; lost?: bigint; lostBase?: bigint; fraction?: bigint; assetsRef?: bigint; preFix?: boolean; rpcDownOn?: "felixExpSupply" | "felixExp" | "felixExp-late"; endAs?: "empty" | "panic" | "data" }) {
   const c = cfg();
   c.junior = JUNIOR;
   const sends: string[] = [];
@@ -22,7 +22,10 @@ function setup(v: { seniorSupply?: bigint; lost?: bigint; lostBase?: bigint; fra
         case "totalSupply": return v.seniorSupply ?? 316n * 10n ** 18n;
         case "felixExp":
           if (v.rpcDownOn === "felixExp") throw rpcDown();
-          if (a.args![0] !== 0n) { if (v.rpcDownOn === "felixExp-late") throw rpcDown(); throw panic32(); }
+          if (a.args![0] !== 0n) {
+            if (v.rpcDownOn === "felixExp-late") throw rpcDown();
+            throw v.endAs === "panic" ? panic32() : v.endAs === "data" ? callReverted("BadSplit()") : emptyRevert(); // real getters end with an empty revert
+          }
           return [FELIX, v.lostBase ?? 0n, v.fraction ?? UNIT / 2n, v.assetsRef ?? 316_000_000n];
         case "lostAssets": return v.lost ?? 0n;
         default: throw new Error(`unexpected ${a.functionName}`);
@@ -79,6 +82,14 @@ describe("K3 Felix snapshot", () => {
       expect(r.note).toMatch(/not snapshotting/);
       expect(sends).toEqual([]);
     }
+  });
+
+  it("the array end may be an empty revert (measured) or Panic(0x32), but a revert carrying other data is not the end", async () => {
+    expect((await snapFelix(setup({ endAs: "empty" }).ctx)).called).toBe(true);
+    expect((await snapFelix(setup({ endAs: "panic" }).ctx)).called).toBe(true);
+    const bad = setup({ endAs: "data" });
+    expect((await snapFelix(bad.ctx)).called).toBe(false);
+    expect(bad.sends).toEqual([]);
   });
 
   it("dry-run sends nothing; a pre-fix junior is skipped with a note", async () => {

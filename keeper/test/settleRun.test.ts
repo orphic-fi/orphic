@@ -59,7 +59,7 @@ async function tick(v: { nowTs: bigint; fail?: "touch" | "market" | "settle" }) 
         case "seniorSupplyBase": return 316n * 10n ** 18n;
         case "seniorSupplyMin": return 316n * 10n ** 18n;
         case "felixExpSupply": return 0n;
-        case "felixExp": throw (await import("./errs.js")).panic32();
+        case "felixExp": throw (await import("./errs.js")).emptyRevert();
         case "lastUpdate": return BigInt(Math.floor(Date.now() / 1000));
         case "accrueInterestView": return [0n, 0n, 0n];
         case "coverInProgress": return 0n;
