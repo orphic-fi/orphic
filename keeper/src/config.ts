@@ -56,6 +56,10 @@ export interface SeniorConfig {
   vault: Address | "0xTODO";
   /** JuniorVault. Skipped entirely while a placeholder. */
   junior: Address | "0xTODO";
+  /** FeeRouter. The keeper flushes it every tick; skipped while a placeholder. */
+  feeRouter?: Address | "0xTODO";
+  /** Senior `receiveSharesGate` the watchdog expects; while a placeholder or unset the expected value is "no gate" (the zero address). */
+  expectedReceiveSharesGate?: Address | "0xTODO";
   /** ORPH token. Price sampling is skipped while a placeholder. */
   orph: Address | "0xTODO";
   /** Uniswap v4 pool id (bytes32). Computed from the PoolKey when a placeholder. */

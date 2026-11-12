@@ -130,6 +130,34 @@ export interface SyncResult {
   note: string;
 }
 
+/**
+ * K4, every tick: junior.observeSenior() records senior's lowest share supply so an exit followed by a buy is not billed
+ * as one exposure (L10). Permissionless. Sent only when the supply is below the recorded minimum, since otherwise the
+ * call is a no-op; syncSenior below observes as well.
+ */
+export async function observeSenior(ctx: JuniorCtx): Promise<SyncResult> {
+  const log = ctx.log ?? ((l: string) => console.log(l));
+  if (!juniorEnabled(ctx.cfg) || isPlaceholder(ctx.cfg.vault) || !ctx.client) return { called: false, note: "placeholder or no client; observeSenior skipped" };
+  let min: bigint;
+  try {
+    min = await ctx.client.readContract({ address: ctx.cfg.junior as Address, abi: juniorAbi, functionName: "seniorSupplyMin" });
+  } catch {
+    return { called: false, note: "junior has no seniorSupplyMin (pre-fix build); observeSenior skipped" };
+  }
+  const supply = await ctx.client.readContract({ address: ctx.cfg.vault as Address, abi: vaultV2Abi, functionName: "totalSupply" });
+  if (supply >= min) {
+    log(`observeSenior: senior supply ${supply} not below the recorded minimum ${min}, nothing to record`);
+    return { called: false, note: "supply not below the recorded minimum; nothing to observe" };
+  }
+  if (ctx.dryRun) {
+    log("observeSenior: would call junior.observeSenior() (dry-run)");
+    return { called: false, note: "dry-run: observeSenior not sent" };
+  }
+  const hash = await sendCall(ctx, ctx.cfg.junior as Address, encodeFunctionData({ abi: juniorAbi, functionName: "observeSenior" }), "observeSenior");
+  log(`observeSenior sent ${hash}`);
+  return { called: true, txHash: hash, note: "observeSenior sent" };
+}
+
 /** Hourly: permissionless junior.syncSenior() so newly deposited senior shares become covered. */
 export async function syncSenior(ctx: JuniorCtx): Promise<SyncResult> {
   const log = ctx.log ?? ((l: string) => console.log(l));

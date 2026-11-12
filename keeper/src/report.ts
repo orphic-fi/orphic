@@ -3,6 +3,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import type { JuniorStatus, JuniorWeeklyResult, SyncResult } from "./exec/junior.js";
 import type { OrphPriceResult } from "./data/orph.js";
+import type { DistributeResult } from "./exec/router.js";
 import type { DriftResult } from "./exec/drift.js";
 import type { Decision, ExecutionResult, MarketInputs, PlanStep, Proposal, VaultState } from "./types.js";
 
@@ -31,6 +32,8 @@ export interface RunReport {
   juniorSync?: SyncResult;
   juniorAccrue?: SyncResult;
   juniorSnap?: SyncResult;
+  juniorObserve?: SyncResult;
+  feeDistribute?: DistributeResult;
   juniorStatus?: JuniorStatus;
   juniorIdle?: JuniorIdleResult;
   juniorLiquidity?: LiquidityResult;
@@ -87,6 +90,8 @@ export function humanSummary(report: Omit<RunReport, "summary">): string[] {
   if (report.juniorStatus?.enabled && report.juniorStatus.coverInProgressUsdc !== undefined) out.push(report.juniorStatus.note);
   else if (report.juniorStatus) out.push(`junior: ${report.juniorStatus.note}`);
   if (report.juniorAccrue) out.push(`accrue: ${report.juniorAccrue.note}`);
+  if (report.feeDistribute) out.push(`distribute: ${report.feeDistribute.note}`);
+  if (report.juniorObserve) out.push(`observeSenior: ${report.juniorObserve.note}`);
   if (report.juniorSnap) out.push(`snapFelixExposure: ${report.juniorSnap.note}`);
   if (report.juniorSync) out.push(`syncSenior: ${report.juniorSync.note}`);
   if (report.juniorLiquidity?.short) out.push(`junior liquidity: ${report.juniorLiquidity.note}`);

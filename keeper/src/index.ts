@@ -7,8 +7,9 @@ import { decide, proposeAllocation } from "./engine/allocate.js";
 import { buildPlan, validatePlan } from "./exec/plan.js";
 import { executePlan, weeklyClose, type ExecContext } from "./exec/send.js";
 import type { TxSigner } from "./exec/signer.js";
-import { accrueSenior, juniorWeekly, readJuniorStatus, snapFelix, syncSenior, type JuniorCtx } from "./exec/junior.js";
+import { accrueSenior, juniorWeekly, readJuniorStatus, observeSenior, snapFelix, syncSenior, type JuniorCtx } from "./exec/junior.js";
 import { ensureLiquidity, manageJuniorIdle } from "./exec/juniorDeploy.js";
+import { distributeFees } from "./exec/router.js";
 import { sampleOrphPrice } from "./data/orph.js";
 import { checkSeniorDrift } from "./exec/drift.js";
 import { bookApy, humanSummary, writeReport, type RunReport } from "./report.js";
@@ -135,6 +136,21 @@ export async function run(opts: RunOptions, cfg: SeniorConfig = loadConfig(opts.
     juniorAccrue = { called: false, note: `accrue failed: ${(err as Error).message}` };
     log(juniorAccrue.note);
   }
+  // K4, every tick: flush the FeeRouter (small pushes), then record senior's lowest supply before the sync below.
+  let feeDistribute: RunReport["feeDistribute"];
+  try {
+    feeDistribute = await distributeFees(jctx);
+  } catch (err) {
+    feeDistribute = { called: false, note: `distribute failed: ${(err as Error).message}` };
+    log(feeDistribute.note);
+  }
+  let juniorObserve: RunReport["juniorObserve"];
+  try {
+    juniorObserve = await observeSenior(jctx);
+  } catch (err) {
+    juniorObserve = { called: false, note: `observeSenior failed: ${(err as Error).message}` };
+    log(juniorObserve.note);
+  }
   // K3: Felix exposure snapshot every tick, unless a Felix loss is booked and unbilled. Before the settle tick's touch.
   let juniorSnap: RunReport["juniorSnap"];
   try {
@@ -239,6 +255,8 @@ export async function run(opts: RunOptions, cfg: SeniorConfig = loadConfig(opts.
     juniorSync,
     juniorAccrue,
     juniorSnap,
+    juniorObserve,
+    feeDistribute,
     juniorStatus,
     juniorIdle,
     juniorLiquidity,

@@ -43,4 +43,6 @@ export const juniorAbi = [
       { name: "assetsRef", type: "uint128" },
     ],
   },
+  { type: "function", name: "observeSenior", stateMutability: "nonpayable", inputs: [], outputs: [] },
+  { type: "function", name: "seniorSupplyMin", stateMutability: "view", inputs: [], outputs: [{ name: "", type: "uint256" }] },
 ] as const;
