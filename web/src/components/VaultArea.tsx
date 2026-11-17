@@ -14,6 +14,9 @@ import { NA, fmtNum, fmtPct, fmtTime, fmtUnits, fmtUsd, truncateAddress } from '
 import { fmtClockUtc, fmtDateUtc, noticeEnds, settleAtOrAfter } from '../lib/schedule'
 import s from './VaultArea.module.css'
 
+/** Junior seeded and first deployed, 8 Nov 2026 21:27 UTC; the base for realised growth. */
+const JUNIOR_OPENED = 1794173220
+
 const COPY = {
   senior: {
     name: 'Senior',
@@ -278,7 +281,7 @@ export default function VaultArea({ kind, state: v, initialMode = 'deposit' }: {
         ? `1 ${JUNIOR_SYMBOL} = ${fmtNum(Number(v.pricePerShare) / 1e18, 2)} USDC`
         : `1 ${JUNIOR_SYMBOL} = 1.00 USDC`
   const balanceText = isConnected && LIVE && v.usdcBalance !== undefined ? fmtUnits(v.usdcBalance, USDC_DECIMALS) : NA
-  const juniorApyLabel = kind === 'junior' ? 'projected · est.' : v.apyDerived ? 'est. APY · via Felix' : 'est. APY · Morpho 7d'
+  const juniorApyLabel = kind === 'junior' ? 'projected · est.' : v.apyDerived ? 'est. APY · Felix 7-day avg' : 'est. APY · Morpho 7d'
 
   return (
     <section className={s.area} data-kind={kind} aria-labelledby={`${kind}-name`}>
@@ -298,7 +301,7 @@ export default function VaultArea({ kind, state: v, initialMode = 'deposit' }: {
       </header>
 
       {kind === 'senior' && v.apyDerived && v.apy !== null && (
-        <p className={s.caption}>Estimate: Felix USDC's current rate on the share of senior sitting there, minus the 0.5% fee. Not yet included: senior's 50% share of protocol fees, which starts with the $ORPH pool. Morpho shows the vault's own rate once it indexes it.</p>
+        <p className={s.caption}>Estimate: Felix USDC's 7-day average rate on the share of senior sitting there, minus the 0.5% fee. The spot rate moves hour to hour; the average is what a week has actually paid. Not yet included: senior's 50% share of protocol fees, which starts with the $ORPH pool. Morpho shows the vault's own rate once it indexes it.</p>
       )}
       {kind === 'senior' && !v.apyError && v.apy === null && v.apyUnlisted && <p className={s.caption}>Rate unavailable right now: Morpho does not index this vault yet and the Felix rate could not be read.</p>}
       {kind === 'junior' && v.projection && (
@@ -515,6 +518,15 @@ export default function VaultArea({ kind, state: v, initialMode = 'deposit' }: {
                 {v.nav && v.lastSettle !== undefined && <span className={s.dim}> · set {fmtDateUtc(v.lastSettle)}</span>}
               </dd>
             </div>
+            {v.pricePerShare !== undefined && v.pricePerShare > 10n ** 18n && v.chainReadAt && (
+              <div className={s.row}>
+                <dt>Realised so far</dt>
+                <dd title="Share price growth since the vault opened on 8 Nov 2026, annualised for scale. What settles happened, not a forecast.">
+                  {`+${((Number(v.pricePerShare) / 1e18 - 1) * 100).toFixed(2)}% in ${Math.round(Math.max(1, (v.chainReadAt / 1000 - JUNIOR_OPENED) / 86_400))} days`}
+                  <span className={s.dim}> · {((Number(v.pricePerShare) / 1e18 - 1) * (365 / Math.max(1, (v.chainReadAt / 1000 - JUNIOR_OPENED) / 86_400)) * 100).toFixed(1)}% annualised</span>
+                </dd>
+              </div>
+            )}
             <div className={s.row}>
               <dt>Live value per share</dt>
               <dd title="What the next settle would freeze if it ran now, pending senior fee shares included. Exits are priced at settle.">

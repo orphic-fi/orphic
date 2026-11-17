@@ -50,20 +50,33 @@ export function useMorphoVaultV2(address: Address) {
 }
 
 interface GqlV1Response {
-  data?: { vaultByAddress?: { state?: { netApy?: number | null; apy?: number | null; totalAssetsUsd?: number | null } | null } | null }
+  data?: {
+    vaultByAddress?: {
+      state?: { netApy?: number | null; apy?: number | null; totalAssetsUsd?: number | null } | null
+      historicalState?: { netApy?: { x: number; y: number }[] | null } | null
+    } | null
+  }
   errors?: { message: string }[]
 }
 
-/** MetaMorpho (v1) vault stats, used for Felix USDC where senior's assets sit. */
-async function fetchVaultV1(address: Address): Promise<VaultV2Stats> {
-  const query = `{ vaultByAddress(address:"${address}", chainId:${morphoChainId}){ state { netApy apy totalAssetsUsd } } }`
+/**
+ * MetaMorpho (v1) vault stats, used for Felix USDC where senior's assets sit. `netApy` here is the 7-day average of
+ * Morpho's daily net APY, not the spot rate: Felix's spot rate swings with utilisation (3% to 8% within one day
+ * on 17 Nov 2026), and a spot number on the card over-promises. `spotNetApy` keeps the instant read for reference.
+ */
+async function fetchVaultV1(address: Address): Promise<VaultV2Stats & { spotNetApy: number | null }> {
+  const start = Math.floor(Date.now() / 1000) - 7 * 86_400
+  const query = `{ vaultByAddress(address:"${address}", chainId:${morphoChainId}){ state { netApy apy totalAssetsUsd } historicalState { netApy(options:{startTimestamp:${start}, interval:DAY}) { x y } } } }`
   const res = await fetch(ENDPOINT, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ query }) })
   if (!res.ok) throw new Error(`Morpho API ${res.status}`)
   const json = (await res.json()) as GqlV1Response
   if (json.errors?.length) throw new Error(json.errors[0].message)
   const st = json.data?.vaultByAddress?.state
-  if (!st) return { netApy: null, apy: null, totalAssetsUsd: null, unlisted: true }
-  return { netApy: st.netApy ?? null, apy: st.apy ?? null, totalAssetsUsd: st.totalAssetsUsd ?? null, unlisted: false }
+  if (!st) return { netApy: null, apy: null, totalAssetsUsd: null, unlisted: true, spotNetApy: null }
+  const days = (json.data?.vaultByAddress?.historicalState?.netApy ?? []).map((p) => p.y).filter((y) => Number.isFinite(y))
+  const avg = days.length >= 3 ? days.reduce((a, b) => a + b, 0) / days.length : null
+  const spot = st.netApy ?? st.apy ?? null
+  return { netApy: avg ?? spot, apy: st.apy ?? null, totalAssetsUsd: st.totalAssetsUsd ?? null, unlisted: false, spotNetApy: spot }
 }
 
 export function useMorphoVaultV1(address: Address) {
