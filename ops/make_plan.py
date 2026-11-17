@@ -43,6 +43,7 @@ WHAT = {
     "setApprovalRule": "Allow the agent to approve USDC to one venue.",
     "setKeeper": "Set the Rotator key as router keeper.",
     "transfer": "Transfer tokens.",
+    "transferOwnership": "Start the two-step ownership handover.",
 }
 
 
@@ -148,6 +149,20 @@ def verify(script, env, steps):
               {"label": "router.keeper == rotator", "to": router, "data": call("keeper()"), "expect": addr_word(env["AGENT"])},
               {"label": "router.treasury", "to": router, "data": call("treasury()"), "expect": addr_word(env["TREASURY"])},
               {"label": "router.junior", "to": router, "data": call("junior()"), "expect": addr_word(junior)}]
+    if script.startswith("06"):
+        junior = next(s["predictedAddress"] for s in steps if s.get("contractName") == "JuniorVault")
+        gate = next(s["predictedAddress"] for s in steps if s.get("contractName") == "SeniorShareGate")
+        v += [{"label": "junior.owner == deployer", "to": junior, "data": call("owner()"), "expect": addr_word(env["DEPLOYER"])},
+              {"label": "junior.agent == rotator", "to": junior, "data": call("agent()"), "expect": addr_word(env["AGENT"])},
+              {"label": "junior.senior == senior", "to": junior, "data": call("senior()"), "expect": addr_word(env["SENIOR"])},
+              {"label": "junior.seeded", "to": junior, "data": call("seeded()"), "expect": word(1)},
+              {"label": "junior.depositsPaused", "to": junior, "data": call("depositsPaused()"), "expect": word(1)},
+              {"label": "junior.depositCap == 5k", "to": junior, "data": call("depositCap()"), "expect": word(5_000_000_000)},
+              {"label": "junior.marketsLength == 4", "to": junior, "data": call("marketsLength()"), "expect": word(4)},
+              {"label": "junior.vaultsLength == 2", "to": junior, "data": call("vaultsLength()"), "expect": word(2)},
+              {"label": "no Morpho supply rule", "to": junior, "data": call("rules(address,bytes4)", "0x68e37dE8d93d3496ae143F2E900490f6280C57cD", "0xa99aad89"), "expect": word(0) + word(0)[2:]},
+              {"label": "gate.junior == junior", "to": gate, "data": call("junior()"), "expect": addr_word(junior)},
+              {"label": "gate open while no loss", "to": gate, "data": call("canReceiveShares(address)", "0x000000000000000000000000000000000000bEEF"), "expect": word(1)}]
     if script.startswith("03"):
         senior = env["SENIOR"]
         v += [{"label": "owner == senior admin", "to": senior, "data": call("owner()"), "expect": addr_word(env["SENIOR_ADMIN"])},

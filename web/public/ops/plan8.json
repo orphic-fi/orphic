@@ -1,0 +1,42 @@
+{
+  "name": "Senior: apply fee recipient and gate (after the timelock)",
+  "deployer": "0x9EDfDc92A46adbfa7b6189295376bEF4599c5F29",
+  "chainId": 999,
+  "script": "manual",
+  "steps": [
+    {
+      "title": "setManagementFeeRecipient(junior v1.1)",
+      "what": "Applies the submitted change: fee shares now mint to the new junior.",
+      "to": "0x3F7382bd8BFC6C548CAa2D7B4dfCe628B12A9759",
+      "data": "0x9faae464000000000000000000000000ec766a81a8b57d1fd1fd7b2220a69abe92aea163",
+      "value": "0x0",
+      "gas": "0x249f0",
+      "readbacks": [
+        {
+          "label": "managementFeeRecipient == junior v1.1",
+          "to": "0x3F7382bd8BFC6C548CAa2D7B4dfCe628B12A9759",
+          "data": "0x6d9a3010",
+          "expect": "0x000000000000000000000000ec766a81a8b57d1fd1fd7b2220a69abe92aea163"
+        }
+      ]
+    },
+    {
+      "title": "setReceiveSharesGate(gate)",
+      "what": "Applies the submitted change: the gate is live on senior.",
+      "to": "0x3F7382bd8BFC6C548CAa2D7B4dfCe628B12A9759",
+      "data": "0x2cb19f980000000000000000000000009c265f8fa3cc4ec68a2491c7135a649f2b58269b",
+      "value": "0x0",
+      "gas": "0x249f0",
+      "readbacks": [
+        {
+          "label": "receiveSharesGate == gate",
+          "to": "0x3F7382bd8BFC6C548CAa2D7B4dfCe628B12A9759",
+          "data": "0x7e729ac4",
+          "expect": "0x0000000000000000000000009c265f8fa3cc4ec68a2491c7135a649f2b58269b"
+        }
+      ]
+    }
+  ],
+  "verify": [],
+  "logs": []
+}
