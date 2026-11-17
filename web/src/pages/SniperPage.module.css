@@ -59,3 +59,174 @@
     display: none;
   }
 }
+
+.presets {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin: 14px 0 10px;
+}
+
+.preset {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  text-align: left;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel);
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+}
+
+.presetOn {
+  border-color: var(--ink);
+  background: var(--panel-inner);
+}
+
+.presetName {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+  font-size: 15px;
+}
+
+.tag {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--muted);
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  padding: 1px 7px;
+}
+
+.presetBlurb {
+  font-size: 13px;
+  color: var(--text);
+}
+
+.presetRule {
+  font-size: 12px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.cols {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 24px;
+}
+
+.h2sub {
+  font-weight: 400;
+  color: var(--muted);
+  font-size: 13px;
+  margin-left: 8px;
+}
+
+.knobs {
+  display: flex;
+  flex-direction: column;
+  border-top: 1px solid var(--line);
+  margin-top: 12px;
+}
+
+.knob {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--line);
+  font-size: 14px;
+}
+
+.knob > span:first-child {
+  display: flex;
+  flex-direction: column;
+}
+
+.knob small {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.fixed .val {
+  color: var(--muted);
+}
+
+.val {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.val input {
+  width: 84px;
+  background: var(--field);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  color: var(--text);
+  font: inherit;
+  font-size: 14px;
+  text-align: right;
+  padding: 4px 6px;
+  outline: none;
+}
+
+.val input:focus {
+  border-color: var(--line-strong);
+}
+
+.pads {
+  list-style: none;
+  padding: 0;
+  margin: 12px 0;
+  border-top: 1px solid var(--line);
+}
+
+.pads li {
+  display: grid;
+  grid-template-columns: 110px minmax(0, 1fr);
+  gap: 12px;
+  padding: 9px 0;
+  border-bottom: 1px solid var(--line);
+  font-size: 14px;
+}
+
+.padOff {
+  color: var(--muted);
+}
+
+.padName {
+  font-weight: 500;
+}
+
+.padNote {
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.loadBox {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 4px 14px 10px;
+  margin-bottom: 12px;
+  background: var(--panel);
+}
+
+.loadBox .knob {
+  border-bottom: 0;
+}
+
+@media (max-width: 760px) {
+  .presets,
+  .cols {
+    grid-template-columns: 1fr;
+  }
+}
