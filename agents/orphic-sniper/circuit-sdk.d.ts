@@ -77,7 +77,7 @@ declare module "circuit:sdk" {
     unrealizedPnlUsd: Decimal | null;
     pricedAt: string | null;
     errors: Array<string>;
-    protocol: Module | null;
+    protocol: Protocol | null;
     market: string;
     underlying: string | null;
     underlyingQuantity: Decimal | null;
@@ -98,7 +98,7 @@ declare module "circuit:sdk" {
     unrealizedPnlUsd: Decimal | null;
     pricedAt: string | null;
     errors: Array<string>;
-    protocol: Module | null;
+    protocol: Protocol | null;
     market: string;
     underlying: string | null;
     underlyingQuantity: Decimal | null;
@@ -132,7 +132,7 @@ declare module "circuit:sdk" {
     assetKey: string;
     amount: Decimal;
     priceUsd: Decimal | null;
-    timestamp: string;
+    timestamp: Timestamp;
     references: Array<LedgerReference>;
   };
   type SolanaMoneyAction = SolanaBytes | SolanaInstructions;
@@ -160,18 +160,11 @@ declare module "circuit:sdk" {
     summary: string | null;
     source: string;
     url: string | null;
-    emittedAt: IsoInstant;
+    emittedAt: Timestamp;
   } | {
-    kind: "balanceChange";
-    network: BalanceChangeNetwork;
+    kind: "walletTrade";
     wallet: string;
-    transaction: string;
-    received: Array<WalletMovement>;
-    sent: Array<WalletMovement>;
-  } | {
-    kind: "perpPositionChange";
-    wallet: string;
-    changes: Array<PositionChange>;
+    trade: WalletTrade;
   } | {
     kind: "allocation";
     direction: AllocationDirection;
@@ -227,7 +220,7 @@ declare module "circuit:sdk" {
   type MoneyActionOutcome = {
     status: "rejected";
   } | {
-    status: "failed";
+    status: "error";
     operation: OperationResource;
   } | {
     status: "unresolved";
@@ -235,642 +228,80 @@ declare module "circuit:sdk" {
     operation: OperationResource | null;
   };
   type AgentContext = {
-    readonly sessionId: number;
-    readonly walletAddress: string;
-    readonly allocation: {
+    sessionId: number;
+    walletAddress: string;
+    allocation: {
       holdings: Array<Holding>;
     };
-    readonly next: (options?: {
+    next: (options?: {
       until?: number;
     }) => Promise<Trigger | null>;
-    readonly settings: AgentSettings;
-    readonly trigger: Trigger;
-    readonly log: (message: string, options?: {
+    settings: AgentSettings;
+    trigger: Trigger;
+    log: (message: string, options?: {
       error?: boolean;
     }) => Promise<void>;
-    readonly wallet: {
-      readonly transactions: {
-        readonly preview: (params: WalletTransactionRequest) => Promise<{
-          gasBalanceWarning?: string;
-          functionName: string | null;
-          assetChanges: Array<AgentAssetChange>;
-        }>;
-        readonly create: (params: WalletTransactionRequest, options?: OnceInput) => Promise<CompletedOperation<"evmTx" | "solanaTx">>;
-      };
-      readonly messages: {
-        readonly sign: (params: {
-          messageType: "eip712";
-          /** EIP-712 typed data for typed message signing. | An EIP-191 message for simple message signing. */
-          data: Eip712TypedDataInput;
-          /** integer, minimum 0, format "uint64" */
-          chainId: number;
-        } | {
-          messageType: "eip191";
-          /** EIP-712 typed data for typed message signing. | An EIP-191 message for simple message signing. */
-          data: Eip191MessageInput;
-          /** integer, minimum 0, format "uint64" */
-          chainId: number;
-        }) => Promise<{
-          v: number;
-          r: string;
-          s: string;
-          formattedSignature: string;
-          type: string;
-        }>;
-      };
-    };
-    readonly transfers: {
-      readonly quote: (transfer: TransferRequest) => Promise<{
-        type: TransferType;
-        amount: PositiveDecimal;
-        fee: NonnegativeDecimal;
-        feeSymbol: string;
-        minimumAmount?: PositiveDecimal;
-        gasBalanceWarning?: string;
-      }>;
-      readonly create: (params: TransferRequestInput, options?: OnceInput) => Promise<Omit<OperationResource, "kind" | "result" | "status"> & {
-        status: "success";
-        kind: "transfer";
-        result: null;
-      }>;
-    };
-    readonly swaps: {
-      readonly quote: (swap: SwapRequest) => Promise<{
-        gasBalanceWarning?: string;
-        engine: SwapProvider;
-        assetSend: QuoteAsset;
-        assetReceive: QuoteAsset;
-        venuePriceImpact?: Decimal;
-        feeBreakdown: Array<Fee>;
-        candidates?: Array<QuoteCandidate>;
-        slippage: Percentage;
-        quoteFreshness: QuoteFreshness;
-      }>;
-      readonly create: (params: SwapRequestInput, options?: OnceInput) => Promise<Omit<OperationResource, "kind" | "result" | "status"> & {
-        status: "success";
-        kind: "swap";
-        result: Received;
-      }>;
-    };
-    readonly hyperliquid: {
+    binance: {
       readonly orders: {
-        create: (params: PerpCoinSpotCoinValueOrMaxVenueOrderProposalInput, options?: OnceInput) => Promise<Omit<OperationResource, "kind" | "result" | "status"> & {
-          status: "success";
-          kind: "order:hyperliquid";
-          result: VenueOrder;
-        }>;
-        cancel: (params: Omit<{
-          kind: "cancel";
-        } & {
-          venue: "hyperliquid";
-          orderId: OrderIdCancelTarget;
-        }, "kind" | "venue">, options?: OnceInput) => Promise<Omit<OperationResource, "kind" | "result" | "status"> & {
-          status: "success";
-          kind: "cancel:hyperliquid";
-          result: Canceled;
-        }>;
-      };
-      readonly account: {
-        readonly update: (params: {
-          kind: "isolatedMargin";
-          asset: PerpCoin;
-          change: MarginChange;
-          amountUsdc: PositiveDecimal;
-        } | {
-          kind: "staking";
-          change: FundsChange;
-          amount: PositiveDecimal;
-        } | {
-          kind: "delegation";
-          change: DelegationChange;
-          validator: EvmAddressInput;
-          amount: PositiveDecimal;
-        } | {
-          kind: "vault";
-          vault: EvmAddressInput;
-          change: FundsChange;
-          amountUsdc: PositiveDecimal;
-        } | {
-          kind: "move";
-          from: CoreBalance;
-          to: CoreBalance;
-          amount: PositiveDecimal;
-        }, options?: OnceInput) => Promise<Omit<OperationResource, "kind" | "result" | "status"> & {
-          status: "success";
-          kind: "account:hyperliquid";
-          result: null;
-        }>;
-      };
-      readonly staking: {
-        readonly retrieve: () => Promise<{
-          staking: Staking;
-          vaults: Array<VaultEquity>;
-        }>;
-      };
-      readonly outcomes: {
-        readonly list: () => Promise<HyperliquidOutcome[]>;
-      };
-      readonly spotMarkets: {
-        readonly list: () => Promise<HyperliquidSpotMarket[]>;
-      };
-    };
-    readonly lighter: {
-      orders: {
-        create: (params: SymbolSpotSymbolValueVenueOrderProposalInput, options?: OnceInput) => Promise<CompletedOperation<"order:lighter" | "order:lighterRobinhood">>;
-        cancel: (params: Omit<({
-          kind: "cancel";
-        } & {
-          venue: "lighter";
-          orderId: OrderIdCancelTarget;
-        }) | ({
-          kind: "cancel";
-        } & {
-          venue: "lighterRobinhood";
-          orderId: OrderIdCancelTarget;
-        }), "kind" | "venue">, options?: OnceInput) => Promise<CompletedOperation<"cancel:lighter" | "cancel:lighterRobinhood">>;
-      };
-      margin: {
-        update: (params: LighterMarginChange, options?: OnceInput) => Promise<CompletedOperation<"margin:lighter" | "margin:lighterRobinhood">>;
-      };
-    };
-    readonly lighterRobinhood: {
-      orders: {
-        create: (params: SymbolSpotSymbolValueVenueOrderProposalInput, options?: OnceInput) => Promise<CompletedOperation<"order:lighter" | "order:lighterRobinhood">>;
-        cancel: (params: Omit<({
-          kind: "cancel";
-        } & {
-          venue: "lighter";
-          orderId: OrderIdCancelTarget;
-        }) | ({
-          kind: "cancel";
-        } & {
-          venue: "lighterRobinhood";
-          orderId: OrderIdCancelTarget;
-        }), "kind" | "venue">, options?: OnceInput) => Promise<CompletedOperation<"cancel:lighter" | "cancel:lighterRobinhood">>;
-      };
-      margin: {
-        update: (params: LighterMarginChange, options?: OnceInput) => Promise<CompletedOperation<"margin:lighter" | "margin:lighterRobinhood">>;
-      };
-    };
-    readonly derive: {
-      readonly orders: {
-        create: (params: DeriveOrderProposalInput, options?: OnceInput) => Promise<Omit<OperationResource, "kind" | "result" | "status"> & {
-          status: "success";
-          kind: "order:derive";
-          result: VenueOrder;
-        }>;
-        cancel: (params: Omit<{
-          kind: "cancel";
-        } & {
-          venue: "derive";
-          orderId: NonceCancelTarget;
-        }, "kind" | "venue">, options?: OnceInput) => Promise<Omit<OperationResource, "kind" | "result" | "status"> & {
-          status: "success";
-          kind: "cancel:derive";
-          result: Canceled;
-        }>;
-      };
-      readonly vaults: {
-        readonly request: (params: VaultRequest, options?: OnceInput) => Promise<Omit<OperationResource, "kind" | "result" | "status"> & {
-          status: "success";
-          kind: "vault:derive";
-          result: null;
-        }>;
-        readonly list: () => Promise<VaultListing[]>;
-      };
-      readonly options: {
-        readonly list: (params: {
-          currency: Perp;
-          /** format "date". One expiry, YYYY-MM-DD, to quote with mark, book and greeks. */
-          expiry?: (string | null) | undefined;
-        }) => Promise<OptionListing[]>;
-      };
-    };
-    readonly papertrade: {
-      readonly account: {
-        readonly retrieve: () => Promise<{
-          balance: NonnegativeDecimal;
-          queued: NonnegativeDecimal;
-          positions: Array<PapertradePosition>;
-          paper: PaperHoldings;
-        }>;
-      };
-      readonly positions: {
-        readonly open: (params: PapertradeOrderProposalInput, options?: OnceInput) => Promise<Omit<OperationResource, "kind" | "result" | "status"> & {
-          status: "success";
-          kind: "order:papertrade";
-          result: VenueOrder;
-        }>;
-        readonly close: (params: Omit<{
-          kind: "close";
-        } & {
-          venue: "papertrade";
-          positionIds: Array<PositionId>;
-        }, "kind" | "venue">, options?: OnceInput) => Promise<Omit<OperationResource, "kind" | "result" | "status"> & {
-          status: "success";
-          kind: "close:papertrade";
-          result: VenueOrders;
-        }>;
-        readonly closed: (params: {
-          positionIds: string[];
-        }) => Promise<ClosedPosition[]>;
-      };
-      readonly paper: {
-        readonly stake: (params: Omit<{
-          kind: "stake";
-        } & {
-          venue: "papertrade";
-          amount: PositiveDecimal;
-        }, "kind" | "venue">, options?: OnceInput) => Promise<Omit<OperationResource, "kind" | "result" | "status"> & {
-          status: "success";
-          kind: "stake:papertrade";
-          result: null;
-        }>;
-        readonly unstake: (params: Omit<{
-          kind: "unstake";
-        } & {
-          venue: "papertrade";
-          amount: PositiveDecimal;
-        }, "kind" | "venue">, options?: OnceInput) => Promise<Omit<OperationResource, "kind" | "result" | "status"> & {
-          status: "success";
-          kind: "unstake:papertrade";
-          result: null;
-        }>;
-        readonly claim: (params?: Record<string, never>, options?: OnceInput) => Promise<Omit<OperationResource, "kind" | "result" | "status"> & {
-          status: "success";
-          kind: "claim:papertrade";
-          result: ClaimResult;
-        }>;
-      };
-      readonly headroom: {
-        readonly list: () => Promise<HeadroomRow[]>;
-      };
-      readonly markets: {
-        readonly list: () => Promise<PapertradeMarket[]>;
-      };
-    };
-    readonly polymarket: {
-      readonly orders: {
-        readonly create: (params: SizeOrAllPolymarketOrderProposalInput, options?: OnceInput) => Promise<Omit<OperationResource, "kind" | "result" | "status"> & {
-          status: "success";
-          kind: "order:polymarket";
-          result: VenueOrder;
-        }>;
         readonly cancel: (params: Omit<{
-          kind: "cancel";
-        } & {
-          venue: "polymarket";
-          orderId: OrderId;
-        }, "kind" | "venue">, options?: OnceInput) => Promise<Omit<OperationResource, "kind" | "result" | "status"> & {
-          status: "success";
-          kind: "cancel:polymarket";
-          result: Canceled;
-        }>;
-        readonly quote: (params: {
-          kind: SpotBuy;
-          asset: RawAmount;
-          /** Total order notional in the market's quote asset (USDC; USDG on Lighter Robinhood; pUSD on
-  Polymarket; USD on KRAKEN:XBT/USD), never margin or a USD conversion. | Outcome shares, at most 2 decimals. */
-          amount: Value;
-          execution?: (MarketOnly | null) | undefined;
-        } | {
-          kind: SpotBuy;
-          asset: RawAmount;
-          /** Total order notional in the market's quote asset (USDC; USDG on Lighter Robinhood; pUSD on
-  Polymarket; USD on KRAKEN:XBT/USD), never margin or a USD conversion. | Outcome shares, at most 2 decimals. */
-          amount: Size;
-          execution: PolymarketLimitExecutionInput;
-        } | {
-          kind: SpotSell;
-          asset: RawAmount;
-          /** Total order notional in the market's quote asset (USDC; USDG on Lighter Robinhood; pUSD on
-  Polymarket; USD on KRAKEN:XBT/USD), never margin or a USD conversion. | Outcome shares, at most 2 decimals. */
-          amount: Size;
-          execution?: (MarketOnly | null) | undefined;
-        } | {
-          kind: SpotSell;
-          asset: RawAmount;
-          /** Total order notional in the market's quote asset (USDC; USDG on Lighter Robinhood; pUSD on
-  Polymarket; USD on KRAKEN:XBT/USD), never margin or a USD conversion. | Outcome shares, at most 2 decimals. */
-          amount: Size;
-          execution: PolymarketLimitExecutionInput;
-        }) => Promise<PolymarketQuote | null>;
-      };
-      readonly positions: {
-        readonly redeem: (params: PolymarketRedeemRequest, options?: OnceInput) => Promise<Omit<OperationResource, "kind" | "result" | "status"> & {
-          status: "success";
-          kind: "redeem:polymarket";
-          result: Redeemed;
-        }>;
-        readonly change: (params: PolymarketPositionChange, options?: OnceInput) => Promise<Omit<OperationResource, "kind" | "result" | "status"> & {
-          status: "success";
-          kind: "positionChange:polymarket";
-          result: null;
-        }>;
-      };
-      readonly events: {
-        readonly list: (params: {
-          rail: DiscoverRailInput;
-        }) => Promise<ResolvedEvent[]>;
-        readonly retrieve: (params: {
-          slug: string;
-        }) => Promise<{
-          slug: string;
-          title: string;
-          imageUrl: string | null;
-          openInterestPusd: number | null;
-          markets: Array<ResolvedMarket>;
-        }>;
-        readonly search: (params: {
-          query: string;
-        }) => Promise<EventRef[]>;
-      };
-      readonly markets: {
-        readonly retrieve: (params: {
-          asset: RawAmount;
-        }) => Promise<{
-          question: string;
-          slug: string;
-          sportsMarketType: string | null;
-          groupItemTitle: string | null;
-          negRisk: boolean;
-          line: number | null;
-          gameStartTime: string | null;
-          endDate: string | null;
-          updatedAt: string | null;
-          liquidityPusd: number;
-          volume24hPusd: number;
-          outcomes: Array<PolymarketOutcome>;
-          imageUrl: string | null;
-          dayChangePercent: number | null;
-          eventTitle: string | null;
-          description: string | null;
-          acceptingOrders: boolean;
-          resolving: boolean;
-          minimumNotional: PositiveDecimal | null;
-          priceTick: PositiveDecimal | null;
-          minimumSize: NonnegativeDecimal | null;
-        }>;
-        readonly screen: (params: {
-          /** integer, minimum 0, format "uint64". At most 30 days, in milliseconds. */
-          endsWithinMs: number;
-          lowestPricePusd: PricePusd;
-          highestPricePusd: PricePusd;
-          /** maxLength 80 */
-          minLiquidityPusd: NonnegativeDecimal;
-          /** maxLength 80. pUSD buy walked against each book to price it. */
-          stakePusd: PositiveDecimal;
-          orderBy?: (ScreenOrderInput | null) | undefined;
-          tagSlug?: (string | null) | undefined;
-          excludeTagSlugs?: (Array<string> | null) | undefined;
-          sportsMarketTypes?: (Array<string> | null) | undefined;
-        }) => Promise<{
-          events: Array<ScreenEvent>;
-          scanned: number;
-          truncated: boolean;
-        }>;
-      };
-      readonly prices: {
-        readonly list: (params: {
-          asset: RawAmount;
-          /** default "1yr". Lookback window; 1yr, the default, returns the market's whole life. */
-          window?: LookbackWindowInput | undefined;
-        }) => Promise<PricePoint[]>;
-      };
-    };
-    readonly kraken: {
-      readonly orders: {
-        create: (params: KrakenPairKrakenExecutionExchangeSpotInput, options?: OnceInput) => Promise<Omit<OperationResource, "kind" | "result" | "status"> & {
-          status: "success";
-          kind: "order:kraken";
-          result: VenueOrder;
-        }>;
-        cancel: (params: Omit<{
-          kind: "cancel";
-        } & {
-          venue: "kraken";
-          orderId: OrderId;
-        }, "kind" | "venue">, options?: OnceInput) => Promise<Omit<OperationResource, "kind" | "result" | "status"> & {
-          status: "success";
-          kind: "cancel:kraken";
-          result: Canceled;
-        }>;
-      };
-    };
-    readonly coinbase: {
-      readonly orders: {
-        create: (params: CoinbasePairPlainExecutionExchangeSpotInput, options?: OnceInput) => Promise<Omit<OperationResource, "kind" | "result" | "status"> & {
-          status: "success";
-          kind: "order:coinbase";
-          result: VenueOrder;
-        }>;
-        cancel: (params: Omit<{
-          kind: "cancel";
-        } & {
-          venue: "coinbase";
-          orderId: OrderId;
-          asset: CoinbasePair;
-        }, "kind" | "venue">, options?: OnceInput) => Promise<Omit<OperationResource, "kind" | "result" | "status"> & {
-          status: "success";
-          kind: "cancel:coinbase";
-          result: Canceled;
-        }>;
-      };
-    };
-    readonly okx: {
-      readonly orders: {
-        create: (params: OkxPairPlainExecutionExchangeSpotInput, options?: OnceInput) => Promise<Omit<OperationResource, "kind" | "result" | "status"> & {
-          status: "success";
-          kind: "order:okx";
-          result: VenueOrder;
-        }>;
-        cancel: (params: Omit<{
-          kind: "cancel";
-        } & {
-          venue: "okx";
-          orderId: OrderId;
-          asset: OkxPair;
-        }, "kind" | "venue">, options?: OnceInput) => Promise<Omit<OperationResource, "kind" | "result" | "status"> & {
-          status: "success";
-          kind: "cancel:okx";
-          result: Canceled;
-        }>;
-      };
-    };
-    readonly binance: {
-      readonly orders: {
-        create: (params: BinancePairPlainExecutionExchangeSpotInput, options?: OnceInput) => Promise<Omit<OperationResource, "kind" | "result" | "status"> & {
-          status: "success";
-          kind: "order:binance";
-          result: VenueOrder;
-        }>;
-        cancel: (params: Omit<{
           kind: "cancel";
         } & {
           venue: "binance";
           orderId: OrderId;
           asset: BinancePair;
-        }, "kind" | "venue">, options?: OnceInput) => Promise<Omit<OperationResource, "kind" | "result" | "status"> & {
+        }, "kind" | "venue">, options?: OnceInput | undefined) => Promise<Omit<OperationResource, "kind" | "result" | "status"> & {
           status: "success";
           kind: "cancel:binance";
           result: Canceled;
         }>;
-      };
-    };
-    readonly bybit: {
-      readonly orders: {
-        create: (params: BybitPairPlainExecutionExchangeSpotInput, options?: OnceInput) => Promise<Omit<OperationResource, "kind" | "result" | "status"> & {
+        readonly create: (value: BinancePairPlainExecutionExchangeSpotInput, options?: OnceInput) => Promise<Omit<OperationResource, "kind" | "result" | "status"> & {
           status: "success";
-          kind: "order:bybit";
+          kind: "order:binance";
           result: VenueOrder;
         }>;
-        cancel: (params: Omit<{
+      };
+    };
+    bybit: {
+      readonly orders: {
+        readonly cancel: (params: Omit<{
           kind: "cancel";
         } & {
           venue: "bybit";
           orderId: OrderId;
           asset: BybitPair;
-        }, "kind" | "venue">, options?: OnceInput) => Promise<Omit<OperationResource, "kind" | "result" | "status"> & {
+        }, "kind" | "venue">, options?: OnceInput | undefined) => Promise<Omit<OperationResource, "kind" | "result" | "status"> & {
           status: "success";
           kind: "cancel:bybit";
           result: Canceled;
         }>;
-      };
-    };
-    readonly kalshi: {
-      readonly orders: {
-        create: (params: KalshiPairPlainExecutionExchangeSpotInput, options?: OnceInput) => Promise<Omit<OperationResource, "kind" | "result" | "status"> & {
+        readonly create: (value: BybitPairPlainExecutionExchangeSpotInput, options?: OnceInput) => Promise<Omit<OperationResource, "kind" | "result" | "status"> & {
           status: "success";
-          kind: "order:kalshi";
+          kind: "order:bybit";
           result: VenueOrder;
         }>;
-        cancel: (params: Omit<{
-          kind: "cancel";
-        } & {
-          venue: "kalshi";
-          orderId: OrderId;
-          asset: KalshiPair;
-        }, "kind" | "venue">, options?: OnceInput) => Promise<Omit<OperationResource, "kind" | "result" | "status"> & {
-          status: "success";
-          kind: "cancel:kalshi";
-          result: Canceled;
-        }>;
-      };
-      readonly events: {
-        readonly search: (params?: {
-          /** minLength 1, maxLength 200. Words a series title, category or tag holds, e.g. Fed, Basketball, Bitcoin. */
-          query?: (string | null) | undefined;
-          /** minLength 1, maxLength 200. A series ticker a query returned: lists its open events. */
-          seriesTicker?: (string | null) | undefined;
-          /** minLength 1, maxLength 200. An event ticker: returns its markets. */
-          eventTicker?: (string | null) | undefined;
-        } | undefined) => Promise<{
-          series: Array<Series>;
-          events: Array<Event>;
-        }>;
       };
     };
-    readonly qfex: {
+    coinbase: {
       readonly orders: {
-        create: (params: QfexOrderProposalInput, options?: OnceInput) => Promise<Omit<OperationResource, "kind" | "result" | "status"> & {
+        readonly cancel: (params: Omit<{
+          kind: "cancel";
+        } & {
+          venue: "coinbase";
+          orderId: OrderId;
+          asset: CoinbasePair;
+        }, "kind" | "venue">, options?: OnceInput | undefined) => Promise<Omit<OperationResource, "kind" | "result" | "status"> & {
           status: "success";
-          kind: "order:qfex";
+          kind: "cancel:coinbase";
+          result: Canceled;
+        }>;
+        readonly create: (value: CoinbasePairPlainExecutionExchangeSpotInput, options?: OnceInput) => Promise<Omit<OperationResource, "kind" | "result" | "status"> & {
+          status: "success";
+          kind: "order:coinbase";
           result: VenueOrder;
         }>;
-        cancel: (params: Omit<{
-          kind: "cancel";
-        } & {
-          venue: "qfex";
-          orderId: OrderId;
-          asset: Symbol;
-        }, "kind" | "venue">, options?: OnceInput) => Promise<Omit<OperationResource, "kind" | "result" | "status"> & {
-          status: "success";
-          kind: "cancel:qfex";
-          result: Canceled;
-        }>;
       };
     };
-    readonly rewards: {
-      readonly claim: (params: {
-        network: EvmNetwork;
-        tokens?: string[];
-      }, options?: OnceInput) => Promise<Omit<OperationResource, "kind" | "result" | "status"> & {
-        status: "success";
-        kind: "rewardsClaim";
-        result: null;
-      }>;
-      readonly list: (params?: {
-        /** A network with an EVM chain id. */
-        network?: (EvmNetwork | null) | undefined;
-      } | undefined) => Promise<Reward[]>;
-    };
-    readonly lending: {
-      readonly positions: {
-        readonly supply: (params: SupplyInput, options?: OnceInput) => Promise<Omit<OperationResource, "kind" | "result" | "status"> & {
-          status: "success";
-          kind: "lendingSupply";
-          result: null;
-        }>;
-        readonly withdraw: (params: Withdraw, options?: OnceInput) => Promise<Omit<OperationResource, "kind" | "result" | "status"> & {
-          status: "success";
-          kind: "lendingWithdraw";
-          result: null;
-        }>;
-        readonly borrow: (params: BorrowInput, options?: OnceInput) => Promise<Omit<OperationResource, "kind" | "result" | "status"> & {
-          status: "success";
-          kind: "lendingBorrow";
-          result: null;
-        }>;
-        readonly repay: (params: RepayInput, options?: OnceInput) => Promise<Omit<OperationResource, "kind" | "result" | "status"> & {
-          status: "success";
-          kind: "lendingRepay";
-          result: null;
-        }>;
-        readonly update: (params: Update, options?: OnceInput) => Promise<Omit<OperationResource, "kind" | "result" | "status"> & {
-          status: "success";
-          kind: "lendingPositionUpdate";
-          result: null;
-        }>;
-      };
-      readonly account: {
-        readonly update: (params: LendingAccountChange, options?: OnceInput) => Promise<Omit<OperationResource, "kind" | "result" | "status"> & {
-          status: "success";
-          kind: "lendingAccount";
-          result: null;
-        }>;
-      };
-      readonly markets: {
-        readonly list: (params: {
-          network: Network;
-          /** A protocol Circuit lends and borrows on. */
-          protocol?: (LendingProtocol | null) | undefined;
-        }) => Promise<{
-          markets: Array<MarketRow>;
-          unavailable: Array<Unavailable>;
-        }>;
-      };
-    };
-    readonly liquidity: {
-      readonly positions: {
-        readonly change: (params: LiquidityActionInput, options?: OnceInput) => Promise<Omit<OperationResource, "kind" | "result" | "status"> & {
-          status: "success";
-          kind: "liquidity";
-          result: null;
-        }>;
-      };
-      readonly pools: {
-        readonly retrieve: (params: {
-          /** A network with an EVM chain id. */
-          network: EvmNetwork;
-          module: Metric;
-          /** A green-tier Metric pool deployed by the network's registered Metric factory. */
-          pool: MetricPoolInput;
-        }) => Promise<{
-          span: Span;
-        }>;
-      };
-    };
-    readonly data: {
+    data: {
       readonly assetFundamentals: (params?: {
         asset?: (Array<string> | null) | undefined;
         vendor?: (FundamentalsVendor | null) | undefined;
@@ -904,6 +335,16 @@ declare module "circuit:sdk" {
         /** format "date-time" */
         asOf?: (Timestamp | null) | undefined;
       } | undefined) => Promise<Omit<AssetRowIdentityPage, "ageMs">> & AsyncIterable<AssetRow>;
+      readonly calendar: (params?: {
+        kind?: (Array<CalendarKind> | null) | undefined;
+        subject?: (Array<string> | null) | undefined;
+        asset?: (Array<string> | null) | undefined;
+        /** format "date" */
+        fromDay?: (string | null) | undefined;
+        /** format "date" */
+        toDay?: (string | null) | undefined;
+        cursor?: (string | null) | undefined;
+      } | undefined) => Promise<Omit<DataCalendarRowPage, "ageMs">> & AsyncIterable<DataCalendarRow>;
       readonly categories: (params?: {
         categoryKey?: (Array<string> | null) | undefined;
         search?: (string | null) | undefined;
@@ -937,6 +378,21 @@ declare module "circuit:sdk" {
         /** minimum 0, format "uint32" */
         limit?: (number | null) | undefined;
       }) => Promise<Omit<DataMarketRowPage, "ageMs">>;
+      readonly metrics: (params: {
+        subjectKind: MetricSubjectKind;
+        subject?: (Array<string> | null) | undefined;
+        asset?: (Array<string> | null) | undefined;
+        search?: (string | null) | undefined;
+        category?: (string | null) | undefined;
+        sortBy?: (MetricSortByInput | null) | undefined;
+        /** minimum 0, format "uint32" */
+        limit?: (number | null) | undefined;
+        /** minimum 0, format "uint64" */
+        lookbackMs?: (number | null) | undefined;
+        /** format "date-time" */
+        asOf?: (Timestamp | null) | undefined;
+        cursor?: (string | null) | undefined;
+      }) => Promise<Omit<DataMetricRowPage, "ageMs">> & AsyncIterable<DataMetricRow>;
       readonly openInterest: (params: {
         venue: Venue;
         venueSymbol: Array<string>;
@@ -980,10 +436,13 @@ declare module "circuit:sdk" {
         /** format "date-time" */
         asOf?: (Timestamp | null) | undefined;
       }) => Promise<Omit<PricesAnswer, "ageMs">>;
-      readonly revenue: (params?: {
-        asset?: (Array<string> | null) | undefined;
-        sortBy?: (RevenueKindInput | null) | undefined;
-        order?: (SortOrderInput | null) | undefined;
+      readonly statements: (params: {
+        subjectKind: StatementSubjectKind;
+        subject?: (Array<string> | null) | undefined;
+        statement?: (Array<StatementKind> | null) | undefined;
+        period?: (Array<StatementPeriod> | null) | undefined;
+        lines?: (boolean | null) | undefined;
+        sortBy?: (string | null) | undefined;
         /** minimum 0, format "uint32" */
         limit?: (number | null) | undefined;
         /** minimum 0, format "uint64" */
@@ -991,7 +450,7 @@ declare module "circuit:sdk" {
         /** format "date-time" */
         asOf?: (Timestamp | null) | undefined;
         cursor?: (string | null) | undefined;
-      } | undefined) => Promise<Omit<RevenueRowPage, "ageMs">> & AsyncIterable<RevenueRow>;
+      }) => Promise<Omit<DataStatementRowPage, "ageMs">> & AsyncIterable<DataStatementRow>;
       readonly yields: (params?: {
         pool?: (Array<string> | null) | undefined;
         depositToken?: (Array<YieldTokenReferenceInput> | null) | undefined;
@@ -1004,6 +463,8 @@ declare module "circuit:sdk" {
         stablecoinOnly?: (boolean | null) | undefined;
         singleAssetExposure?: (boolean | null) | undefined;
         impermanentLossRisk?: (boolean | null) | undefined;
+        exploited?: (boolean | null) | undefined;
+        offPeg?: (boolean | null) | undefined;
         sortBy?: (YieldSortByInput | null) | undefined;
         order?: (SortOrderInput | null) | undefined;
         /** minimum 0, format "uint32" */
@@ -1015,7 +476,41 @@ declare module "circuit:sdk" {
         cursor?: (string | null) | undefined;
       } | undefined) => Promise<Omit<YieldRowPage, "ageMs">> & AsyncIterable<YieldRow>;
     };
-    readonly exchanges: {
+    derive: {
+      readonly options: {
+        readonly list: (params: {
+          currency: Perp;
+          /** format "date". One expiry, YYYY-MM-DD, to quote with mark, book and greeks. */
+          expiry?: (string | null) | undefined;
+        }) => Promise<OptionListing[]>;
+      };
+      readonly orders: {
+        readonly cancel: (params: Omit<{
+          kind: "cancel";
+        } & {
+          venue: "derive";
+          orderId: NonceCancelTarget;
+        }, "kind" | "venue">, options?: OnceInput | undefined) => Promise<Omit<OperationResource, "kind" | "result" | "status"> & {
+          status: "success";
+          kind: "cancel:derive";
+          result: Canceled;
+        }>;
+        readonly create: (value: DeriveOrderProposalInput, options?: OnceInput) => Promise<Omit<OperationResource, "kind" | "result" | "status"> & {
+          status: "success";
+          kind: "order:derive";
+          result: VenueOrder;
+        }>;
+      };
+      readonly vaults: {
+        readonly list: () => Promise<VaultListing[]>;
+        readonly request: (value: VaultRequest, options?: OnceInput) => Promise<Omit<OperationResource, "kind" | "result" | "status"> & {
+          status: "success";
+          kind: "vault:derive";
+          result: null;
+        }>;
+      };
+    };
+    exchanges: {
       readonly markets: {
         readonly list: (params: {
           /** A centralized exchange Circuit reads and trades through the user's API key. */
@@ -1026,7 +521,7 @@ declare module "circuit:sdk" {
         }) => Promise<ExchangeMarket[]>;
       };
     };
-    readonly fomo: {
+    fomo: {
       readonly leaderboards: {
         readonly retrieve: (params: {
           window: FomoWindow;
@@ -1047,7 +542,212 @@ declare module "circuit:sdk" {
         }>;
       };
     };
-    readonly memory: {
+    hyperliquid: {
+      readonly account: {
+        readonly update: (value: HyperliquidAccountChangeInput, options?: OnceInput) => Promise<Omit<OperationResource, "kind" | "result" | "status"> & {
+          status: "success";
+          kind: "account:hyperliquid";
+          result: null;
+        }>;
+      };
+      readonly orders: {
+        readonly cancel: (params: Omit<{
+          kind: "cancel";
+        } & {
+          venue: "hyperliquid";
+          orderId: OrderIdCancelTarget;
+        }, "kind" | "venue">, options?: OnceInput | undefined) => Promise<Omit<OperationResource, "kind" | "result" | "status"> & {
+          status: "success";
+          kind: "cancel:hyperliquid";
+          result: Canceled;
+        }>;
+        readonly create: (value: PerpCoinSpotCoinValueOrMaxVenueOrderProposalInput, options?: OnceInput) => Promise<Omit<OperationResource, "kind" | "result" | "status"> & {
+          status: "success";
+          kind: "order:hyperliquid";
+          result: VenueOrder;
+        }>;
+      };
+      readonly outcomes: {
+        readonly list: () => Promise<HyperliquidOutcome[]>;
+      };
+      readonly spotMarkets: {
+        readonly list: () => Promise<HyperliquidSpotMarket[]>;
+      };
+      readonly staking: {
+        readonly retrieve: () => Promise<HyperliquidStaking>;
+      };
+    };
+    kalshi: {
+      readonly events: {
+        readonly search: (params?: {
+          /** minLength 1, maxLength 200. Words a series title, category or tag holds, e.g. Fed, Basketball, Bitcoin. */
+          query?: (string | null) | undefined;
+          /** minLength 1, maxLength 200. A series ticker a query returned: lists its open events. */
+          seriesTicker?: (string | null) | undefined;
+          /** minLength 1, maxLength 200. An event ticker: returns its markets. */
+          eventTicker?: (string | null) | undefined;
+        } | undefined) => Promise<{
+          series: Array<Series>;
+          events: Array<Event>;
+        }>;
+      };
+      readonly orders: {
+        readonly cancel: (params: Omit<{
+          kind: "cancel";
+        } & {
+          venue: "kalshi";
+          orderId: OrderId;
+          asset: KalshiPair;
+        }, "kind" | "venue">, options?: OnceInput | undefined) => Promise<Omit<OperationResource, "kind" | "result" | "status"> & {
+          status: "success";
+          kind: "cancel:kalshi";
+          result: Canceled;
+        }>;
+        readonly create: (value: KalshiPairPlainExecutionExchangeSpotInput, options?: OnceInput) => Promise<Omit<OperationResource, "kind" | "result" | "status"> & {
+          status: "success";
+          kind: "order:kalshi";
+          result: VenueOrder;
+        }>;
+      };
+    };
+    kraken: {
+      readonly orders: {
+        readonly cancel: (params: Omit<{
+          kind: "cancel";
+        } & {
+          venue: "kraken";
+          orderId: OrderId;
+        }, "kind" | "venue">, options?: OnceInput | undefined) => Promise<Omit<OperationResource, "kind" | "result" | "status"> & {
+          status: "success";
+          kind: "cancel:kraken";
+          result: Canceled;
+        }>;
+        readonly create: (value: KrakenPairKrakenExecutionExchangeSpotInput, options?: OnceInput) => Promise<Omit<OperationResource, "kind" | "result" | "status"> & {
+          status: "success";
+          kind: "order:kraken";
+          result: VenueOrder;
+        }>;
+      };
+    };
+    lending: {
+      readonly account: {
+        readonly update: (value: LendingAccountChange, options?: OnceInput) => Promise<Omit<OperationResource, "kind" | "result" | "status"> & {
+          status: "success";
+          kind: "lendingAccount";
+          result: null;
+        }>;
+      };
+      readonly markets: {
+        readonly list: (params: {
+          network: Network;
+          /** A protocol Circuit lends and borrows on. */
+          protocol?: (LendingProtocol | null) | undefined;
+        }) => Promise<{
+          markets: Array<MarketRow>;
+          unavailable: Array<Unavailable>;
+        }>;
+      };
+      readonly positions: {
+        readonly borrow: (value: BorrowInput, options?: OnceInput) => Promise<Omit<OperationResource, "kind" | "result" | "status"> & {
+          status: "success";
+          kind: "lendingBorrow";
+          result: null;
+        }>;
+        readonly repay: (value: RepayInput, options?: OnceInput) => Promise<Omit<OperationResource, "kind" | "result" | "status"> & {
+          status: "success";
+          kind: "lendingRepay";
+          result: null;
+        }>;
+        readonly supply: (value: SupplyInput, options?: OnceInput) => Promise<Omit<OperationResource, "kind" | "result" | "status"> & {
+          status: "success";
+          kind: "lendingSupply";
+          result: null;
+        }>;
+        readonly update: (value: Update, options?: OnceInput) => Promise<Omit<OperationResource, "kind" | "result" | "status"> & {
+          status: "success";
+          kind: "lendingPositionUpdate";
+          result: null;
+        }>;
+        readonly withdraw: (value: Withdraw, options?: OnceInput) => Promise<Omit<OperationResource, "kind" | "result" | "status"> & {
+          status: "success";
+          kind: "lendingWithdraw";
+          result: null;
+        }>;
+      };
+    };
+    lighter: {
+      readonly margin: {
+        readonly update: (value: LighterMarginChange, options?: OnceInput) => Promise<Omit<OperationResource, "kind" | "result" | "status"> & {
+          status: "success";
+          kind: "margin:lighter";
+          result: null;
+        }>;
+      };
+      readonly orders: {
+        readonly cancel: (params: Omit<{
+          kind: "cancel";
+        } & {
+          venue: "lighter";
+          orderId: OrderIdCancelTarget;
+        }, "kind" | "venue">, options?: OnceInput | undefined) => Promise<Omit<OperationResource, "kind" | "result" | "status"> & {
+          status: "success";
+          kind: "cancel:lighter";
+          result: Canceled;
+        }>;
+        readonly create: (value: SymbolSpotSymbolValueVenueOrderProposalInput, options?: OnceInput) => Promise<Omit<OperationResource, "kind" | "result" | "status"> & {
+          status: "success";
+          kind: "order:lighter";
+          result: VenueOrder;
+        }>;
+      };
+    };
+    lighterRobinhood: {
+      readonly margin: {
+        readonly update: (value: LighterMarginChange, options?: OnceInput) => Promise<Omit<OperationResource, "kind" | "result" | "status"> & {
+          status: "success";
+          kind: "margin:lighterRobinhood";
+          result: null;
+        }>;
+      };
+      readonly orders: {
+        readonly cancel: (params: Omit<{
+          kind: "cancel";
+        } & {
+          venue: "lighterRobinhood";
+          orderId: OrderIdCancelTarget;
+        }, "kind" | "venue">, options?: OnceInput | undefined) => Promise<Omit<OperationResource, "kind" | "result" | "status"> & {
+          status: "success";
+          kind: "cancel:lighterRobinhood";
+          result: Canceled;
+        }>;
+        readonly create: (value: SymbolSpotSymbolValueVenueOrderProposalInput, options?: OnceInput) => Promise<Omit<OperationResource, "kind" | "result" | "status"> & {
+          status: "success";
+          kind: "order:lighterRobinhood";
+          result: VenueOrder;
+        }>;
+      };
+    };
+    liquidity: {
+      readonly pools: {
+        readonly retrieve: (params: {
+          /** A network with an EVM chain id. */
+          network: EvmNetwork;
+          protocol: MetricInput;
+          /** A green-tier Metric pool deployed by the network's registered Metric factory. */
+          pool: MetricPoolInput;
+        }) => Promise<{
+          span: Span;
+        }>;
+      };
+      readonly positions: {
+        readonly change: (value: LiquidityActionInput, options?: OnceInput) => Promise<Omit<OperationResource, "kind" | "result" | "status"> & {
+          status: "success";
+          kind: "liquidity";
+          result: null;
+        }>;
+      };
+    };
+    memory: {
       readonly delete: (params: {
         /** A memory key: no `.` or `..` path segments. */
         key: MemoryKey;
@@ -1065,7 +765,27 @@ declare module "circuit:sdk" {
         value: string;
       }) => Promise<null>;
     };
-    readonly operations: {
+    okx: {
+      readonly orders: {
+        readonly cancel: (params: Omit<{
+          kind: "cancel";
+        } & {
+          venue: "okx";
+          orderId: OrderId;
+          asset: OkxPair;
+        }, "kind" | "venue">, options?: OnceInput | undefined) => Promise<Omit<OperationResource, "kind" | "result" | "status"> & {
+          status: "success";
+          kind: "cancel:okx";
+          result: Canceled;
+        }>;
+        readonly create: (value: OkxPairPlainExecutionExchangeSpotInput, options?: OnceInput) => Promise<Omit<OperationResource, "kind" | "result" | "status"> & {
+          status: "success";
+          kind: "order:okx";
+          result: VenueOrder;
+        }>;
+      };
+    };
+    operations: {
       readonly cancel: (params: {
         /** format "uuid" */
         operationId: string;
@@ -1083,7 +803,7 @@ declare module "circuit:sdk" {
         result: unknown;
       }>;
       readonly list: (params?: {
-        /** A history page position: the last row's creation time and ID, joined by `_`. */
+        /** An opaque history page position: pass `nextCursor` back unchanged. */
         cursor?: (CursorInput | null) | undefined;
       } | undefined) => Promise<{
         rows: Array<AgentOperationRow>;
@@ -1108,12 +828,246 @@ declare module "circuit:sdk" {
         action: MoneyAction | null;
       }>;
     };
-    readonly orders: {
+    orders: {
       readonly listOpen: (params: {
         venue: Venue;
       }) => Promise<VenueUuidOpenVenueOrder[]>;
     };
-    readonly solana: {
+    papertrade: {
+      readonly account: {
+        readonly retrieve: () => Promise<PapertradeAccount>;
+      };
+      readonly headroom: {
+        readonly list: () => Promise<HeadroomRow[]>;
+      };
+      readonly markets: {
+        readonly list: () => Promise<PapertradeMarket[]>;
+      };
+      readonly paper: {
+        readonly claim: (params?: Omit<{
+          kind: "claim";
+        } & {
+          venue: "papertrade";
+        }, "kind" | "venue"> | undefined, options?: OnceInput | undefined) => Promise<Omit<OperationResource, "kind" | "result" | "status"> & {
+          status: "success";
+          kind: "claim:papertrade";
+          result: ClaimResult;
+        }>;
+        readonly stake: (params: Omit<{
+          kind: "stake";
+        } & {
+          venue: "papertrade";
+          amount: PositiveDecimal;
+        }, "kind" | "venue">, options?: OnceInput | undefined) => Promise<Omit<OperationResource, "kind" | "result" | "status"> & {
+          status: "success";
+          kind: "stake:papertrade";
+          result: null;
+        }>;
+        readonly unstake: (params: Omit<{
+          kind: "unstake";
+        } & {
+          venue: "papertrade";
+          amount: PositiveDecimal;
+        }, "kind" | "venue">, options?: OnceInput | undefined) => Promise<Omit<OperationResource, "kind" | "result" | "status"> & {
+          status: "success";
+          kind: "unstake:papertrade";
+          result: null;
+        }>;
+      };
+      readonly positions: {
+        readonly close: (params: Omit<{
+          kind: "close";
+        } & {
+          venue: "papertrade";
+          positionIds: Array<PositionId>;
+        }, "kind" | "venue">, options?: OnceInput | undefined) => Promise<Omit<OperationResource, "kind" | "result" | "status"> & {
+          status: "success";
+          kind: "close:papertrade";
+          result: VenueOrders;
+        }>;
+        readonly closed: (params: {
+          positionIds: string[];
+        }) => Promise<PapertradeClosedPositions>;
+        readonly open: (value: PapertradeOrderProposalInput, options?: OnceInput) => Promise<Omit<OperationResource, "kind" | "result" | "status"> & {
+          status: "success";
+          kind: "order:papertrade";
+          result: VenueOrder;
+        }>;
+      };
+    };
+    polymarket: {
+      readonly events: {
+        readonly list: (params: {
+          rail: DiscoverRailInput;
+        }) => Promise<ResolvedEvent[]>;
+        readonly retrieve: (params: {
+          slug: string;
+        }) => Promise<{
+          slug: string;
+          title: string;
+          imageUrl: string | null;
+          openInterestPusd: PositiveDecimal | null;
+          markets: Array<ResolvedMarket>;
+        }>;
+        readonly search: (params: {
+          query: string;
+        }) => Promise<EventRef[]>;
+      };
+      readonly markets: {
+        readonly retrieve: (params: {
+          asset: RawAmount;
+        }) => Promise<{
+          question: string;
+          slug: string;
+          sportsMarketType: string | null;
+          groupItemTitle: string | null;
+          negRisk: boolean;
+          line: number | null;
+          gameStartTime: string | null;
+          endDate: string | null;
+          updatedAt: string | null;
+          liquidityPusd: NonnegativeDecimal;
+          volume24hPusd: NonnegativeDecimal;
+          outcomes: Array<PolymarketOutcome>;
+          imageUrl: string | null;
+          dayChangePercent: number | null;
+          eventUrl: string | null;
+          eventTitle: string | null;
+          description: string | null;
+          acceptingOrders: boolean;
+          resolving: boolean;
+          minimumNotional: PositiveDecimal | null;
+          priceTick: PositiveDecimal | null;
+          minimumSize: NonnegativeDecimal | null;
+        }>;
+        readonly screen: (params: {
+          /** integer, minimum 0, format "uint64". At most 30 days, in milliseconds. */
+          endsWithinMs: number;
+          /** maxLength 80 */
+          lowestPricePusd: PricePusd;
+          /** maxLength 80 */
+          highestPricePusd: PricePusd;
+          /** maxLength 80 */
+          minLiquidityPusd: NonnegativeDecimal;
+          /** maxLength 80. pUSD buy walked against each book to price it. */
+          stakePusd: PositiveDecimal;
+          orderBy?: (ScreenOrderInput | null) | undefined;
+          tagSlug?: (string | null) | undefined;
+          excludeTagSlugs?: (Array<string> | null) | undefined;
+          sportsMarketTypes?: (Array<string> | null) | undefined;
+        }) => Promise<{
+          events: Array<ScreenEvent>;
+          scanned: number;
+          truncated: boolean;
+        }>;
+      };
+      readonly orders: {
+        readonly cancel: (params: Omit<{
+          kind: "cancel";
+        } & {
+          venue: "polymarket";
+          orderId: OrderId;
+        }, "kind" | "venue">, options?: OnceInput | undefined) => Promise<Omit<OperationResource, "kind" | "result" | "status"> & {
+          status: "success";
+          kind: "cancel:polymarket";
+          result: Canceled;
+        }>;
+        readonly create: (value: SizeOrAllPolymarketOrderProposalInput, options?: OnceInput) => Promise<Omit<OperationResource, "kind" | "result" | "status"> & {
+          status: "success";
+          kind: "order:polymarket";
+          result: VenueOrder;
+        }>;
+        readonly quote: (params: {
+          kind: SpotBuy;
+          asset: RawAmount;
+          /** Total order notional in the market's quote asset (USDC; USDG on Lighter Robinhood; pUSD on
+  Polymarket; USD on KRAKEN:XBT/USD), never margin or a USD conversion. | Outcome shares, at most 2 decimals. */
+          amount: Value;
+          execution?: (MarketOnly | null) | undefined;
+        } | {
+          kind: SpotBuy;
+          asset: RawAmount;
+          /** Total order notional in the market's quote asset (USDC; USDG on Lighter Robinhood; pUSD on
+  Polymarket; USD on KRAKEN:XBT/USD), never margin or a USD conversion. | Outcome shares, at most 2 decimals. */
+          amount: Size;
+          execution: PolymarketLimitExecutionInput;
+        } | {
+          kind: SpotSell;
+          asset: RawAmount;
+          /** Total order notional in the market's quote asset (USDC; USDG on Lighter Robinhood; pUSD on
+  Polymarket; USD on KRAKEN:XBT/USD), never margin or a USD conversion. | Outcome shares, at most 2 decimals. */
+          amount: Size;
+          execution?: (MarketOnly | null) | undefined;
+        } | {
+          kind: SpotSell;
+          asset: RawAmount;
+          /** Total order notional in the market's quote asset (USDC; USDG on Lighter Robinhood; pUSD on
+  Polymarket; USD on KRAKEN:XBT/USD), never margin or a USD conversion. | Outcome shares, at most 2 decimals. */
+          amount: Size;
+          execution: PolymarketLimitExecutionInput;
+        }) => Promise<PolymarketQuote | null>;
+      };
+      readonly positions: {
+        readonly change: (value: PolymarketPositionChange, options?: OnceInput) => Promise<Omit<OperationResource, "kind" | "result" | "status"> & {
+          status: "success";
+          kind: "positionChange:polymarket";
+          result: null;
+        }>;
+        readonly redeem: (params: Omit<{
+          kind: "redeem";
+        } & {
+          venue: "polymarket";
+          asset: RawAmount;
+        }, "kind" | "venue">, options?: OnceInput | undefined) => Promise<Omit<OperationResource, "kind" | "result" | "status"> & {
+          status: "success";
+          kind: "redeem:polymarket";
+          result: Redeemed;
+        }>;
+      };
+      readonly prices: {
+        readonly list: (params: {
+          asset: RawAmount;
+          /** default "all". Chart window; all, the default, returns the market's whole life. */
+          window?: ChartWindowInput | undefined;
+        }) => Promise<PricePoint[]>;
+      };
+    };
+    qfex: {
+      readonly orders: {
+        readonly cancel: (params: Omit<{
+          kind: "cancel";
+        } & {
+          venue: "qfex";
+          orderId: OrderId;
+          asset: Symbol;
+        }, "kind" | "venue">, options?: OnceInput | undefined) => Promise<Omit<OperationResource, "kind" | "result" | "status"> & {
+          status: "success";
+          kind: "cancel:qfex";
+          result: Canceled;
+        }>;
+        readonly create: (value: QfexOrderProposalInput, options?: OnceInput) => Promise<Omit<OperationResource, "kind" | "result" | "status"> & {
+          status: "success";
+          kind: "order:qfex";
+          result: VenueOrder;
+        }>;
+      };
+    };
+    rewards: {
+      readonly claim: (params: Omit<{
+        kind: "rewardsClaim";
+        network: EvmNetwork;
+        claim: RewardClaimInput;
+      }, "kind" | "venue">, options?: OnceInput | undefined) => Promise<Omit<OperationResource, "kind" | "result" | "status"> & {
+        status: "success";
+        kind: "rewardsClaim";
+        result: null;
+      }>;
+      readonly list: (params?: {
+        /** A network with an EVM chain id. */
+        network?: (EvmNetwork | null) | undefined;
+      } | undefined) => Promise<Reward[]>;
+    };
+    solana: {
       readonly holdings: {
         readonly retrieve: (params: {
           /** A Solana wallet address. */
@@ -1125,27 +1079,60 @@ declare module "circuit:sdk" {
           unreadable: Array<UnreadableMint>;
         }>;
       };
-      readonly transactions: {
-        readonly list: (params: {
-          /** One wallet, at most 20 calls a minute per user; many wallets: watchedWallets.set. */
-          wallet: SolanaAddressInput;
-          /** integer, minimum 0, format "uint32", default 900000. 1 ms to one hour; 15 minutes by default. */
-          lookbackMs?: number | undefined;
-          /** integer, minimum 0, maximum 255, format "uint8", default 50. Newest transactions to read at most; 1–100, 50 by default. */
-          limit?: number | undefined;
-        }) => Promise<SolanaActivity[]>;
-      };
     };
-    readonly transactions: {
+    swaps: {
+      readonly create: (value: SwapRequestInput, options?: OnceInput) => Promise<Omit<OperationResource, "kind" | "result" | "status"> & {
+        status: "success";
+        kind: "swap";
+        result: Received;
+      }>;
+      readonly quote: (swap: SwapRequest) => Promise<SwapQuoteResponse>;
+    };
+    transactions: {
       readonly list: (params?: {
-        /** A ledger page position: the last movement's time, operation, observation and leg, joined by `_`. */
+        /** An opaque ledger page position: pass `nextCursor` back unchanged. */
         cursor?: (LedgerCursorInput | null) | undefined;
       } | undefined) => Promise<{
         rows: Array<SessionMovement>;
         nextCursor: string | null;
       }> & AsyncIterable<SessionMovement>;
     };
-    readonly watchedWallets: {
+    transfers: {
+      readonly create: (value: TransferRequestInput, options?: OnceInput) => Promise<Omit<OperationResource, "kind" | "result" | "status"> & {
+        status: "success";
+        kind: "transfer";
+        result: null;
+      }>;
+      readonly quote: (transfer: TransferRequest) => Promise<TransferQuoteResponse>;
+    };
+    wallet: {
+      readonly messages: {
+        readonly sign: (params: {
+          messageType: "eip712";
+          /** EIP-712 typed data for typed message signing. | An EIP-191 message for simple message signing. */
+          data: Eip712TypedDataInput;
+          /** integer, minimum 0, format "uint64" */
+          chainId: number;
+        } | {
+          messageType: "eip191";
+          /** EIP-712 typed data for typed message signing. | An EIP-191 message for simple message signing. */
+          data: Eip191MessageInput;
+          /** integer, minimum 0, format "uint64" */
+          chainId: number;
+        }) => Promise<{
+          v: number;
+          r: string;
+          s: string;
+          formattedSignature: string;
+          type: string;
+        }>;
+      };
+      readonly transactions: {
+        readonly create: (params: WalletTransactionRequest, options?: OnceInput) => Promise<CompletedOperation<"evmTx" | "solanaTx">>;
+        readonly preview: (params: WalletTransactionRequest) => Promise<TransactionPreviewResponse>;
+      };
+    };
+    watchedWallets: {
       readonly set: (params: {
         wallets: Array<WatchableWalletInput>;
       }) => Promise<null>;
@@ -1214,15 +1201,34 @@ declare module "circuit:sdk" {
     minimumAmount?: PositiveDecimal;
     gasBalanceWarning?: string;
   };
+  type SwapQuoteResponse = {
+    gasBalanceWarning?: string;
+    engine: SwapProvider;
+    assetSend: QuoteAsset;
+    assetReceive: QuoteAsset;
+    venuePriceImpact?: Decimal;
+    feeBreakdown: Array<Fee>;
+    candidates?: Array<QuoteCandidate>;
+    slippage: Percentage;
+    quoteFreshness: QuoteFreshness;
+  };
+  type HyperliquidStaking = {
+    staking: Staking;
+    vaults: Array<VaultEquity>;
+  };
+  type PapertradeAccount = {
+    balance: NonnegativeDecimal;
+    queued: NonnegativeDecimal;
+    positions: Array<PapertradePosition>;
+    paper: PaperHoldings;
+  };
+  type PapertradeClosedPositions = ClosedPosition[];
   type AgentMoneyRequest = {
     kind: "swap";
     swap: SwapRequestInput;
   } | {
     kind: "transfer";
     transfer: TransferRequestInput;
-  } | {
-    kind: "liquidity";
-    liquidity: LiquidityActionInput;
   } | {
     kind: "lendingSupply";
     lending: SupplyInput;
@@ -1242,16 +1248,12 @@ declare module "circuit:sdk" {
     kind: "lendingAccount";
     account: LendingAccountChange;
   } | {
-    kind: "rewardsClaim";
-    network: EvmNetwork;
-    tokens?: (Array<EvmAddressChecked> | null) | undefined;
-  } | {
     kind: "evmTx";
     evm: EvmMoneyActionInput;
   } | {
     kind: "solanaTx";
     solana: SolanaMoneyActionInput;
-  } | ({
+  } | SharedActionInput | ({
     kind: "order";
   } & ({
     venue: "hyperliquid";
@@ -1293,50 +1295,6 @@ declare module "circuit:sdk" {
     venue: "qfex";
     order: QfexOrderProposalInput;
   })) | ({
-    kind: "cancel";
-  } & ({
-    venue: "hyperliquid";
-    orderId: OrderIdCancelTarget;
-  } | {
-    venue: "lighter";
-    orderId: OrderIdCancelTarget;
-  } | {
-    venue: "lighterRobinhood";
-    orderId: OrderIdCancelTarget;
-  } | {
-    venue: "derive";
-    orderId: NonceCancelTarget;
-  } | {
-    venue: "polymarket";
-    orderId: OrderId;
-  } | {
-    venue: "kraken";
-    orderId: OrderId;
-  } | {
-    venue: "coinbase";
-    orderId: OrderId;
-    asset: CoinbasePair;
-  } | {
-    venue: "okx";
-    orderId: OrderId;
-    asset: OkxPair;
-  } | {
-    venue: "binance";
-    orderId: OrderId;
-    asset: BinancePair;
-  } | {
-    venue: "bybit";
-    orderId: OrderId;
-    asset: BybitPair;
-  } | {
-    venue: "kalshi";
-    orderId: OrderId;
-    asset: KalshiPair;
-  } | {
-    venue: "qfex";
-    orderId: OrderId;
-    asset: Symbol;
-  })) | ({
     kind: "margin";
   } & ({
     venue: "lighter";
@@ -1349,40 +1307,6 @@ declare module "circuit:sdk" {
   } & {
     venue: "hyperliquid";
     account: HyperliquidAccountChangeInput;
-  }) | ({
-    kind: "close";
-  } & {
-    venue: "papertrade";
-    positionIds: Array<PositionId>;
-  }) | ({
-    kind: "stake";
-  } & {
-    venue: "papertrade";
-    amount: PositiveDecimal;
-  }) | ({
-    kind: "unstake";
-  } & {
-    venue: "papertrade";
-    amount: PositiveDecimal;
-  }) | ({
-    kind: "claim";
-  } & {
-    venue: "papertrade";
-  }) | ({
-    kind: "vault";
-  } & {
-    venue: "derive";
-    vault: VaultRequest;
-  }) | ({
-    kind: "redeem";
-  } & {
-    venue: "polymarket";
-    asset: RawAmount;
-  }) | ({
-    kind: "positionChange";
-  } & {
-    venue: "polymarket";
-    change: PolymarketPositionChange;
   });
   type RequestOf<Kind extends string> = Kind extends `${infer Verb}:${infer Venue}`
     ? Extract<AgentMoneyRequest, { kind: Verb; venue: Venue }>
@@ -1399,7 +1323,7 @@ declare module "circuit:sdk" {
     slug: string;
     title: string;
     imageUrl: string | null;
-    openInterestPusd: number | null;
+    openInterestPusd: PositiveDecimal | null;
     markets: Array<ResolvedMarket>;
   };
   type PolymarketMarketLookup = {
@@ -1412,11 +1336,12 @@ declare module "circuit:sdk" {
     gameStartTime: string | null;
     endDate: string | null;
     updatedAt: string | null;
-    liquidityPusd: number;
-    volume24hPusd: number;
+    liquidityPusd: NonnegativeDecimal;
+    volume24hPusd: NonnegativeDecimal;
     outcomes: Array<PolymarketOutcome>;
     imageUrl: string | null;
     dayChangePercent: number | null;
+    eventUrl: string | null;
     eventTitle: string | null;
     description: string | null;
     acceptingOrders: boolean;
@@ -1452,7 +1377,7 @@ declare module "circuit:sdk" {
   type MarginMode = "cross" | "isolated";
   type NonnegativeDecimal = string;
   type PositionId = string;
-  type Module = "aave" | "aave-v4" | "ctoken" | "erc4626" | "euler" | "kamino" | "lido" | "merkl" | "metric" | "morpho" | "silo" | "spark" | "stake-pool" | "uniswap-v3" | "uniswap-v4";
+  type Protocol = "aave" | "aave-v4" | "aero-slipstream" | "ctoken" | "erc4626" | "euler" | "kamino" | "lido" | "merkl" | "metric" | "morpho" | "pendle-pt" | "silo" | "spark" | "stake-pool" | "uniswap-v3" | "uniswap-v4";
   type LiquidityRange = {
     lowerPercent: Decimal;
     upperPercent: Decimal;
@@ -1485,38 +1410,56 @@ declare module "circuit:sdk" {
   type PerpCoin = string;
   type PriceMove = "abs_move" | "cross" | "pct_move";
   type Polymarket = "polymarket";
-  type IsoInstant = string;
-  type BalanceChangeNetwork = "ethereum:1" | "ethereum:10" | "ethereum:137" | "ethereum:143" | "ethereum:42161" | "ethereum:4663" | "ethereum:5042" | "ethereum:56" | "ethereum:57073" | "ethereum:8453" | "ethereum:999" | "ethereum:99901" | "solana";
-  type WalletMovement = {
-    asset: string;
-    amount: PositiveDecimal;
-  };
-  type PositionChange = {
+  type WalletTrade = {
+    venue: "chain";
+    network: WatchedNetwork;
+    transaction: string;
+    sold: Array<WalletMovement>;
+    bought: Array<WalletMovement>;
+    boughtOn: WatchedNetwork;
+    recipient: string;
+  } | {
     venue: "hyperliquid";
     asset: PerpCoin;
-    before: PerpPositionState | null;
-    after: PerpPositionState | null;
+    side: OrderSide;
+    size: PositiveDecimal;
+    price: PositiveDecimal;
+    positionAfter: Decimal;
+    at: Timestamp;
+    id: string;
   } | {
     venue: "lighter";
     asset: Symbol;
-    before: PerpPositionState | null;
-    after: PerpPositionState | null;
+    side: OrderSide;
+    size: PositiveDecimal;
+    price: PositiveDecimal;
+    at: Timestamp;
+    id: string;
   } | {
     venue: "lighterRobinhood";
     asset: Symbol;
-    before: PerpPositionState | null;
-    after: PerpPositionState | null;
+    side: OrderSide;
+    size: PositiveDecimal;
+    price: PositiveDecimal;
+    at: Timestamp;
+    id: string;
   } | {
     venue: "derive";
-    asset: Perp;
-    before: PerpPositionState | null;
-    after: PerpPositionState | null;
+    asset: Instrument;
+    side: OrderSide;
+    size: PositiveDecimal;
+    price: PositiveDecimal;
+    at: Timestamp;
+    id: string;
   } | {
     venue: "papertrade";
+    action: PapertradeAction;
     positionId: PositionId;
     asset: PerpCoin;
-    before: PapertradePositionState | null;
-    after: PapertradePositionState | null;
+    side: PerpSide;
+    size: PositiveDecimal;
+    entryPrice: PositiveDecimal;
+    leverage: number;
   };
   type AllocationDirection = "deposit" | "withdraw";
   type WebhookProvider = "polysights";
@@ -1536,10 +1479,6 @@ declare module "circuit:sdk" {
     requirement: AccountRequirement;
   };
   type ErrorContext = {
-    code: "ASSET_NOT_TRACKED";
-    asset: string;
-    vendor: string;
-  } | {
     code: "MARKET_NOT_CATALOGED";
     venue: string;
     dex: string | null;
@@ -1552,101 +1491,22 @@ declare module "circuit:sdk" {
     stage: "execution";
     operationId: string;
   };
-  type AgentAssetChange = {
-    asset: string | null;
-    symbol: string | null;
-    decimals: number | null;
-    diff: SignedInteger;
+  type OrderId = string;
+  type BinancePair = string;
+  type Canceled = {
+    orderId: string;
+    state: Ended;
   };
-  type Eip712TypedDataInput = {
-    domain: Eip712DomainInput;
-    types: Record<string, Array<Eip712FieldInput>>;
-    primaryType: string;
-    message: Record<string, unknown>;
-  };
-  type Eip191MessageInput = {
-    message: string;
-  };
-  type TransferType = "derive" | "evm" | "hypercore" | "lighter" | "lighter-robinhood" | "solana";
-  type PositiveDecimal = string;
-  type TransferRequestInput = {
-    from: NetworkAssetInput;
-    amount: NeverAmount;
-    to: AddressTarget;
-  };
-  type QuoteAsset = {
-    network: Network;
-    asset: string;
-    walletAddress: string;
-    name: string;
-    symbol: string;
-    decimals: number;
-    amountRaw: PositiveRawAmount;
-    amount: string;
-    minimumAmountRaw?: PositiveRawAmount;
-    minimumAmount?: PositiveDecimal;
-    amountUsd?: string;
-  };
-  type Fee = {
-    kind: FeeKind;
-    amountRaw?: RawAmount;
-    amount?: NonnegativeDecimal;
-    symbol?: string;
-    asset?: string;
-    amountUsd?: Decimal;
-  };
-  type QuoteCandidate = {
-    engine: SwapProvider;
-    amount: PositiveDecimal;
-    amountUsd?: string;
-    selected: boolean;
-  };
-  type Percentage = string;
-  type QuoteFreshness = {
-    issuedAtMs: number;
-    ttlMs: number;
-  };
-  type SwapRequestInput = {
-    from: NetworkAssetInput;
-    to: SwapDestinationInput;
-    amount: NeverAmount;
-    minimumReceive?: (PositiveDecimal | null) | undefined;
-    slippage?: (Percentage | null) | undefined;
-    engines?: (Engines | null) | undefined;
-    confidential?: (boolean | null) | undefined;
-  };
-  type Received = {
-    received: Decimal;
-  };
-  type PerpCoinSpotCoinValueOrMaxVenueOrderProposalInput = {
-    kind: "perpOpen";
-    asset: PerpCoin;
-    side: PerpSide;
-    amount: OpenAmount;
-    execution?: (ExecutionInput | null) | undefined;
-    takeProfit?: (ProposedExitInput | null) | undefined;
-    stopLoss?: (ProposedExitInput | null) | undefined;
-    message?: (OrderMessage | null) | undefined;
-    margin?: (PerpMarginInput | null) | undefined;
-  } | {
-    kind: "perpReduce";
-    asset: PerpCoin;
-    expectedSide?: (PerpSide | null) | undefined;
-    amount: CloseAmount;
-    execution?: (ExecutionInput | null) | undefined;
-    message?: (OrderMessage | null) | undefined;
-  } | {
+  type BinancePairPlainExecutionExchangeSpotInput = {
     kind: "spotBuy";
-    asset: SpotCoin;
+    asset: BinancePair;
     amount: ValueOrMaxBuyAmount;
     execution?: (PlainExecutionInput | null) | undefined;
-    message?: (OrderMessage | null) | undefined;
   } | {
     kind: "spotSell";
-    asset: SpotCoin;
+    asset: BinancePair;
     amount: CloseAmount;
     execution?: (PlainExecutionInput | null) | undefined;
-    message?: (OrderMessage | null) | undefined;
   };
   type VenueOrder = {
     orderId: string;
@@ -1662,350 +1522,7 @@ declare module "circuit:sdk" {
     triggerPrice: PositiveDecimal | null;
     reduceOnly: boolean;
   };
-  type OrderIdCancelTarget = string;
-  type Canceled = {
-    orderId: string;
-    state: Ended;
-  };
-  type MarginChange = "add" | "remove";
-  type FundsChange = "deposit" | "withdraw";
-  type DelegationChange = "delegate" | "undelegate";
-  type EvmAddressInput = string;
-  type CoreBalance = {
-    kind: "spot";
-  } | {
-    kind: "perps";
-    dex: string;
-  };
-  type Staking = {
-    delegated: NonnegativeDecimal;
-    undelegated: NonnegativeDecimal;
-    pendingWithdrawal: NonnegativeDecimal;
-  };
-  type VaultEquity = {
-    vault: string;
-    equityUsdc: NonnegativeDecimal;
-    lockedUntil: Timestamp | null;
-  };
-  type HyperliquidOutcome = {
-    asset: string;
-    outcome: number;
-    side: number;
-    question: number | null;
-    name: string;
-    description: string;
-    sideName: string;
-    mid: string | null;
-  };
-  type HyperliquidSpotMarket = {
-    asset: string;
-    baseToken: number;
-    quoteToken: number;
-    baseSymbol: string;
-    quoteSymbol: string;
-  };
-  type SymbolSpotSymbolValueVenueOrderProposalInput = {
-    kind: "perpOpen";
-    asset: Symbol;
-    side: PerpSide;
-    amount: OpenAmount;
-    execution?: (ExecutionInput | null) | undefined;
-    takeProfit?: (ProposedExitInput | null) | undefined;
-    stopLoss?: (ProposedExitInput | null) | undefined;
-    message?: (OrderMessage | null) | undefined;
-    margin?: (PerpMarginInput | null) | undefined;
-  } | {
-    kind: "perpReduce";
-    asset: Symbol;
-    expectedSide?: (PerpSide | null) | undefined;
-    amount: CloseAmount;
-    execution?: (ExecutionInput | null) | undefined;
-    message?: (OrderMessage | null) | undefined;
-  } | {
-    kind: "spotBuy";
-    asset: SpotSymbol;
-    amount: ValueBuyAmount;
-    execution?: (PlainExecutionInput | null) | undefined;
-    message?: (OrderMessage | null) | undefined;
-  } | {
-    kind: "spotSell";
-    asset: SpotSymbol;
-    amount: CloseAmount;
-    execution?: (PlainExecutionInput | null) | undefined;
-    message?: (OrderMessage | null) | undefined;
-  };
-  type LighterMarginChange = {
-    kind: "isolatedMargin";
-    asset: Symbol;
-    change: MarginChange;
-    amountUsdc: PositiveDecimal;
-  } | {
-    kind: "routeTransfer";
-    to: LighterRoute;
-    amountUsdc: PositiveDecimal;
-  };
-  type DeriveOrderProposalInput = {
-    kind: "perpOpen";
-    asset: Perp;
-    side: PerpSide;
-    amount: OpenAmount;
-    execution?: (ExecutionInput | null) | undefined;
-    message?: (OrderMessage | null) | undefined;
-  } | {
-    kind: "perpReduce";
-    asset: Perp;
-    expectedSide?: (PerpSide | null) | undefined;
-    amount: CloseAmount;
-    execution?: (ExecutionInput | null) | undefined;
-    message?: (OrderMessage | null) | undefined;
-  } | {
-    kind: "spotBuy";
-    asset: SpotPair;
-    amount: ValueBuyAmount;
-    execution?: (PlainExecutionInput | null) | undefined;
-    message?: (OrderMessage | null) | undefined;
-  } | {
-    kind: "spotSell";
-    asset: SpotPair;
-    amount: CloseAmount;
-    execution?: (PlainExecutionInput | null) | undefined;
-    message?: (OrderMessage | null) | undefined;
-  } | {
-    kind: "optionBuy";
-    asset: OptionName;
-    amount: Size;
-    execution?: (PlainExecutionInput | null) | undefined;
-    reduceOnly?: (boolean | null) | undefined;
-    message?: (OrderMessage | null) | undefined;
-  } | {
-    kind: "optionSell";
-    asset: OptionName;
-    amount: Size;
-    execution?: (PlainExecutionInput | null) | undefined;
-    reduceOnly?: (boolean | null) | undefined;
-    message?: (OrderMessage | null) | undefined;
-  };
-  type NonceCancelTarget = string;
-  type VaultRequest = {
-    kind: "deposit";
-    vault: number;
-    amount: PositiveDecimal;
-  } | {
-    kind: "withdraw";
-    vault: number;
-    shares: SharesOrMax;
-  } | {
-    kind: "cancel";
-    vault: number;
-  };
-  type VaultListing = {
-    vault: number;
-    name: string;
-    description: string | null;
-    depositAsset: string;
-    navUsd: NonnegativeDecimal;
-    sharePriceUsd: NonnegativeDecimal;
-    closed: boolean;
-  };
-  type Perp = string;
-  type OptionListing = {
-    asset: OptionName;
-    expiresAt: string;
-    strike: PositiveDecimal;
-    optionType: OptionType;
-    minimumSize: PositiveDecimal;
-    sizeStep: PositiveDecimal;
-    priceTick: PositiveDecimal;
-    quote: OptionQuote | null;
-  };
-  type PapertradePosition = {
-    positionId: PositionId;
-    asset: PerpCoin;
-    side: PerpSide;
-    size: PositiveDecimal;
-    margin: NonnegativeDecimal;
-    leverage: number;
-    entryPrice: PositiveDecimal;
-    liquidationPrice: NonnegativeDecimal;
-    openedAt: string;
-  };
-  type PaperHoldings = {
-    balance: NonnegativeDecimal;
-    staked: NonnegativeDecimal;
-    rewards: NonnegativeDecimal;
-  };
-  type PapertradeOrderProposalInput = {
-    asset: PerpCoin;
-    side: PerpSide;
-    amount: Value;
-    leverage: PapertradeLeverage;
-    fundFrom?: (FundFrom | null) | undefined;
-  };
-  type VenueOrders = VenueOrder[];
-  type ClosedPosition = {
-    positionId: PositionId;
-    asset: PerpCoin;
-    side: PerpSide;
-    exitPrice: PositiveDecimal;
-    pnl: Decimal;
-    paperMinted: NonnegativeDecimal;
-    liquidated: boolean;
-  };
-  type ClaimResult = {
-    claimed: NonnegativeDecimal;
-  };
-  type HeadroomRow = {
-    asset: PerpCoin;
-    errors: Array<string>;
-    long: NonnegativeDecimal | null;
-    short: NonnegativeDecimal | null;
-  };
-  type PapertradeMarket = {
-    asset: PerpCoin;
-    paused: Paused;
-    minimumMargin: NonnegativeDecimal;
-    minimumNotional: NonnegativeDecimal;
-    minimumStake: NonnegativeDecimal;
-    maximumNotional: NonnegativeDecimal | null;
-    maximumLeverage: number | null;
-    headroom: Headroom | null;
-    bustBuffer: NonnegativeDecimal | null;
-    winFeeRate: NonnegativeDecimal | null;
-    impact: Impact | null;
-    errors: Array<string>;
-  };
-  type SizeOrAllPolymarketOrderProposalInput = SpotBuyPolymarketLimitInput | SpotBuyValuePolymarketMarketInput | SpotSellPolymarketLimitInput | SpotSellSizeOrAllPolymarketMarketInput;
-  type OrderId = string;
-  type SpotBuy = "spotBuy";
-  type Value = {
-    value: PositiveDecimal;
-  };
-  type MarketOnly = {
-    kind: "market";
-  };
-  type Size = {
-    size: PositiveDecimal;
-  };
-  type PolymarketLimitExecutionInput = {
-    kind: "limit";
-    price: PricePusd;
-    timeInForce: TimeInForce;
-    expiresAt?: (string | null) | undefined;
-  };
-  type SpotSell = "spotSell";
-  type PolymarketQuote = {
-    price: string;
-    signedSharesChange: string;
-    expectedPusdAmount: string;
-  };
-  type Redeemed = {
-    redeemed: Array<RedeemedPosition>;
-  };
-  type PolymarketPositionChange = {
-    kind: "split";
-    asset: RawAmount;
-    amountPusd: PositiveDecimal;
-  } | {
-    kind: "merge";
-    asset: RawAmount;
-    shares: PositiveDecimal;
-  } | {
-    kind: "convert";
-    assets: Array<RawAmount>;
-    shares: PositiveDecimal;
-  };
-  type DiscoverRailInput = "economy" | "endingSoon" | "geopolitics" | "mostAtStake" | "mostTalkedAbout" | "politics" | "popCulture" | "sports" | "tooCloseToCall" | "trending" | "volume";
-  type ResolvedEvent = {
-    slug: string;
-    title: string;
-    imageUrl: string | null;
-    openInterestPusd: number | null;
-    markets: Array<ResolvedMarket>;
-  };
-  type ResolvedMarket = {
-    question: string;
-    slug: string;
-    sportsMarketType: string | null;
-    groupItemTitle: string | null;
-    negRisk: boolean;
-    line: number | null;
-    gameStartTime: string | null;
-    endDate: string | null;
-    updatedAt: string | null;
-    liquidityPusd: number;
-    volume24hPusd: number;
-    outcomes: Array<PolymarketOutcome>;
-    imageUrl: string | null;
-    dayChangePercent: number | null;
-  };
-  type EventRef = {
-    slug: string;
-    title: string;
-    startDate: string | null;
-  };
-  type PolymarketOutcome = {
-    name: string;
-    asset: RawAmount;
-    pricePusd: PricePusd;
-  };
-  type PricePusd = string;
-  type ScreenOrderInput = "competitive" | "endDate" | "lastTradePrice" | "liquidityNum" | "spread" | "startDate" | "volume24hr" | "volumeNum";
-  type ScreenEvent = {
-    slug: string | null;
-    outcomes: Array<ScreenOutcome>;
-  };
-  type LookbackWindowInput = "1d" | "1yr" | "30d" | "7d";
-  type PricePoint = {
-    timestamp: Timestamp;
-    pricePusd: string;
-  };
-  type KrakenPairKrakenExecutionExchangeSpotInput = {
-    kind: "spotBuy";
-    asset: KrakenPair;
-    amount: ValueOrMaxBuyAmount;
-    execution?: (KrakenExecutionInput | null) | undefined;
-  } | {
-    kind: "spotSell";
-    asset: KrakenPair;
-    amount: CloseAmount;
-    execution?: (KrakenExecutionInput | null) | undefined;
-  };
-  type CoinbasePairPlainExecutionExchangeSpotInput = {
-    kind: "spotBuy";
-    asset: CoinbasePair;
-    amount: ValueOrMaxBuyAmount;
-    execution?: (PlainExecutionInput | null) | undefined;
-  } | {
-    kind: "spotSell";
-    asset: CoinbasePair;
-    amount: CloseAmount;
-    execution?: (PlainExecutionInput | null) | undefined;
-  };
-  type CoinbasePair = string;
-  type OkxPairPlainExecutionExchangeSpotInput = {
-    kind: "spotBuy";
-    asset: OkxPair;
-    amount: ValueOrMaxBuyAmount;
-    execution?: (PlainExecutionInput | null) | undefined;
-  } | {
-    kind: "spotSell";
-    asset: OkxPair;
-    amount: CloseAmount;
-    execution?: (PlainExecutionInput | null) | undefined;
-  };
-  type OkxPair = string;
-  type BinancePairPlainExecutionExchangeSpotInput = {
-    kind: "spotBuy";
-    asset: BinancePair;
-    amount: ValueOrMaxBuyAmount;
-    execution?: (PlainExecutionInput | null) | undefined;
-  } | {
-    kind: "spotSell";
-    asset: BinancePair;
-    amount: CloseAmount;
-    execution?: (PlainExecutionInput | null) | undefined;
-  };
-  type BinancePair = string;
+  type BybitPair = string;
   type BybitPairPlainExecutionExchangeSpotInput = {
     kind: "spotBuy";
     asset: BybitPair;
@@ -2017,110 +1534,17 @@ declare module "circuit:sdk" {
     amount: CloseAmount;
     execution?: (PlainExecutionInput | null) | undefined;
   };
-  type BybitPair = string;
-  type KalshiPairPlainExecutionExchangeSpotInput = {
+  type CoinbasePair = string;
+  type CoinbasePairPlainExecutionExchangeSpotInput = {
     kind: "spotBuy";
-    asset: KalshiPair;
+    asset: CoinbasePair;
     amount: ValueOrMaxBuyAmount;
     execution?: (PlainExecutionInput | null) | undefined;
   } | {
     kind: "spotSell";
-    asset: KalshiPair;
+    asset: CoinbasePair;
     amount: CloseAmount;
     execution?: (PlainExecutionInput | null) | undefined;
-  };
-  type KalshiPair = string;
-  type Series = {
-    ticker: string;
-    title: string;
-    category: string;
-    volume: string;
-  };
-  type Event = {
-    eventTicker: string;
-    title: string;
-    subTitle: string;
-    url: string;
-    markets: Array<EventMarket>;
-  };
-  type QfexOrderProposalInput = {
-    kind: "perpOpen";
-    asset: Symbol;
-    side: PerpSide;
-    amount: OpenAmount;
-    execution?: (PlainExecutionInput | null) | undefined;
-    message?: (OrderMessage | null) | undefined;
-  } | {
-    kind: "perpReduce";
-    asset: Symbol;
-    expectedSide?: (PerpSide | null) | undefined;
-    amount: CloseAmount;
-    execution?: (PlainExecutionInput | null) | undefined;
-    message?: (OrderMessage | null) | undefined;
-  };
-  type Symbol = string;
-  type EvmNetwork = "ethereum:1" | "ethereum:10" | "ethereum:137" | "ethereum:143" | "ethereum:42161" | "ethereum:4663" | "ethereum:5042" | "ethereum:56" | "ethereum:57073" | "ethereum:747474" | "ethereum:8453" | "ethereum:999" | "ethereum:99901";
-  type Reward = {
-    network: string;
-    token: string;
-    asset: string;
-    symbol: string | null;
-    claimable: Decimal;
-  };
-  type SupplyInput = SupplyByMarketInput | SupplyByPositionInput;
-  type Withdraw = {
-    network: Network;
-    position: Position;
-    amount: ExitAmount;
-  };
-  type BorrowInput = BorrowByMarketInput | BorrowByPositionInput;
-  type RepayInput = {
-    network: Network;
-    position: Position;
-    amount: ExitAmount;
-    payWith?: (PayWith | null) | undefined;
-  };
-  type Update = {
-    network: Network;
-    position: Position;
-    securesLoans: boolean;
-  };
-  type LendingAccountChange = LendingAccountChangeByMarket | LendingAccountChangeByPosition;
-  type Network = "derive" | "ethereum:1" | "ethereum:10" | "ethereum:137" | "ethereum:143" | "ethereum:42161" | "ethereum:4663" | "ethereum:5042" | "ethereum:56" | "ethereum:57073" | "ethereum:747474" | "ethereum:8453" | "ethereum:999" | "ethereum:99901" | "hypercore" | "lighter" | "lighter-robinhood" | "papertrade" | "solana";
-  type LendingProtocol = "aave" | "aave-v4" | "euler" | "kamino" | "morpho" | "spark";
-  type MarketRow = {
-    protocol: LendingProtocol;
-    market: Market;
-    name: string;
-    asset: Asset;
-    symbol: string | null;
-    decimals: number;
-    canSupply: boolean;
-    canBorrow: boolean;
-    supplyApy: Decimal | null;
-    borrowApy: Decimal | null;
-    loanToValue: Decimal | null;
-    liquidationLoanToValue: Decimal | null;
-    collateral: Array<Collateral>;
-    categories: Array<CategoryRow>;
-  };
-  type Unavailable = {
-    protocol: LendingProtocol;
-    market: Market | null;
-    error: string;
-  };
-  type LiquidityActionInput = {
-    network: EvmNetwork;
-    action: ActionInput;
-  };
-  type Metric = "metric";
-  type MetricPoolInput = {
-    pool: EvmAddressInput;
-  };
-  type Span = {
-    lowerPercent: Decimal;
-    upperPercent: Decimal;
-    currentBin: Range;
   };
   type FundamentalsVendor = "coingecko" | "coingecko-rwa" | "defillama";
   type DataAssetType = "bond" | "coin" | "commodity" | "etf" | "fiat" | "perpetual" | "prediction" | "stock" | "vault";
@@ -2163,6 +1587,7 @@ declare module "circuit:sdk" {
     maxSupply: Decimal | null;
   };
   type Venue = "binance" | "bybit" | "coinbase" | "derive" | "hyperliquid" | "kalshi" | "kraken" | "lighter" | "lighterRobinhood" | "okx" | "papertrade" | "polymarket" | "qfex";
+  type Network = "derive" | "ethereum:1" | "ethereum:10" | "ethereum:137" | "ethereum:143" | "ethereum:42161" | "ethereum:4663" | "ethereum:5042" | "ethereum:56" | "ethereum:57073" | "ethereum:747474" | "ethereum:8453" | "ethereum:999" | "ethereum:99901" | "hypercore" | "lighter" | "lighter-robinhood" | "papertrade" | "solana";
   type AssetRowIdentityPage = {
     rows: Array<AssetRow>;
     nextCursor: string | null;
@@ -2177,6 +1602,41 @@ declare module "circuit:sdk" {
     vendorIdentifiers: Array<VendorListing>;
     categoryKeys: Array<string>;
     contracts: Array<TokenSeen>;
+  };
+  type CalendarKind = "earnings" | "filing" | "governance" | "hack" | "unlock";
+  type DataCalendarRowPage = {
+    rows: Array<DataCalendarRow>;
+    nextCursor: string | null;
+    ageMs: number | null;
+  };
+  type DataCalendarRow = {
+    vendor: string;
+    kind: CalendarKind;
+    subject: string;
+    name?: string;
+    day: string;
+    firstObservedAt: Timestamp;
+    asset?: string;
+    unlockType?: string;
+    recipient?: string;
+    category?: string;
+    amount?: Decimal;
+    weeklyRate?: Decimal;
+    linearEndDay?: string;
+    fiscalYear?: number;
+    fiscalPeriod?: string;
+    dateStatus?: string;
+    session?: string;
+    amountUsd?: Decimal;
+    returnedUsd?: Decimal;
+    technique?: string;
+    classification?: string;
+    form?: string;
+    reportDay?: string;
+    documentUrl?: string;
+    description?: string;
+    status?: string;
+    platform?: string;
   };
   type DataCategoryRowPage = {
     rows: Array<DataCategoryRow>;
@@ -2212,6 +1672,82 @@ declare module "circuit:sdk" {
     nextCursor: string | null;
     ageMs: number | null;
   };
+  type MetricSubjectKind = "bridge" | "category" | "category_trailing" | "chain" | "chain_trailing" | "equity" | "etf" | "exchange" | "liquidation" | "protocol" | "protocol_trailing" | "stablecoin" | "sub_protocol" | "total";
+  type MetricSortByInput = "aggregatorVolume" | "borrowedTvl" | "bridgeDeposits" | "bridgeInflows" | "bridgeVolume" | "bridgeWithdrawals" | "chainFees" | "chainFees30d" | "chainFees7d" | "chainRevenue" | "collateralUsd" | "dexVolume" | "dexVolume30d" | "dexVolume7d" | "dividendYield" | "etfFlow" | "evToEbitda" | "fees" | "fees30d" | "fees7d" | "fullyDilutedValuation" | "holdersRevenue" | "holdersRevenue30d" | "holdersRevenue7d" | "holdersYield" | "incentives" | "liquidatable10pct" | "liquidatable25pct" | "liquidatable5pct" | "marketCap" | "marketDepth" | "newUsers" | "openInterest" | "optionsNotionalVolume" | "optionsVolume" | "perpAggregatorVolume" | "perpVolume" | "pool2Tvl" | "price" | "priceToBook" | "priceToFees" | "priceToRevenue" | "revenue" | "revenue30d" | "revenue7d" | "spotVolume" | "stablecoinSupply" | "stakingTvl" | "trailingPe" | "transactions" | "treasuryTvl" | "tvl" | "tvlChange30d" | "tvlChange7d" | "users" | "vestingTvl";
+  type DataMetricRowPage = {
+    rows: Array<DataMetricRow>;
+    nextCursor: string | null;
+    ageMs: number | null;
+  };
+  type DataMetricRow = {
+    vendor: string;
+    subjectKind: MetricSubjectKind;
+    subject: string;
+    name?: string;
+    parent?: string;
+    category?: string;
+    day: string;
+    firstObservedAt: Timestamp;
+    token?: string;
+    asset?: string;
+    protocolCount?: number;
+    tvl?: Decimal;
+    stakingTvl?: Decimal;
+    borrowedTvl?: Decimal;
+    pool2Tvl?: Decimal;
+    treasuryTvl?: Decimal;
+    vestingTvl?: Decimal;
+    dexVolume?: Decimal;
+    aggregatorVolume?: Decimal;
+    perpVolume?: Decimal;
+    perpAggregatorVolume?: Decimal;
+    optionsVolume?: Decimal;
+    optionsNotionalVolume?: Decimal;
+    fees?: Decimal;
+    revenue?: Decimal;
+    holdersRevenue?: Decimal;
+    incentives?: Decimal;
+    openInterest?: Decimal;
+    chainFees?: Decimal;
+    chainRevenue?: Decimal;
+    bridgeInflows?: Decimal;
+    stablecoinSupply?: Decimal;
+    etfFlow?: Decimal;
+    bridgeDeposits?: Decimal;
+    bridgeWithdrawals?: Decimal;
+    bridgeVolume?: Decimal;
+    spotVolume?: Decimal;
+    marketDepth?: Decimal;
+    price?: Decimal;
+    marketCap?: Decimal;
+    trailingPe?: Decimal;
+    priceToBook?: Decimal;
+    priceToRevenue?: Decimal;
+    evToEbitda?: Decimal;
+    dividendYield?: Decimal;
+    holdersYield?: Decimal;
+    collateralUsd?: Decimal;
+    liquidatable5pct?: Decimal;
+    liquidatable10pct?: Decimal;
+    liquidatable25pct?: Decimal;
+    fullyDilutedValuation?: Decimal;
+    fees7d?: Decimal;
+    fees30d?: Decimal;
+    revenue7d?: Decimal;
+    revenue30d?: Decimal;
+    holdersRevenue7d?: Decimal;
+    holdersRevenue30d?: Decimal;
+    priceToFees?: Decimal;
+    tvlChange7d?: Decimal;
+    tvlChange30d?: Decimal;
+    chainFees7d?: Decimal;
+    chainFees30d?: Decimal;
+    dexVolume7d?: Decimal;
+    dexVolume30d?: Decimal;
+    users?: Decimal;
+    newUsers?: Decimal;
+    transactions?: Decimal;
+  };
   type OpenInterestRowPage = {
     rows: Array<OpenInterestRow>;
     nextCursor: string | null;
@@ -2243,33 +1779,26 @@ declare module "circuit:sdk" {
     historyStartsAt: Timestamp | null;
     bars: Array<PriceBar> | null;
   };
-  type RevenueKindInput = "fees" | "holders" | "total";
-  type RevenueRowPage = {
-    rows: Array<RevenueRow>;
+  type StatementSubjectKind = "equity" | "protocol" | "token";
+  type StatementKind = "balance_sheet" | "cash_flow" | "income";
+  type StatementPeriod = "month" | "quarter" | "year";
+  type DataStatementRowPage = {
+    rows: Array<DataStatementRow>;
     nextCursor: string | null;
     ageMs: number | null;
   };
-  type RevenueRow = {
-    asset: string;
-    vendor: FundamentalsVendor;
-    denominationAsset: string;
-    denominationSymbol: string;
-    day: string;
+  type DataStatementRow = {
+    vendor: string;
+    subjectKind: StatementSubjectKind;
+    subject: string;
+    name?: string;
+    statement: StatementKind;
+    period: StatementPeriod;
+    periodEnd: string;
+    metric: string;
+    line: string;
+    value: Decimal;
     firstObservedAt: Timestamp;
-    holders: Decimal | null;
-    total: Decimal | null;
-    fees: Decimal | null;
-    contributingProtocols: Array<string>;
-  } | {
-    asset: string;
-    vendor: FundamentalsVendor;
-    symbol: string;
-    denominationAsset: string;
-    denominationSymbol: string;
-    observedDayCount: number;
-    holders: Decimal | null;
-    total: Decimal | null;
-    fees: Decimal | null;
   };
   type YieldTokenReferenceInput = {
     network: string;
@@ -2277,7 +1806,7 @@ declare module "circuit:sdk" {
   };
   type YieldVendor = "defillama";
   type YieldKind = "advertised" | "measured";
-  type YieldSortByInput = "apyExcludingRewards" | "apyIncludingRewards" | "totalValueLockedUsd";
+  type YieldSortByInput = "apyExcludingRewards" | "apyIncludingRewards" | "apyVolatility" | "totalValueLockedUsd";
   type YieldRowPage = {
     rows: Array<YieldRow>;
     nextCursor: string | null;
@@ -2301,13 +1830,96 @@ declare module "circuit:sdk" {
     apyIncludingRewards: Decimal | null;
     apyExcludingRewards: Decimal | null;
     totalValueLockedUsd: Decimal | null;
-    denominationAddress: string | null;
-    denominationAsset: string | null;
     withdrawalOutcome: WithdrawalOutcome | null;
     withdrawalEtaMs: number | null;
-    withdrawableAmount: Decimal | null;
+    withdrawableUsd: Decimal | null;
     withdrawalSlippagePercent: Decimal | null;
     measurementConfidence: MeasurementConfidence | null;
+    borrowApy: Decimal | null;
+    borrowRewardApy: Decimal | null;
+    totalBorrowedUsd: Decimal | null;
+    availableBorrowUsd: Decimal | null;
+    loanToValue: Decimal | null;
+    exploited: boolean | null;
+    apyVolatility: Decimal | null;
+    holderCount: number | null;
+    topHoldersShare: Decimal | null;
+    offPegToken: string | null;
+    pegDeviation: Decimal | null;
+  };
+  type Perp = string;
+  type OptionListing = {
+    asset: OptionName;
+    expiresAt: Timestamp;
+    strike: PositiveDecimal;
+    optionType: OptionType;
+    minimumSize: PositiveDecimal;
+    sizeStep: PositiveDecimal;
+    priceTick: PositiveDecimal;
+    quote: OptionQuote | null;
+  };
+  type NonceCancelTarget = string;
+  type DeriveOrderProposalInput = {
+    kind: "perpOpen";
+    asset: Perp;
+    side: PerpSide;
+    amount: OpenAmount;
+    execution?: (ExecutionInput | null) | undefined;
+    message?: (OrderMessage | null) | undefined;
+  } | {
+    kind: "perpReduce";
+    asset: Perp;
+    expectedSide?: (PerpSide | null) | undefined;
+    amount: CloseAmount;
+    execution?: (ExecutionInput | null) | undefined;
+    message?: (OrderMessage | null) | undefined;
+  } | {
+    kind: "spotBuy";
+    asset: SpotPair;
+    amount: ValueBuyAmount;
+    execution?: (PlainExecutionInput | null) | undefined;
+    message?: (OrderMessage | null) | undefined;
+  } | {
+    kind: "spotSell";
+    asset: SpotPair;
+    amount: CloseAmount;
+    execution?: (PlainExecutionInput | null) | undefined;
+    message?: (OrderMessage | null) | undefined;
+  } | {
+    kind: "optionBuy";
+    asset: OptionName;
+    amount: Size;
+    execution?: (PlainExecutionInput | null) | undefined;
+    reduceOnly?: (boolean | null) | undefined;
+    message?: (OrderMessage | null) | undefined;
+  } | {
+    kind: "optionSell";
+    asset: OptionName;
+    amount: Size;
+    execution?: (PlainExecutionInput | null) | undefined;
+    reduceOnly?: (boolean | null) | undefined;
+    message?: (OrderMessage | null) | undefined;
+  };
+  type VaultListing = {
+    vault: number;
+    name: string;
+    description: string | null;
+    depositAsset: string;
+    navUsd: NonnegativeDecimal;
+    sharePriceUsd: NonnegativeDecimal;
+    closed: boolean;
+  };
+  type VaultRequest = {
+    kind: "deposit";
+    vault: number;
+    amount: PositiveDecimal;
+  } | {
+    kind: "withdraw";
+    vault: number;
+    shares: SharesOrMax;
+  } | {
+    kind: "cancel";
+    vault: number;
   };
   type Exchange = "binance" | "bybit" | "coinbase" | "kalshi" | "kraken" | "okx" | "qfex";
   type ExchangeMarket = {
@@ -2326,13 +1938,220 @@ declare module "circuit:sdk" {
     handle: string;
     wallets: FomoWallets;
     rank: number;
-    pnlUsd: number;
-    volumeUsd: number;
+    pnlUsd: string;
+    volumeUsd: string;
     trades: number;
   };
   type FomoWallets = {
     evm?: string;
     solana?: string;
+  };
+  type HyperliquidAccountChangeInput = {
+    kind: "isolatedMargin";
+    asset: PerpCoin;
+    change: MarginChange;
+    amountUsdc: PositiveDecimal;
+  } | {
+    kind: "staking";
+    change: FundsChange;
+    amount: PositiveDecimal;
+  } | {
+    kind: "delegation";
+    change: DelegationChange;
+    validator: EvmAddressInput;
+    amount: PositiveDecimal;
+  } | {
+    kind: "vault";
+    vault: EvmAddressInput;
+    change: FundsChange;
+    amountUsdc: PositiveDecimal;
+  } | {
+    kind: "scheduleCancel";
+    at?: (Timestamp | null) | undefined;
+  } | {
+    kind: "move";
+    from: CoreBalance;
+    to: CoreBalance;
+    amount: PositiveDecimal;
+  };
+  type OrderIdCancelTarget = string;
+  type PerpCoinSpotCoinValueOrMaxVenueOrderProposalInput = {
+    kind: "perpOpen";
+    asset: PerpCoin;
+    side: PerpSide;
+    amount: OpenAmount;
+    execution?: (ExecutionInput | null) | undefined;
+    takeProfit?: (ProposedExitInput | null) | undefined;
+    stopLoss?: (ProposedExitInput | null) | undefined;
+    message?: (OrderMessage | null) | undefined;
+    margin?: (PerpMarginInput | null) | undefined;
+  } | {
+    kind: "perpReduce";
+    asset: PerpCoin;
+    expectedSide?: (PerpSide | null) | undefined;
+    amount: CloseAmount;
+    execution?: (ExecutionInput | null) | undefined;
+    message?: (OrderMessage | null) | undefined;
+  } | {
+    kind: "spotBuy";
+    asset: SpotCoin;
+    amount: ValueOrMaxBuyAmount;
+    execution?: (PlainExecutionInput | null) | undefined;
+    message?: (OrderMessage | null) | undefined;
+  } | {
+    kind: "spotSell";
+    asset: SpotCoin;
+    amount: CloseAmount;
+    execution?: (PlainExecutionInput | null) | undefined;
+    message?: (OrderMessage | null) | undefined;
+  };
+  type HyperliquidOutcome = {
+    asset: string;
+    outcome: number;
+    side: number;
+    question: number | null;
+    name: string;
+    description: string;
+    sideName: string;
+    mid: string | null;
+  };
+  type HyperliquidSpotMarket = {
+    asset: string;
+    baseToken: number;
+    quoteToken: number;
+    baseSymbol: string;
+    quoteSymbol: string;
+  };
+  type Series = {
+    ticker: string;
+    title: string;
+    category: string;
+    volume: string;
+  };
+  type Event = {
+    eventTicker: string;
+    title: string;
+    subTitle: string;
+    url: string;
+    markets: Array<EventMarket>;
+  };
+  type KalshiPair = string;
+  type KalshiPairPlainExecutionExchangeSpotInput = {
+    kind: "spotBuy";
+    asset: KalshiPair;
+    amount: ValueOrMaxBuyAmount;
+    execution?: (PlainExecutionInput | null) | undefined;
+  } | {
+    kind: "spotSell";
+    asset: KalshiPair;
+    amount: CloseAmount;
+    execution?: (PlainExecutionInput | null) | undefined;
+  };
+  type KrakenPairKrakenExecutionExchangeSpotInput = {
+    kind: "spotBuy";
+    asset: KrakenPair;
+    amount: ValueOrMaxBuyAmount;
+    execution?: (KrakenExecutionInput | null) | undefined;
+  } | {
+    kind: "spotSell";
+    asset: KrakenPair;
+    amount: CloseAmount;
+    execution?: (KrakenExecutionInput | null) | undefined;
+  };
+  type LendingAccountChange = LendingAccountChangeByMarket | LendingAccountChangeByPosition;
+  type LendingProtocol = "aave" | "aave-v4" | "euler" | "kamino" | "morpho" | "spark";
+  type MarketRow = {
+    protocol: LendingProtocol;
+    market: Market;
+    name: string;
+    asset: Asset;
+    symbol: string | null;
+    decimals: number;
+    canSupply: boolean;
+    canBorrow: boolean;
+    supplyApy: Decimal | null;
+    borrowApy: Decimal | null;
+    loanToValue: Decimal | null;
+    liquidationLoanToValue: Decimal | null;
+    collateral: Array<Collateral>;
+    categories: Array<CategoryRow>;
+  };
+  type Unavailable = {
+    protocol: LendingProtocol;
+    market: Market | null;
+    error: string;
+  };
+  type BorrowInput = BorrowByMarketInput | BorrowByPositionInput;
+  type RepayInput = {
+    network: Network;
+    position: Position;
+    amount: ExitAmount;
+    payWith?: (PayWith | null) | undefined;
+  };
+  type SupplyInput = SupplyByMarketInput | SupplyByPositionInput;
+  type Update = {
+    network: Network;
+    position: Position;
+    securesLoans: boolean;
+  };
+  type Withdraw = {
+    network: Network;
+    position: Position;
+    amount: ExitAmount;
+  };
+  type LighterMarginChange = {
+    kind: "isolatedMargin";
+    asset: Symbol;
+    change: MarginChange;
+    amountUsdc: PositiveDecimal;
+  } | {
+    kind: "routeTransfer";
+    to: LighterRoute;
+    amountUsdc: PositiveDecimal;
+  };
+  type SymbolSpotSymbolValueVenueOrderProposalInput = {
+    kind: "perpOpen";
+    asset: Symbol;
+    side: PerpSide;
+    amount: OpenAmount;
+    execution?: (ExecutionInput | null) | undefined;
+    takeProfit?: (ProposedExitInput | null) | undefined;
+    stopLoss?: (ProposedExitInput | null) | undefined;
+    message?: (OrderMessage | null) | undefined;
+    margin?: (PerpMarginInput | null) | undefined;
+  } | {
+    kind: "perpReduce";
+    asset: Symbol;
+    expectedSide?: (PerpSide | null) | undefined;
+    amount: CloseAmount;
+    execution?: (ExecutionInput | null) | undefined;
+    message?: (OrderMessage | null) | undefined;
+  } | {
+    kind: "spotBuy";
+    asset: SpotSymbol;
+    amount: ValueBuyAmount;
+    execution?: (PlainExecutionInput | null) | undefined;
+    message?: (OrderMessage | null) | undefined;
+  } | {
+    kind: "spotSell";
+    asset: SpotSymbol;
+    amount: CloseAmount;
+    execution?: (PlainExecutionInput | null) | undefined;
+    message?: (OrderMessage | null) | undefined;
+  };
+  type EvmNetwork = "ethereum:1" | "ethereum:10" | "ethereum:137" | "ethereum:143" | "ethereum:42161" | "ethereum:4663" | "ethereum:5042" | "ethereum:56" | "ethereum:57073" | "ethereum:747474" | "ethereum:8453" | "ethereum:999" | "ethereum:99901";
+  type MetricInput = "metric";
+  type MetricPoolInput = {
+    pool: EvmAddressInput;
+  };
+  type Span = {
+    lowerPercent: Decimal;
+    upperPercent: Decimal;
+    currentBin: Range;
+  };
+  type LiquidityActionInput = {
+    network: EvmNetwork;
+    action: ActionInput;
   };
   type MemoryKey = string;
   type MemoryValue = {
@@ -2343,6 +2162,18 @@ declare module "circuit:sdk" {
   type MemoryItem = {
     key: MemoryKey;
     updatedAt: Timestamp;
+  };
+  type OkxPair = string;
+  type OkxPairPlainExecutionExchangeSpotInput = {
+    kind: "spotBuy";
+    asset: OkxPair;
+    amount: ValueOrMaxBuyAmount;
+    execution?: (PlainExecutionInput | null) | undefined;
+  } | {
+    kind: "spotSell";
+    asset: OkxPair;
+    amount: CloseAmount;
+    execution?: (PlainExecutionInput | null) | undefined;
   };
   type CursorInput = string;
   type AgentOperationRow = {
@@ -2368,9 +2199,6 @@ declare module "circuit:sdk" {
     kind: "transfer";
     transfer: TransferAction;
   } | {
-    kind: "liquidity";
-    liquidity: LiquidityAction;
-  } | {
     kind: "lendingSupply";
     lending: Move;
   } | {
@@ -2389,16 +2217,12 @@ declare module "circuit:sdk" {
     kind: "lendingAccount";
     account: PinnedAccountChange;
   } | {
-    kind: "rewardsClaim";
-    network: EvmNetwork;
-    tokens: Array<EvmAddressChecked> | null;
-  } | {
     kind: "evmTx";
     evm: EvmMoneyAction;
   } | {
     kind: "solanaTx";
     solana: SolanaMoneyAction;
-  } | ({
+  } | SharedAction | ({
     kind: "order";
   } & ({
     venue: "hyperliquid";
@@ -2441,50 +2265,6 @@ declare module "circuit:sdk" {
     venue: "qfex";
     order: QfexOrder;
   })) | ({
-    kind: "cancel";
-  } & ({
-    venue: "hyperliquid";
-    orderId: OrderIdCancelTarget;
-  } | {
-    venue: "lighter";
-    orderId: OrderIdCancelTarget;
-  } | {
-    venue: "lighterRobinhood";
-    orderId: OrderIdCancelTarget;
-  } | {
-    venue: "derive";
-    orderId: NonceCancelTarget;
-  } | {
-    venue: "polymarket";
-    orderId: OrderId;
-  } | {
-    venue: "kraken";
-    orderId: OrderId;
-  } | {
-    venue: "coinbase";
-    orderId: OrderId;
-    asset: CoinbasePair;
-  } | {
-    venue: "okx";
-    orderId: OrderId;
-    asset: OkxPair;
-  } | {
-    venue: "binance";
-    orderId: OrderId;
-    asset: BinancePair;
-  } | {
-    venue: "bybit";
-    orderId: OrderId;
-    asset: BybitPair;
-  } | {
-    venue: "kalshi";
-    orderId: OrderId;
-    asset: KalshiPair;
-  } | {
-    venue: "qfex";
-    orderId: OrderId;
-    asset: Symbol;
-  })) | ({
     kind: "setup";
   } & ({
     venue: "hyperliquid";
@@ -2519,40 +2299,6 @@ declare module "circuit:sdk" {
   } & {
     venue: "hyperliquid";
     account: AccountRequest;
-  }) | ({
-    kind: "close";
-  } & {
-    venue: "papertrade";
-    positionIds: Array<PositionId>;
-  }) | ({
-    kind: "stake";
-  } & {
-    venue: "papertrade";
-    amount: PositiveDecimal;
-  }) | ({
-    kind: "unstake";
-  } & {
-    venue: "papertrade";
-    amount: PositiveDecimal;
-  }) | ({
-    kind: "claim";
-  } & {
-    venue: "papertrade";
-  }) | ({
-    kind: "vault";
-  } & {
-    venue: "derive";
-    vault: VaultRequest;
-  }) | ({
-    kind: "redeem";
-  } & {
-    venue: "polymarket";
-    asset: RawAmount;
-  }) | ({
-    kind: "positionChange";
-  } & {
-    venue: "polymarket";
-    change: PolymarketPositionChange;
   });
   type VenueUuidOpenVenueOrder = {
     orderId: string;
@@ -2575,6 +2321,152 @@ declare module "circuit:sdk" {
     type: TriggerType;
     triggerPrice: PositiveDecimal;
   });
+  type HeadroomRow = {
+    asset: PerpCoin;
+    errors: Array<string>;
+    long: NonnegativeDecimal | null;
+    short: NonnegativeDecimal | null;
+  };
+  type PapertradeMarket = {
+    asset: PerpCoin;
+    paused: Paused;
+    minimumMargin: NonnegativeDecimal;
+    minimumNotional: NonnegativeDecimal;
+    minimumStake: NonnegativeDecimal;
+    maximumNotional: NonnegativeDecimal | null;
+    maximumLeverage: number | null;
+    headroom: Headroom | null;
+    bustBuffer: NonnegativeDecimal | null;
+    winFeeRate: NonnegativeDecimal | null;
+    impact: Impact | null;
+    errors: Array<string>;
+  };
+  type ClaimResult = {
+    claimed: NonnegativeDecimal;
+  };
+  type PositiveDecimal = string;
+  type VenueOrders = VenueOrder[];
+  type PapertradeOrderProposalInput = {
+    asset: PerpCoin;
+    side: PerpSide;
+    amount: Value;
+    leverage: PapertradeLeverage;
+    fundFrom?: (FundFrom | null) | undefined;
+  };
+  type DiscoverRailInput = "economy" | "endingSoon" | "geopolitics" | "mostAtStake" | "mostTalkedAbout" | "politics" | "popCulture" | "sports" | "tooCloseToCall" | "trending" | "volume";
+  type ResolvedEvent = {
+    slug: string;
+    title: string;
+    imageUrl: string | null;
+    openInterestPusd: PositiveDecimal | null;
+    markets: Array<ResolvedMarket>;
+  };
+  type ResolvedMarket = {
+    question: string;
+    slug: string;
+    sportsMarketType: string | null;
+    groupItemTitle: string | null;
+    negRisk: boolean;
+    line: number | null;
+    gameStartTime: string | null;
+    endDate: string | null;
+    updatedAt: string | null;
+    liquidityPusd: NonnegativeDecimal;
+    volume24hPusd: NonnegativeDecimal;
+    outcomes: Array<PolymarketOutcome>;
+    imageUrl: string | null;
+    dayChangePercent: number | null;
+  };
+  type EventRef = {
+    slug: string;
+    title: string;
+    startDate: string | null;
+  };
+  type PolymarketOutcome = {
+    name: string;
+    asset: RawAmount;
+    pricePusd: PricePusd;
+  };
+  type PricePusd = string;
+  type ScreenOrderInput = "competitive" | "endDate" | "lastTradePrice" | "liquidityNum" | "spread" | "startDate" | "volume24hr" | "volumeNum";
+  type ScreenEvent = {
+    slug: string | null;
+    outcomes: Array<ScreenOutcome>;
+  };
+  type SizeOrAllPolymarketOrderProposalInput = SpotBuyPolymarketLimitInput | SpotBuyValuePolymarketMarketInput | SpotSellPolymarketLimitInput | SpotSellSizeOrAllPolymarketMarketInput;
+  type SpotBuy = "spotBuy";
+  type Value = {
+    value: PositiveDecimal;
+  };
+  type MarketOnly = {
+    kind: "market";
+  };
+  type Size = {
+    size: PositiveDecimal;
+  };
+  type PolymarketLimitExecutionInput = {
+    kind: "limit";
+    price: PricePusd;
+    timeInForce: TimeInForce;
+    expiresAt?: (Timestamp | null) | undefined;
+  };
+  type SpotSell = "spotSell";
+  type PolymarketQuote = {
+    price: string;
+    signedSharesChange: string;
+    expectedPusdAmount: string;
+  };
+  type PolymarketPositionChange = {
+    kind: "split";
+    asset: RawAmount;
+    amountPusd: PositiveDecimal;
+  } | {
+    kind: "merge";
+    asset: RawAmount;
+    shares: PositiveDecimal;
+  } | {
+    kind: "convert";
+    assets: Array<RawAmount>;
+    shares: PositiveDecimal;
+  };
+  type Redeemed = {
+    redeemed: Array<RedeemedPosition>;
+  };
+  type ChartWindowInput = "1d" | "1yr" | "30d" | "7d" | "all";
+  type PricePoint = {
+    timestamp: Timestamp;
+    pricePusd: string;
+  };
+  type Symbol = string;
+  type QfexOrderProposalInput = {
+    kind: "perpOpen";
+    asset: Symbol;
+    side: PerpSide;
+    amount: OpenAmount;
+    execution?: (PlainExecutionInput | null) | undefined;
+    message?: (OrderMessage | null) | undefined;
+  } | {
+    kind: "perpReduce";
+    asset: Symbol;
+    expectedSide?: (PerpSide | null) | undefined;
+    amount: CloseAmount;
+    execution?: (PlainExecutionInput | null) | undefined;
+    message?: (OrderMessage | null) | undefined;
+  };
+  type RewardClaimInput = {
+    protocol: "merkl";
+    tokens?: (Array<EvmAddressChecked> | null) | undefined;
+  } | {
+    protocol: "aero-slipstream";
+    pool: EvmAddressChecked;
+  };
+  type Reward = {
+    network: string;
+    claim: RewardClaim;
+    asset: string;
+    symbol: string | null;
+    claimable: Decimal;
+  };
   type SolanaAddressInput = string;
   type SolanaToken = {
     mint: string;
@@ -2585,13 +2477,33 @@ declare module "circuit:sdk" {
     mint: string;
     reason: string;
   };
-  type SolanaActivity = {
-    signature: string;
-    at: Timestamp;
-    received: Array<WalletMovement>;
-    sent: Array<WalletMovement>;
+  type SwapRequestInput = {
+    from: NetworkAssetInput;
+    to: SwapDestinationInput;
+    amount: NeverAmount;
+    minimumReceive?: (PositiveDecimal | null) | undefined;
+    slippage?: (Percentage | null) | undefined;
+    engines?: (Engines | null) | undefined;
+    confidential?: (boolean | null) | undefined;
+  };
+  type Received = {
+    received: Decimal;
   };
   type LedgerCursorInput = string;
+  type TransferRequestInput = {
+    from: NetworkAssetInput;
+    amount: NeverAmount;
+    to: AddressTarget;
+  };
+  type Eip712TypedDataInput = {
+    domain: Eip712DomainInput;
+    types: Record<string, Array<Eip712FieldInput>>;
+    primaryType: string;
+    message: Record<string, unknown>;
+  };
+  type Eip191MessageInput = {
+    message: string;
+  };
   type WatchableWalletInput = string;
   type MoneyActionResults = {
     swap: Received;
@@ -2650,6 +2562,12 @@ declare module "circuit:sdk" {
     "withdraw:kraken": Withdrawal;
     "withdraw:qfex": Withdrawal;
   };
+  type AgentAssetChange = {
+    asset: string | null;
+    symbol: string | null;
+    decimals: number | null;
+    diff: SignedInteger;
+  };
   type NetworkAssetInput = {
     network: "solana";
     asset: string;
@@ -2674,9 +2592,77 @@ declare module "circuit:sdk" {
   };
   type SwapDestinationInput = StockDestination | NetworkAssetInput;
   type NeverAmount = string | ProposalBalancePercent;
+  type Percentage = string;
   type Engines = SwapProvider[];
   type AddressTarget = {
     address: InstructionText;
+  };
+  type TransferType = "derive" | "evm" | "hypercore" | "lighter" | "lighter-robinhood" | "solana";
+  type QuoteAsset = {
+    network: Network;
+    asset: string;
+    walletAddress: string;
+    name: string;
+    symbol: string;
+    decimals: number;
+    amountRaw: PositiveRawAmount;
+    amount: string;
+    minimumAmountRaw?: PositiveRawAmount;
+    minimumAmount?: PositiveDecimal;
+    amountUsd?: string;
+  };
+  type Fee = {
+    kind: FeeKind;
+    amountRaw?: RawAmount;
+    amount?: NonnegativeDecimal;
+    symbol?: string;
+    asset?: string;
+    amountUsd?: Decimal;
+  };
+  type QuoteCandidate = {
+    engine: SwapProvider;
+    amount: PositiveDecimal;
+    amountUsd?: string;
+    selected: boolean;
+  };
+  type QuoteFreshness = {
+    issuedAtMs: number;
+    ttlMs: number;
+  };
+  type Staking = {
+    delegated: NonnegativeDecimal;
+    undelegated: NonnegativeDecimal;
+    pendingWithdrawal: NonnegativeDecimal;
+  };
+  type VaultEquity = {
+    vault: string;
+    equityUsdc: NonnegativeDecimal;
+    lockedUntil: Timestamp | null;
+  };
+  type PapertradePosition = {
+    positionId: PositionId;
+    asset: PerpCoin;
+    side: PerpSide;
+    size: PositiveDecimal;
+    margin: NonnegativeDecimal;
+    leverage: number;
+    entryPrice: PositiveDecimal;
+    liquidationPrice: NonnegativeDecimal;
+    openedAt: Timestamp;
+  };
+  type PaperHoldings = {
+    balance: NonnegativeDecimal;
+    staked: NonnegativeDecimal;
+    rewards: NonnegativeDecimal;
+  };
+  type ClosedPosition = {
+    positionId: PositionId;
+    asset: PerpCoin;
+    side: PerpSide;
+    exitPrice: PositiveDecimal;
+    pnl: Decimal;
+    paperMinted: NonnegativeDecimal;
+    liquidated: boolean;
   };
   type EvmMoneyActionInput = {
     chainId: number;
@@ -2685,34 +2671,92 @@ declare module "circuit:sdk" {
     data: HexBytesInput;
   };
   type SolanaMoneyActionInput = SolanaBytesInput | SolanaInstructions;
-  type HyperliquidAccountChangeInput = {
-    kind: "isolatedMargin";
-    asset: PerpCoin;
-    change: MarginChange;
-    amountUsdc: PositiveDecimal;
+  type SharedActionInput = {
+    kind: "liquidity";
+    liquidity: LiquidityActionInput;
   } | {
-    kind: "staking";
-    change: FundsChange;
+    kind: "rewardsClaim";
+    network: EvmNetwork;
+    claim: RewardClaimInput;
+  } | ({
+    kind: "cancel";
+  } & ({
+    venue: "hyperliquid";
+    orderId: OrderIdCancelTarget;
+  } | {
+    venue: "lighter";
+    orderId: OrderIdCancelTarget;
+  } | {
+    venue: "lighterRobinhood";
+    orderId: OrderIdCancelTarget;
+  } | {
+    venue: "derive";
+    orderId: NonceCancelTarget;
+  } | {
+    venue: "polymarket";
+    orderId: OrderId;
+  } | {
+    venue: "kraken";
+    orderId: OrderId;
+  } | {
+    venue: "coinbase";
+    orderId: OrderId;
+    asset: CoinbasePair;
+  } | {
+    venue: "okx";
+    orderId: OrderId;
+    asset: OkxPair;
+  } | {
+    venue: "binance";
+    orderId: OrderId;
+    asset: BinancePair;
+  } | {
+    venue: "bybit";
+    orderId: OrderId;
+    asset: BybitPair;
+  } | {
+    venue: "kalshi";
+    orderId: OrderId;
+    asset: KalshiPair;
+  } | {
+    venue: "qfex";
+    orderId: OrderId;
+    asset: Symbol;
+  })) | ({
+    kind: "close";
+  } & {
+    venue: "papertrade";
+    positionIds: Array<PositionId>;
+  }) | ({
+    kind: "stake";
+  } & {
+    venue: "papertrade";
     amount: PositiveDecimal;
-  } | {
-    kind: "delegation";
-    change: DelegationChange;
-    validator: EvmAddressInput;
+  }) | ({
+    kind: "unstake";
+  } & {
+    venue: "papertrade";
     amount: PositiveDecimal;
-  } | {
+  }) | ({
+    kind: "claim";
+  } & {
+    venue: "papertrade";
+  }) | ({
     kind: "vault";
-    vault: EvmAddressInput;
-    change: FundsChange;
-    amountUsdc: PositiveDecimal;
-  } | {
-    kind: "scheduleCancel";
-    at?: (string | null) | undefined;
-  } | {
-    kind: "move";
-    from: CoreBalance;
-    to: CoreBalance;
-    amount: PositiveDecimal;
-  };
+  } & {
+    venue: "derive";
+    vault: VaultRequest;
+  }) | ({
+    kind: "redeem";
+  } & {
+    venue: "polymarket";
+    asset: RawAmount;
+  }) | ({
+    kind: "positionChange";
+  } & {
+    venue: "polymarket";
+    change: PolymarketPositionChange;
+  });
   type SpotBuyPolymarketLimitInput = {
     kind: SpotBuy;
     asset: RawAmount;
@@ -2745,25 +2789,22 @@ declare module "circuit:sdk" {
     question: string | null;
     outcome: string | null;
   };
-  type ReceiptKind = "binance_cancel_order_id" | "binance_client_order_id" | "binance_order_id" | "binance_trade_id" | "bybit_cancel_order_id" | "bybit_client_order_id" | "bybit_order_id" | "bybit_trade_id" | "coinbase_cancel_order_id" | "coinbase_client_order_id" | "coinbase_order_id" | "coinbase_trade_id" | "derive_action_nonce" | "derive_cancel_order_id" | "derive_operation_id" | "derive_order_id" | "derive_trade_id" | "evm_transaction_hash" | "hyperliquid_account_mode" | "hyperliquid_builder_fee" | "hyperliquid_cancel_order_id" | "hyperliquid_client_order_id" | "hyperliquid_fill_id" | "hyperliquid_order_id" | "hyperliquid_transaction_hash" | "hyperliquid_transfer_nonce" | "kalshi_cancel_order_id" | "kalshi_client_order_id" | "kalshi_order_id" | "kalshi_trade_id" | "kraken_cancel_order_id" | "kraken_client_order_id" | "kraken_order_id" | "kraken_trade_id" | "kraken_withdrawal_id" | "kraken_withdrawal_nonce" | "lighter_client_order_index" | "lighter_order_index" | "lighter_transaction_hash" | "okx_cancel_order_id" | "okx_client_order_id" | "okx_order_id" | "okx_trade_id" | "papertrade_intent_id" | "papertrade_position_id" | "polymarket_deposit_wallet_address" | "polymarket_observation_id" | "polymarket_order_id" | "polymarket_relayer_request_digest" | "polymarket_relayer_transaction_id" | "qfex_cancel_order_id" | "qfex_client_order_id" | "qfex_order_id" | "qfex_trade_id" | "qfex_withdrawal_id" | "qfex_withdrawal_nonce" | "simulated_cancel_order_id" | "simulated_order_id" | "simulated_settlement_id" | "solana_signature" | "swap_request_id";
+  type ReceiptKind = "binance_cancel_order_id" | "binance_client_order_id" | "binance_order_id" | "binance_trade_id" | "bybit_cancel_order_id" | "bybit_client_order_id" | "bybit_order_id" | "bybit_trade_id" | "coinbase_cancel_order_id" | "coinbase_client_order_id" | "coinbase_order_id" | "coinbase_trade_id" | "derive_action_nonce" | "derive_cancel_order_id" | "derive_operation_id" | "derive_order_id" | "derive_trade_id" | "evm_transaction_hash" | "hyperliquid_account_mode" | "hyperliquid_builder_fee" | "hyperliquid_cancel_order_id" | "hyperliquid_client_order_id" | "hyperliquid_fill_id" | "hyperliquid_order_id" | "hyperliquid_transaction_hash" | "hyperliquid_transfer_nonce" | "kalshi_cancel_order_id" | "kalshi_client_order_id" | "kalshi_order_id" | "kalshi_trade_id" | "kraken_cancel_order_id" | "kraken_client_order_id" | "kraken_order_id" | "kraken_trade_id" | "kraken_withdrawal_id" | "kraken_withdrawal_nonce" | "lighter_client_order_index" | "lighter_order_index" | "lighter_transaction_hash" | "okx_cancel_order_id" | "okx_client_order_id" | "okx_order_id" | "okx_trade_id" | "papertrade_intent_id" | "papertrade_position_id" | "polymarket_deposit_wallet_address" | "polymarket_observation_id" | "polymarket_order_id" | "polymarket_relayer_request_digest" | "polymarket_relayer_transaction_id" | "qfex_cancel_order_id" | "qfex_client_order_id" | "qfex_deposit_id" | "qfex_order_id" | "qfex_trade_id" | "qfex_withdrawal_id" | "qfex_withdrawal_nonce" | "simulated_cancel_order_id" | "simulated_order_id" | "simulated_settlement_id" | "solana_signature" | "swap_request_id";
   type NonEmptyHexBytes = `0x${string}`;
   type Instruction = {
     programAddress: InstructionText;
     accounts: Array<AccountMeta>;
     data: Array<DataPart>;
   };
-  type PerpPositionState = {
-    side: PerpSide;
-    size: PositiveDecimal;
-    entryPrice: NonnegativeDecimal | null;
+  type WatchedNetwork = "ethereum:1" | "ethereum:10" | "ethereum:137" | "ethereum:143" | "ethereum:42161" | "ethereum:4663" | "ethereum:5042" | "ethereum:56" | "ethereum:57073" | "ethereum:747474" | "ethereum:8453" | "ethereum:999" | "ethereum:99901" | "solana";
+  type WalletMovement = {
+    asset: string;
+    amount: PositiveDecimal;
   };
-  type PapertradePositionState = {
-    side: PerpSide;
-    size: PositiveDecimal;
-    entryPrice: PositiveDecimal;
-    margin: NonnegativeDecimal;
-    leverage: number;
-  };
+  type OrderSide = "buy" | "sell";
+  type Instrument = string;
+  type PapertradeAction = "close" | "open";
+  type PerpSide = "long" | "short";
   type OutcomeIdentity = {
     venue: Polymarket;
     asset: RawAmount;
@@ -2810,34 +2851,7 @@ declare module "circuit:sdk" {
     depositWallet: string;
   };
   type Never = never;
-  type SignedInteger = string;
-  type Eip712DomainInput = {
-    name?: (string | null) | undefined;
-    version?: (string | null) | undefined;
-    chainId?: (number | null) | undefined;
-    verifyingContract?: (string | null) | undefined;
-    salt?: (string | null) | undefined;
-  };
-  type Eip712FieldInput = {
-    name: string;
-    type: string;
-  };
-  type PositiveRawAmount = string;
-  type FeeKind = "execution" | "liquidity" | "network";
-  type PerpSide = "long" | "short";
-  type OpenAmount = Size | Value;
-  type ExecutionInput = PlainExecutionInput | TriggerExecution;
-  type ProposedExitInput = {
-    triggerPrice: PositiveDecimal;
-    price?: (PositiveDecimal | null) | undefined;
-  };
-  type OrderMessage = string;
-  type PerpMarginInput = {
-    mode: MarginMode;
-    leverage?: (Leverage | null) | undefined;
-  };
-  type CloseAmount = SizeOrAll | Value;
-  type SpotCoin = string;
+  type Ended = "canceled" | "filled";
   type ValueOrMaxBuyAmount = Size | ValueOrMax;
   type PlainExecutionInput = {
     kind: "market";
@@ -2847,149 +2861,9 @@ declare module "circuit:sdk" {
     price: PositiveDecimal;
     timeInForce: TimeInForce;
   };
-  type OrderSide = "buy" | "sell";
+  type CloseAmount = SizeOrAll | Value;
   type VenueOrderState = "canceled" | "filled" | "open" | "partiallyFilled";
   type OrderType = "limit" | "stopLoss" | "stopLossLimit" | "takeProfit" | "takeProfitLimit";
-  type Ended = "canceled" | "filled";
-  type SpotSymbol = string;
-  type ValueBuyAmount = Size | Value;
-  type LighterRoute = "perps" | "spot";
-  type SpotPair = string;
-  type OptionName = string;
-  type SharesOrMax = string;
-  type OptionType = "call" | "put";
-  type OptionQuote = {
-    mark: Decimal | null;
-    bid: Decimal | null;
-    ask: Decimal | null;
-    impliedVolatility: Decimal | null;
-    delta: Decimal | null;
-    gamma: Decimal | null;
-    vega: Decimal | null;
-    theta: Decimal | null;
-  };
-  type PapertradeLeverage = number;
-  type FundFrom = "balance" | "queued";
-  type Paused = {
-    registerSessionKey: boolean;
-    openPosition: boolean | null;
-    closePositions: boolean;
-    paperStake: boolean;
-    paperUnstake: boolean;
-    paperClaim: boolean;
-    registerDeposit: boolean;
-    withdrawToCore: boolean;
-  };
-  type Headroom = {
-    long: Decimal;
-    short: Decimal;
-  };
-  type Impact = {
-    baseRate: NonnegativeDecimal;
-    rateMultiplier: NonnegativeDecimal;
-    positionMultiplier: NonnegativeDecimal;
-    referenceNotional: NonnegativeDecimal;
-    deadband: NonnegativeDecimal;
-  };
-  type TimeInForce = "alo" | "gtc" | "ioc";
-  type ScreenOutcome = {
-    question: string;
-    slug: string;
-    sportsMarketType: string | null;
-    groupItemTitle: string | null;
-    negRisk: boolean;
-    line: number | null;
-    gameStartTime: string | null;
-    endDate: string | null;
-    liquidityPusd: number;
-    volume24hPusd: number;
-    dayChangePercent: number | null;
-    outcome: string;
-    asset: RawAmount;
-    conditionId: string;
-    tags: Array<string>;
-    pricePusd: string;
-    estimatedShares: string;
-    excludesFees: boolean;
-  };
-  type KrakenPair = string;
-  type KrakenExecutionInput = KrakenLimitExecutionInput | KrakenMarketInput | TriggerExecution;
-  type EventMarket = {
-    ticker: string;
-    title: string;
-    yesSubTitle: string;
-    noSubTitle: string;
-    trading: boolean;
-    closeTime: string;
-    volume24h: string;
-    yes: Quote;
-    no: Quote;
-  };
-  type SupplyByMarketInput = {
-    network: Network;
-    protocol: LendingProtocol;
-    market: Market;
-    asset: Asset;
-    amount: NeverAmount;
-    category?: (number | null) | undefined;
-  };
-  type SupplyByPositionInput = {
-    network: Network;
-    position: Position;
-    asset: Asset;
-    amount: NeverAmount;
-    category?: (number | null) | undefined;
-  };
-  type Position = string;
-  type ExitAmount = string | ProposalBalancePercent | TargetLoanToValue;
-  type BorrowByMarketInput = {
-    network: Network;
-    protocol: LendingProtocol;
-    market: Market;
-    asset: Asset;
-    amount: BorrowAmount;
-    category?: (number | null) | undefined;
-  };
-  type BorrowByPositionInput = {
-    network: Network;
-    position: Position;
-    asset: Asset;
-    amount: BorrowAmount;
-    category?: (number | null) | undefined;
-  };
-  type PayWith = "supply" | "wallet";
-  type LendingAccountChangeByMarket = {
-    network: Network;
-    protocol: LendingProtocol;
-    market: Market;
-    category: number;
-  };
-  type LendingAccountChangeByPosition = {
-    network: Network;
-    position: Position;
-    category: number;
-  };
-  type Market = string;
-  type Asset = string;
-  type Collateral = {
-    market: Market;
-    asset: Asset;
-    loanToValue: Decimal;
-    liquidationLoanToValue: Decimal;
-  };
-  type CategoryRow = {
-    id: number;
-    name: string;
-    loanToValue: Decimal;
-    liquidationLoanToValue: Decimal;
-    securesLoans: boolean;
-    canBorrow: boolean;
-  };
-  type ActionInput = MetricMetricPoolModuleActionInput | UniswapV3UniswapV3PoolModuleActionInput | UniswapV4UniswapV4PoolModuleActionInput;
-  type Range = {
-    lowerPercent: Decimal;
-    upperPercent: Decimal;
-  };
   type VenueListing = {
     venue: Venue;
     dex: string | null;
@@ -3090,6 +2964,197 @@ declare module "circuit:sdk" {
   };
   type WithdrawalOutcome = "delayed" | "error_rpc" | "no_exit_primary" | "ok_full" | "ok_partial" | "reverted_liquidity" | "reverted_paused" | "reverted_unknown";
   type MeasurementConfidence = "high" | "low" | "medium";
+  type OptionName = string;
+  type OptionType = "call" | "put";
+  type OptionQuote = {
+    mark: Decimal | null;
+    bid: Decimal | null;
+    ask: Decimal | null;
+    impliedVolatility: Decimal | null;
+    delta: Decimal | null;
+    gamma: Decimal | null;
+    vega: Decimal | null;
+    theta: Decimal | null;
+  };
+  type OpenAmount = Size | Value;
+  type ExecutionInput = PlainExecutionInput | TriggerExecution;
+  type OrderMessage = string;
+  type SpotPair = string;
+  type ValueBuyAmount = Size | Value;
+  type SharesOrMax = string;
+  type MarginChange = "add" | "remove";
+  type FundsChange = "deposit" | "withdraw";
+  type DelegationChange = "delegate" | "undelegate";
+  type EvmAddressInput = string;
+  type CoreBalance = {
+    kind: "spot";
+  } | {
+    kind: "perps";
+    dex: string;
+  };
+  type ProposedExitInput = {
+    triggerPrice: PositiveDecimal;
+    price?: (PositiveDecimal | null) | undefined;
+  };
+  type PerpMarginInput = {
+    mode: MarginMode;
+    leverage?: (Leverage | null) | undefined;
+  };
+  type SpotCoin = string;
+  type EventMarket = {
+    ticker: string;
+    title: string;
+    yesSubTitle: string;
+    noSubTitle: string;
+    trading: boolean;
+    closeTime: string;
+    volume24h: string;
+    yes: Quote;
+    no: Quote;
+  };
+  type KrakenPair = string;
+  type KrakenExecutionInput = KrakenLimitExecutionInput | KrakenMarketInput | TriggerExecution;
+  type LendingAccountChangeByMarket = {
+    network: Network;
+    protocol: LendingProtocol;
+    market: Market;
+    category: number;
+  };
+  type LendingAccountChangeByPosition = {
+    network: Network;
+    position: Position;
+    category: number;
+  };
+  type Market = string;
+  type Asset = string;
+  type Collateral = {
+    market: Market;
+    asset: Asset;
+    loanToValue: Decimal;
+    liquidationLoanToValue: Decimal;
+  };
+  type CategoryRow = {
+    id: number;
+    name: string;
+    loanToValue: Decimal;
+    liquidationLoanToValue: Decimal;
+    securesLoans: boolean;
+    canBorrow: boolean;
+  };
+  type BorrowByMarketInput = {
+    network: Network;
+    protocol: LendingProtocol;
+    market: Market;
+    asset: Asset;
+    amount: BorrowAmount;
+    category?: (number | null) | undefined;
+  };
+  type BorrowByPositionInput = {
+    network: Network;
+    position: Position;
+    asset: Asset;
+    amount: BorrowAmount;
+    category?: (number | null) | undefined;
+  };
+  type Position = string;
+  type ExitAmount = string | ProposalBalancePercent | TargetLoanToValue;
+  type PayWith = "supply" | "wallet";
+  type SupplyByMarketInput = {
+    network: Network;
+    protocol: LendingProtocol;
+    market: Market;
+    asset: Asset;
+    amount: NeverAmount;
+    category?: (number | null) | undefined;
+  };
+  type SupplyByPositionInput = {
+    network: Network;
+    position: Position;
+    asset: Asset;
+    amount: NeverAmount;
+    category?: (number | null) | undefined;
+  };
+  type LighterRoute = "perps" | "spot";
+  type SpotSymbol = string;
+  type Range = {
+    lowerPercent: Decimal;
+    upperPercent: Decimal;
+  };
+  type ActionInput = ({
+    protocol: "metric";
+  } & ({
+    kind: "open";
+    pool: MetricPoolInput;
+    range: Range;
+    budgets: BudgetsInput;
+    slippagePercent: Percentage;
+  } | {
+    kind: "add";
+    position: string;
+    budgets: BudgetsInput;
+    slippagePercent: Percentage;
+  } | {
+    kind: "remove";
+    position: string;
+    percent: PositivePercentage;
+  })) | ({
+    protocol: "uniswap-v3";
+  } & ({
+    kind: "open";
+    pool: UniswapV3PoolInput;
+    range: Range;
+    budgets: BudgetsInput;
+    slippagePercent: Percentage;
+  } | {
+    kind: "add";
+    position: string;
+    budgets: BudgetsInput;
+    slippagePercent: Percentage;
+  } | {
+    kind: "remove";
+    position: string;
+    percent: PositivePercentage;
+  })) | ({
+    protocol: "uniswap-v4";
+  } & ({
+    kind: "open";
+    pool: UniswapV4PoolInput;
+    range: Range;
+    budgets: BudgetsInput;
+    slippagePercent: Percentage;
+  } | {
+    kind: "add";
+    position: string;
+    budgets: BudgetsInput;
+    slippagePercent: Percentage;
+  } | {
+    kind: "remove";
+    position: string;
+    percent: PositivePercentage;
+  })) | ({
+    protocol: "aero-slipstream";
+  } & ({
+    kind: "open";
+    pool: AeroSlipstreamPoolInput;
+    range: Range;
+    budgets: BudgetsInput;
+    slippagePercent: Percentage;
+  } | {
+    kind: "add";
+    position: string;
+    budgets: BudgetsInput;
+    slippagePercent: Percentage;
+  } | {
+    kind: "remove";
+    position: string;
+    percent: PositivePercentage;
+  } | {
+    kind: "stake";
+    position: PositionNft;
+  } | {
+    kind: "unstake";
+    position: PositionNft;
+  }));
   type SwapAction = {
     from: NetworkAsset;
     to: SwapSide;
@@ -3105,10 +3170,6 @@ declare module "circuit:sdk" {
     toAddress: string;
     amountRaw: PositiveRawAmount;
     decimals: number;
-  };
-  type LiquidityAction = {
-    network: EvmNetwork;
-    action: Action;
   };
   type Move = {
     network: Network;
@@ -3136,6 +3197,92 @@ declare module "circuit:sdk" {
     position: Position | null;
     category: number;
   };
+  type SharedAction = {
+    kind: "liquidity";
+    liquidity: LiquidityAction;
+  } | {
+    kind: "rewardsClaim";
+    network: EvmNetwork;
+    claim: RewardClaim;
+  } | ({
+    kind: "cancel";
+  } & ({
+    venue: "hyperliquid";
+    orderId: OrderIdCancelTarget;
+  } | {
+    venue: "lighter";
+    orderId: OrderIdCancelTarget;
+  } | {
+    venue: "lighterRobinhood";
+    orderId: OrderIdCancelTarget;
+  } | {
+    venue: "derive";
+    orderId: NonceCancelTarget;
+  } | {
+    venue: "polymarket";
+    orderId: OrderId;
+  } | {
+    venue: "kraken";
+    orderId: OrderId;
+  } | {
+    venue: "coinbase";
+    orderId: OrderId;
+    asset: CoinbasePair;
+  } | {
+    venue: "okx";
+    orderId: OrderId;
+    asset: OkxPair;
+  } | {
+    venue: "binance";
+    orderId: OrderId;
+    asset: BinancePair;
+  } | {
+    venue: "bybit";
+    orderId: OrderId;
+    asset: BybitPair;
+  } | {
+    venue: "kalshi";
+    orderId: OrderId;
+    asset: KalshiPair;
+  } | {
+    venue: "qfex";
+    orderId: OrderId;
+    asset: Symbol;
+  })) | ({
+    kind: "close";
+  } & {
+    venue: "papertrade";
+    positionIds: Array<PositionId>;
+  }) | ({
+    kind: "stake";
+  } & {
+    venue: "papertrade";
+    amount: PositiveDecimal;
+  }) | ({
+    kind: "unstake";
+  } & {
+    venue: "papertrade";
+    amount: PositiveDecimal;
+  }) | ({
+    kind: "claim";
+  } & {
+    venue: "papertrade";
+  }) | ({
+    kind: "vault";
+  } & {
+    venue: "derive";
+    vault: VaultRequest;
+  }) | ({
+    kind: "redeem";
+  } & {
+    venue: "polymarket";
+    asset: RawAmount;
+  }) | ({
+    kind: "positionChange";
+  } & {
+    venue: "polymarket";
+    change: PolymarketPositionChange;
+  });
   type PerpCoinSpotCoinPositiveDecimalOrderRequest = PerpCoinPositiveDecimalLimitTriggerOrder | PerpCoinPositiveDecimalMarketTriggerOrder | PerpCoinPositiveDecimalPerpLimit | SpotCoinPositiveDecimalSpotLimit;
   type SymbolSpotSymbolPositiveDecimalOrderRequest = SpotSymbolPositiveDecimalSpotLimit | SymbolPositiveDecimalLimitTriggerOrder | SymbolPositiveDecimalMarketTriggerOrder | SymbolPositiveDecimalPerpLimit;
   type DeriveOrder = Entry | PerpPositiveDecimalLimitTriggerOrder | PerpPositiveDecimalMarketTriggerOrder | SpotPairPositiveDecimalSpotLimit;
@@ -3221,6 +3368,68 @@ declare module "circuit:sdk" {
   type AccountRequest = HyperliquidLeverage | HyperliquidAccountChange;
   type LimitType = "limit";
   type TriggerType = "stopLoss" | "stopLossLimit" | "takeProfit" | "takeProfitLimit";
+  type Paused = {
+    registerSessionKey: boolean;
+    openPosition: boolean | null;
+    closePositions: boolean;
+    paperStake: boolean;
+    paperUnstake: boolean;
+    paperClaim: boolean;
+    registerDeposit: boolean;
+    withdrawToCore: boolean;
+  };
+  type Headroom = {
+    long: Decimal;
+    short: Decimal;
+  };
+  type Impact = {
+    baseRate: NonnegativeDecimal;
+    rateMultiplier: NonnegativeDecimal;
+    positionMultiplier: NonnegativeDecimal;
+    referenceNotional: NonnegativeDecimal;
+    deadband: NonnegativeDecimal;
+  };
+  type PapertradeLeverage = number;
+  type FundFrom = "balance" | "queued";
+  type ScreenOutcome = {
+    question: string;
+    slug: string;
+    sportsMarketType: string | null;
+    groupItemTitle: string | null;
+    negRisk: boolean;
+    line: number | null;
+    gameStartTime: string | null;
+    endDate: string | null;
+    liquidityPusd: NonnegativeDecimal;
+    volume24hPusd: NonnegativeDecimal;
+    dayChangePercent: number | null;
+    outcome: string;
+    asset: RawAmount;
+    conditionId: string;
+    tags: Array<string>;
+    pricePusd: string;
+    estimatedShares: string;
+    excludesFees: boolean;
+  };
+  type TimeInForce = "alo" | "gtc" | "ioc";
+  type RewardClaim = {
+    protocol: "merkl";
+    tokens: Array<EvmAddressChecked> | null;
+  } | {
+    protocol: "aero-slipstream";
+    pool: EvmAddressChecked;
+  };
+  type Eip712DomainInput = {
+    name?: (string | null) | undefined;
+    version?: (string | null) | undefined;
+    chainId?: (number | null) | undefined;
+    verifyingContract?: (string | null) | undefined;
+    salt?: (string | null) | undefined;
+  };
+  type Eip712FieldInput = {
+    name: string;
+    type: string;
+  };
   type DepositWallet = {
     wallet: string;
   };
@@ -3228,6 +3437,7 @@ declare module "circuit:sdk" {
     referenceId: string;
     transactionId: string | null;
   };
+  type SignedInteger = string;
   type StockDestination = {
     stock: StockTicker;
   };
@@ -3235,6 +3445,8 @@ declare module "circuit:sdk" {
     balancePercent: PositivePercentage;
   };
   type InstructionText = string;
+  type PositiveRawAmount = string;
+  type FeeKind = "execution" | "liquidity" | "network";
   type HexBytesInput = string;
   type SolanaBytesInput = {
     hexTransaction: NonEmptyHexBytesInput;
@@ -3268,88 +3480,10 @@ declare module "circuit:sdk" {
     address: EvmAddress;
     feeTenthsBps: number;
   };
-  type TriggerExecution = LimitTriggerExecution | MarketTriggerExecution;
-  type Leverage = number;
   type ValueOrMax = {
     value: AllOr;
   };
   type MidSlippage = string;
-  type KrakenLimitExecutionInput = {
-    kind: "limit";
-    price: PositiveDecimal;
-    timeInForce: TimeInForce;
-    expiresAt?: (string | null) | undefined;
-  };
-  type KrakenMarketInput = {
-    kind: "market";
-    slippage?: (MidSlippage | null) | undefined;
-  };
-  type Quote = {
-    asset: string;
-    bid: string | null;
-    ask: string | null;
-  };
-  type TargetLoanToValue = {
-    loanToValue: LoanToValue;
-  };
-  type BorrowAmount = string | TargetLoanToValue;
-  type MetricMetricPoolModuleActionInput = {
-    kind: "open";
-    module: Metric;
-    pool: MetricPoolInput;
-    range: Range;
-    budgets: BudgetsInput;
-    slippagePercent: Percentage;
-  } | {
-    kind: "add";
-    module: Metric;
-    position: string;
-    budgets: BudgetsInput;
-    slippagePercent: Percentage;
-  } | {
-    kind: "remove";
-    module: Metric;
-    position: string;
-    percent: PositivePercentage;
-  };
-  type UniswapV3UniswapV3PoolModuleActionInput = {
-    kind: "open";
-    module: UniswapV3;
-    pool: UniswapV3PoolInput;
-    range: Range;
-    budgets: BudgetsInput;
-    slippagePercent: Percentage;
-  } | {
-    kind: "add";
-    module: UniswapV3;
-    position: string;
-    budgets: BudgetsInput;
-    slippagePercent: Percentage;
-  } | {
-    kind: "remove";
-    module: UniswapV3;
-    position: string;
-    percent: PositivePercentage;
-  };
-  type UniswapV4UniswapV4PoolModuleActionInput = {
-    kind: "open";
-    module: UniswapV4;
-    pool: UniswapV4PoolInput;
-    range: Range;
-    budgets: BudgetsInput;
-    slippagePercent: Percentage;
-  } | {
-    kind: "add";
-    module: UniswapV4;
-    position: string;
-    budgets: BudgetsInput;
-    slippagePercent: Percentage;
-  } | {
-    kind: "remove";
-    module: UniswapV4;
-    position: string;
-    percent: PositivePercentage;
-  };
   type MarginRule = "crossOrIsolated" | "isolatedOnly" | "strictIsolated";
   type QuoteRole = "dollar" | "native";
   type PoolConstituent = {
@@ -3360,6 +3494,47 @@ declare module "circuit:sdk" {
     outflow: Decimal | null;
     reserve: Decimal | null;
   };
+  type TriggerExecution = LimitTriggerExecution | MarketTriggerExecution;
+  type Leverage = number;
+  type Quote = {
+    asset: string;
+    bid: string | null;
+    ask: string | null;
+  };
+  type KrakenLimitExecutionInput = {
+    kind: "limit";
+    price: PositiveDecimal;
+    timeInForce: TimeInForce;
+    expiresAt?: (Timestamp | null) | undefined;
+  };
+  type KrakenMarketInput = {
+    kind: "market";
+    slippage?: (MidSlippage | null) | undefined;
+  };
+  type BorrowAmount = string | TargetLoanToValue;
+  type TargetLoanToValue = {
+    loanToValue: LoanToValue;
+  };
+  type BudgetsInput = BudgetInput[];
+  type PositivePercentage = string;
+  type UniswapV3PoolInput = {
+    token0: EvmAddressInput;
+    token1: EvmAddressInput;
+    fee: FeeTier;
+  };
+  type UniswapV4PoolInput = {
+    currency0: EvmAddressInput;
+    currency1: EvmAddressInput;
+    fee: FeeTier;
+    tickSpacing: number;
+    hooks: NoHooks;
+  };
+  type AeroSlipstreamPoolInput = {
+    token0: EvmAddressInput;
+    token1: EvmAddressInput;
+    tickSpacing: number;
+  };
+  type PositionNft = string;
   type NetworkAsset = {
     network: "solana";
     asset: string;
@@ -3391,9 +3566,12 @@ declare module "circuit:sdk" {
     sellRaw: PositiveRawAmount;
     receiveRaw: PositiveRawAmount;
   };
-  type Action = MetricMetricPoolModuleAction | UniswapV3UniswapV3PoolModuleAction | UniswapV4UniswapV4PoolModuleAction;
   type PinnedAmount = "max" | PositionRaw | UnderlyingRaw;
   type TokenDecimals = number;
+  type LiquidityAction = {
+    network: EvmNetwork;
+    action: Action;
+  };
   type PerpCoinPositiveDecimalLimitTriggerOrder = {
     type: LimitTrigger;
     side: OrderSide;
@@ -3530,7 +3708,7 @@ declare module "circuit:sdk" {
     size: PositiveDecimal;
     price: PricePusd;
     timeInForce: Rests;
-    expiresAt?: string;
+    expiresAt?: Timestamp;
   };
   type MarketBuy = {
     asset: RawAmount;
@@ -3550,7 +3728,7 @@ declare module "circuit:sdk" {
     price: PositiveDecimal;
     type: LimitType;
     timeInForce: TimeInForce;
-    expiresAt?: string;
+    expiresAt?: Timestamp;
   };
   type KrakenLimitTrigger = {
     asset: KrakenPair;
@@ -3604,7 +3782,7 @@ declare module "circuit:sdk" {
     amountUsdc: PositiveDecimal;
   } | {
     kind: "scheduleCancel";
-    at: string | null;
+    at: Timestamp | null;
   } | {
     kind: "move";
     from: CoreBalance;
@@ -3612,7 +3790,6 @@ declare module "circuit:sdk" {
     amount: PositiveDecimal;
   };
   type StockTicker = string;
-  type PositivePercentage = string;
   type NonEmptyHexBytesInput = string;
   type AllOr = string;
   type IntegerWidth = number;
@@ -3627,84 +3804,93 @@ declare module "circuit:sdk" {
     triggerPrice: PositiveDecimal;
   };
   type LoanToValue = string;
-  type BudgetsInput = BudgetInput[];
-  type UniswapV3 = "uniswap-v3";
-  type UniswapV3PoolInput = {
-    token0: EvmAddressInput;
-    token1: EvmAddressInput;
-    fee: FeeTier;
+  type BudgetInput = {
+    token: EvmAddressInput;
+    amount: PositiveDecimal;
   };
-  type UniswapV4 = "uniswap-v4";
-  type UniswapV4PoolInput = {
-    currency0: EvmAddressInput;
-    currency1: EvmAddressInput;
-    fee: FeeTier;
-    tickSpacing: number;
-    hooks: NoHooks;
-  };
-  type MetricMetricPoolModuleAction = {
-    kind: "open";
-    module: Metric;
-    pool: MetricPool;
-    range: Range;
-    budgets: Budgets;
-    slippagePercent: Percentage;
-  } | {
-    kind: "add";
-    module: Metric;
-    position: string;
-    budgets: Budgets;
-    slippagePercent: Percentage;
-  } | {
-    kind: "remove";
-    module: Metric;
-    position: string;
-    percent: PositivePercentage;
-  };
-  type UniswapV3UniswapV3PoolModuleAction = {
-    kind: "open";
-    module: UniswapV3;
-    pool: UniswapV3Pool;
-    range: Range;
-    budgets: Budgets;
-    slippagePercent: Percentage;
-  } | {
-    kind: "add";
-    module: UniswapV3;
-    position: string;
-    budgets: Budgets;
-    slippagePercent: Percentage;
-  } | {
-    kind: "remove";
-    module: UniswapV3;
-    position: string;
-    percent: PositivePercentage;
-  };
-  type UniswapV4UniswapV4PoolModuleAction = {
-    kind: "open";
-    module: UniswapV4;
-    pool: UniswapV4Pool;
-    range: Range;
-    budgets: Budgets;
-    slippagePercent: Percentage;
-  } | {
-    kind: "add";
-    module: UniswapV4;
-    position: string;
-    budgets: Budgets;
-    slippagePercent: Percentage;
-  } | {
-    kind: "remove";
-    module: UniswapV4;
-    position: string;
-    percent: PositivePercentage;
-  };
+  type FeeTier = number;
+  type NoHooks = "0x0000000000000000000000000000000000000000";
   type PositionRaw = {
     positionRaw: PositiveRawAmount;
   };
   type UnderlyingRaw = {
     underlyingRaw: PositiveRawAmount;
   };
+  type Action = ({
+    protocol: "metric";
+  } & ({
+    kind: "open";
+    pool: MetricPool;
+    range: Range;
+    budgets: Budgets;
+    slippagePercent: Percentage;
+  } | {
+    kind: "add";
+    position: string;
+    budgets: Budgets;
+    slippagePercent: Percentage;
+  } | {
+    kind: "remove";
+    position: string;
+    percent: PositivePercentage;
+  })) | ({
+    protocol: "uniswap-v3";
+  } & ({
+    kind: "open";
+    pool: UniswapV3Pool;
+    range: Range;
+    budgets: Budgets;
+    slippagePercent: Percentage;
+  } | {
+    kind: "add";
+    position: string;
+    budgets: Budgets;
+    slippagePercent: Percentage;
+  } | {
+    kind: "remove";
+    position: string;
+    percent: PositivePercentage;
+  })) | ({
+    protocol: "uniswap-v4";
+  } & ({
+    kind: "open";
+    pool: UniswapV4Pool;
+    range: Range;
+    budgets: Budgets;
+    slippagePercent: Percentage;
+  } | {
+    kind: "add";
+    position: string;
+    budgets: Budgets;
+    slippagePercent: Percentage;
+  } | {
+    kind: "remove";
+    position: string;
+    percent: PositivePercentage;
+  })) | ({
+    protocol: "aero-slipstream";
+  } & ({
+    kind: "open";
+    pool: AeroSlipstreamPool;
+    range: Range;
+    budgets: Budgets;
+    slippagePercent: Percentage;
+  } | {
+    kind: "add";
+    position: string;
+    budgets: Budgets;
+    slippagePercent: Percentage;
+  } | {
+    kind: "remove";
+    position: string;
+    percent: PositivePercentage;
+  } | {
+    kind: "stake";
+    position: PositionNft;
+  } | {
+    kind: "unstake";
+    position: PositionNft;
+  }));
   type LimitTrigger = "stopLossLimit" | "takeProfitLimit";
   type MarketTrigger = "stopLoss" | "takeProfit";
   type PositiveDecimalExit = {
@@ -3715,17 +3901,10 @@ declare module "circuit:sdk" {
     mode: MarginMode;
     leverage?: Leverage;
   };
-  type Instrument = string;
   type Ioc = "ioc";
   type Rests = "alo" | "gtc";
   type Buy = "buy";
   type Sell = "sell";
-  type BudgetInput = {
-    token: EvmAddressInput;
-    amount: PositiveDecimal;
-  };
-  type FeeTier = number;
-  type NoHooks = "0x0000000000000000000000000000000000000000";
   type MetricPool = {
     pool: EvmAddress;
   };
@@ -3742,9 +3921,14 @@ declare module "circuit:sdk" {
     tickSpacing: number;
     hooks: NoHooks;
   };
+  type AeroSlipstreamPool = {
+    token0: EvmAddress;
+    token1: EvmAddress;
+    tickSpacing: number;
+  };
   type Budget = {
     token: EvmAddress;
     amount: PositiveDecimal;
   };
-  export type { ActionKind, AgentContext, AgentMoneyRequest, AgentSettings, ApiErrorDetails, CompletedOperation, EvmMoneyAction, EvmNetworkId, EvmSignMessageRequest, Holding, KindOf, MoneyActionOutcome, NetworkId, OnceInput, OperationResource, PolymarketDiscoverRail, PolymarketMarketLookup, PolymarketOrderProposal, PolymarketPricePoint, PolymarketRedeemPositionsData, PolymarketRedeemRequest, PolymarketResolvedEvent, PolymarketSearchEventsData, RequestOf, RunFunction, SessionMovement, SignMessageData, SolanaMoneyAction, SwapProvider, SwapRequest, TransactionPreviewResponse, TransferQuoteResponse, TransferRequest, Trigger, VirtualAllocation, WalletTransactionRequest };
+  export type { ActionKind, AgentContext, AgentMoneyRequest, AgentSettings, ApiErrorDetails, CompletedOperation, EvmMoneyAction, EvmNetworkId, EvmSignMessageRequest, Holding, HyperliquidStaking, KindOf, MoneyActionOutcome, NetworkId, OnceInput, OperationResource, PapertradeAccount, PapertradeClosedPositions, PolymarketDiscoverRail, PolymarketMarketLookup, PolymarketOrderProposal, PolymarketPricePoint, PolymarketRedeemPositionsData, PolymarketRedeemRequest, PolymarketResolvedEvent, PolymarketSearchEventsData, RequestOf, RunFunction, SessionMovement, SignMessageData, SolanaMoneyAction, SwapProvider, SwapQuoteResponse, SwapRequest, TransactionPreviewResponse, TransferQuoteResponse, TransferRequest, Trigger, VirtualAllocation, WalletTransactionRequest };
 }

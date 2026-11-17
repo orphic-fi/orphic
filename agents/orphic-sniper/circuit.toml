@@ -17,4 +17,4 @@ minMcapUsd = { type = "number", default = 25000, min = 5000, max = 500000 }
 # Sells a position once it is up this percent; lower takes profit sooner, higher lets winners run.
 takeProfitPct = { type = "number", default = 30, min = 5, max = 1000 }
 # Sells a position once it is down this percent; lower cuts losers sooner, higher gives them more room.
-stopLossPct = { type = "number", default = 70, min = 5, max = 95 }
+stopLossPct = { type = "number", default = 30, min = 5, max = 95 }
