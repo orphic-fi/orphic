@@ -139,6 +139,7 @@ contract JuniorVault is ERC20, Ownable2Step, ReentrancyGuard, Multicall {
     error InsufficientLiquidity();
     error WrongAsset();
     error VenueBroken();
+    error Underwater();
 
     constructor(IERC20 asset_, IVaultV2 senior_, IMorpho morpho_, address owner_, uint256 depositCap_)
         ERC20("Orphic Junior USDC", "ojUSDC")
@@ -171,8 +172,12 @@ contract JuniorVault is ERC20, Ownable2Step, ReentrancyGuard, Multicall {
     function deposit(uint256 assets, address receiver) external nonReentrant returns (uint256 shares) {
         if (depositsPaused || !seeded) revert Paused();
         if (assets == 0) revert ZeroAmount();
-        (uint256 nav, bool complete) = _navComplete();
+        (uint256 gross, bool complete) = _grossComplete();
         if (!complete) revert VenueBroken();
+        // A venue loss after exits were priced can leave less than those exits are owed. New money must not fill
+        // that gap (review M-4): deposits wait until the stayers are whole again or the owner resolves it.
+        if (gross < reservedAssets) revert Underwater();
+        uint256 nav = gross - reservedAssets;
         if (nav + assets > depositCap) revert CapExceeded();
         if (walletCap != 0) {
             uint256 held = balanceOf(receiver) + exitOf[receiver].shares;
@@ -219,11 +224,17 @@ contract JuniorVault is ERC20, Ownable2Step, ReentrancyGuard, Multicall {
         ExitRequest memory r = exitOf[msg.sender];
         if (r.shares == 0) revert NothingToClaim();
         uint256 price = _priceAtOrAfter(r.readyAt, r.settleHint);
-        uint256 assets = uint256(r.shares) * price / WAD / assetScale;
+        uint256 owed = uint256(r.shares) * price / WAD / assetScale;
+        uint256 assets = owed;
+        // If the vault holds less than every priced exit is owed, each claim takes the same haircut instead of the
+        // last claimant taking the whole gap (review M-4). The reserve falls by what was owed, the vault by what
+        // was paid, so the ratio is the same for every later claimant.
+        (uint256 gross, bool complete) = _grossComplete();
+        if (complete && gross < reservedAssets && reservedAssets != 0) assets = owed * gross / reservedAssets;
         if (asset.balanceOf(address(this)) < assets) revert InsufficientLiquidity();
         delete exitOf[msg.sender];
         pricedExitShares -= r.shares;
-        reservedAssets = reservedAssets >= assets ? reservedAssets - assets : 0;
+        reservedAssets = reservedAssets >= owed ? reservedAssets - owed : 0;
         _burn(address(this), r.shares);
         // Release stake pro rata to the staked shares leaving; a full exit releases everything.
         uint256 stake = stakeOf[msg.sender];
@@ -296,6 +307,9 @@ contract JuniorVault is ERC20, Ownable2Step, ReentrancyGuard, Multicall {
             if (paid != 0) asset.safeTransfer(address(senior), paid);
             emit Cover(shortfall, paid);
             price = _seniorRealPrice(); // includes what we just paid
+            // What idle could not pay stays owed: carry it in the baseline so the next settle bills it again
+            // (review H-1). Without this a partial cover would silently forgive the rest of the loss.
+            if (paid < shortfall) price += (shortfall - paid) * PRICE_UNIT / exposed;
         }
         seniorPriceBase = price;
         seniorSupplyBase = supply;
@@ -323,15 +337,45 @@ contract JuniorVault is ERC20, Ownable2Step, ReentrancyGuard, Multicall {
         return seniorPriceBase - seniorPriceBase * senior.managementFee() * elapsed / WAD - seniorPriceBase / 1e6;
     }
 
+    /// @notice USDC a settle run now would bill as cover, before anything is paid. For the senior share gate and
+    ///         the front end: while this is non-zero, senior is carrying a loss junior has not yet covered.
+    function coverPending() external view returns (uint256) {
+        uint256 price = _seniorRealPrice();
+        uint256 supply = senior.totalSupply();
+        uint256 expected = _expectedSeniorPrice();
+        if (price >= expected || supply == 0) return 0;
+        uint256 exposed = supply < seniorSupplyBase ? supply : seniorSupplyBase;
+        return (expected - price) * exposed / PRICE_UNIT;
+    }
+
     /// @dev Senior real assets per PRICE_UNIT shares, Vault V2 convention (virtual shares, +1 asset).
+    ///      A Morpho Vault V1 (MetaMorpho 1.1) behind an adapter books bad debt as `lostAssets` and keeps its share
+    ///      price flat, so its previewRedeem overstates what senior would get back. Each such adapter's pro-rata
+    ///      share of that vault's lostAssets is taken off here, so a Felix deficit does reach junior's cover
+    ///      (review H-3). Adapters that are not Vault V1 adapters are read as they are.
     function _seniorRealPrice() internal view returns (uint256) {
         uint256 real = asset.balanceOf(address(senior));
         uint256 n = senior.adaptersLength();
         for (uint256 i = 0; i < n; i++) {
-            real += IAdapter(senior.adapters(i)).realAssets();
+            address adapter = senior.adapters(i);
+            real += IAdapter(adapter).realAssets();
+            real -= _vaultV1Lost(adapter);
         }
         (,, uint256 pendingFeeShares) = senior.accrueInterestView(); // fee shares owed to us but not yet minted
         return PRICE_UNIT * (real + 1) / (senior.totalSupply() + pendingFeeShares + senior.virtualShares());
+    }
+
+    /// @dev The adapter's share of its Vault V1's lostAssets; 0 for any adapter without a morphoVaultV1().
+    function _vaultV1Lost(address adapter) internal view returns (uint256) {
+        (bool ok, bytes memory ret) = adapter.staticcall(abi.encodeWithSignature("morphoVaultV1()"));
+        if (!ok || ret.length != 32) return 0;
+        address v1 = abi.decode(ret, (address));
+        (ok, ret) = v1.staticcall(abi.encodeWithSignature("lostAssets()"));
+        if (!ok || ret.length != 32) return 0;
+        uint256 lost = abi.decode(ret, (uint256));
+        if (lost == 0) return 0;
+        uint256 supply = IERC4626(v1).totalSupply();
+        return supply == 0 ? 0 : lost * IERC4626(v1).balanceOf(adapter) / supply;
     }
 
     /// @notice USDC that senior's share price still has to recognise from the last cover. For the front end.
@@ -352,6 +396,12 @@ contract JuniorVault is ERC20, Ownable2Step, ReentrancyGuard, Multicall {
     }
 
     function _navComplete() internal view returns (uint256 total, bool complete) {
+        (total, complete) = _grossComplete();
+        total = total > reservedAssets ? total - reservedAssets : 0;
+    }
+
+    /// @dev Idle USDC plus every position, before anything is reserved for priced exits.
+    function _grossComplete() internal view returns (uint256 total, bool complete) {
         complete = true;
         total = asset.balanceOf(address(this));
         for (uint256 i = 0; i < markets.length; i++) {
@@ -368,7 +418,6 @@ contract JuniorVault is ERC20, Ownable2Step, ReentrancyGuard, Multicall {
                 complete = false;
             }
         }
-        total = total > reservedAssets ? total - reservedAssets : 0;
     }
 
     function marketAssets(uint256 i) external view returns (uint256) {

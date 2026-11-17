@@ -40,9 +40,10 @@ contract DeployJuniorRouter is Script, Addresses {
         junior.addVault(FELIX_USDC_V1);
         junior.addVault(address(senior)); // management-fee shares arrive here
 
-        // agent rules: receiver word offsets are into the ABI-encoded arguments (after the selector)
-        junior.setRule(MORPHO, IMorphoBase.supply.selector, true, 224); // onBehalf
-        junior.setRule(MORPHO, IMorphoBase.withdraw.selector, true, 256); // receiver
+        // agent rules: receiver word offsets are into the ABI-encoded arguments (after the selector).
+        // No direct Morpho market rules: the shipped keeper only deploys junior to Felix, and a leaked agent key with
+        // a market rule could park idle in a thin market before a settle (review M-2, M-3). Add them, with the
+        // keeper changes, the day junior actually allocates to markets.
         bytes4 dep = bytes4(keccak256("deposit(uint256,address)"));
         bytes4 red = bytes4(keccak256("redeem(uint256,address,address)"));
         bytes4 wd = bytes4(keccak256("withdraw(uint256,address,address)"));
@@ -51,7 +52,6 @@ contract DeployJuniorRouter is Script, Addresses {
         junior.setRule(FELIX_USDC_V1, wd, true, 32);
         junior.setRule(address(senior), red, true, 32);
         junior.setRule(address(senior), wd, true, 32);
-        junior.setApprovalRule(USDC, MORPHO, true);
         junior.setApprovalRule(USDC, FELIX_USDC_V1, true);
 
         FeeRouter router = new FeeRouter(IERC20(USDC), deployer, address(senior), address(junior), treasury);
