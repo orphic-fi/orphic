@@ -7,7 +7,7 @@ import { decide, proposeAllocation } from "./engine/allocate.js";
 import { buildPlan, validatePlan } from "./exec/plan.js";
 import { executePlan, weeklyClose, type ExecContext } from "./exec/send.js";
 import type { TxSigner } from "./exec/signer.js";
-import { accrueSenior, juniorWeekly, readJuniorStatus, syncSenior, type JuniorCtx } from "./exec/junior.js";
+import { accrueSenior, distributeRouter, juniorWeekly, readJuniorStatus, syncSenior, type JuniorCtx } from "./exec/junior.js";
 import { manageJuniorIdle } from "./exec/juniorDeploy.js";
 import { sampleOrphPrice } from "./data/orph.js";
 import { checkSeniorDrift } from "./exec/drift.js";
@@ -134,6 +134,12 @@ export async function run(opts: RunOptions, cfg: SeniorConfig = loadConfig(opts.
   } catch (err) {
     juniorAccrue = { called: false, note: `accrue failed: ${(err as Error).message}` };
     log(juniorAccrue.note);
+  }
+  try {
+    const d = await distributeRouter(jctx);
+    if (d.called) log(`router: ${d.note}`);
+  } catch (err) {
+    log(`distribute failed: ${(err as Error).message}`);
   }
   try {
     juniorSync = await syncSenior(jctx);

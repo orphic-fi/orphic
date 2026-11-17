@@ -182,6 +182,38 @@ export async function accrueSenior(ctx: JuniorCtx): Promise<SyncResult> {
   return { called: true, txHash: hash, note: `accrueInterest sent: ${d.reason}` };
 }
 
+const feeRouterAbi = [
+  { type: "function", name: "distribute", inputs: [], outputs: [], stateMutability: "nonpayable" },
+  { type: "function", name: "totalParked", inputs: [{ name: "token", type: "address" }], outputs: [{ type: "uint256" }], stateMutability: "view" },
+] as const;
+
+/**
+ * Split whatever USDC sits in the FeeRouter so junior's 25% lands in junior's NAV the same hour it arrives. Left to
+ * pile up, a depositor timed just before the split would take a share of the whole pile (review M-5).
+ */
+export async function distributeRouter(ctx: JuniorCtx): Promise<SyncResult> {
+  const log = ctx.log ?? ((l: string) => console.log(l));
+  const router = ctx.cfg.feeRouter;
+  if (!router || isPlaceholder(router) || !ctx.client) return { called: false, note: "no fee router; distribute skipped" };
+  const [bal, parked] = await Promise.all([
+    ctx.client.readContract({ address: ctx.cfg.usdc, abi: erc20Abi, functionName: "balanceOf", args: [router as Address] }),
+    ctx.client.readContract({ address: router as Address, abi: feeRouterAbi, functionName: "totalParked", args: [ctx.cfg.usdc] }),
+  ]);
+  const free = bal > parked ? bal - parked : 0n;
+  const minimum = 10n ** BigInt(ctx.cfg.usdcDecimals); // 1 USDC: below that the gas is the larger number
+  if (free < minimum) {
+    log(`distribute: skip (router holds ${(Number(free) / 10 ** ctx.cfg.usdcDecimals).toFixed(2)} USDC free)`);
+    return { called: false, note: "nothing to split" };
+  }
+  if (ctx.dryRun) {
+    log(`distribute: would split ${(Number(free) / 10 ** ctx.cfg.usdcDecimals).toFixed(2)} USDC (dry-run)`);
+    return { called: false, note: "dry-run: would distribute" };
+  }
+  const hash = await sendCall(ctx, router as Address, encodeFunctionData({ abi: feeRouterAbi, functionName: "distribute" }), "distribute");
+  log(`distribute: FeeRouter.distribute() sent ${hash}`);
+  return { called: true, txHash: hash, note: "distribute sent" };
+}
+
 export interface JuniorWeeklyResult {
   checked: boolean;
   pendingExitShares?: string;

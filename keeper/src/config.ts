@@ -56,6 +56,8 @@ export interface SeniorConfig {
   vault: Address | "0xTODO";
   /** JuniorVault. Skipped entirely while a placeholder. */
   junior: Address | "0xTODO";
+  /** FeeRouter. The keeper splits any USDC sitting in it every tick (review M-5). Skipped while a placeholder. */
+  feeRouter?: Address | "0xTODO";
   /** ORPH token. Price sampling is skipped while a placeholder. */
   orph: Address | "0xTODO";
   /** Uniswap v4 pool id (bytes32). Computed from the PoolKey when a placeholder. */
