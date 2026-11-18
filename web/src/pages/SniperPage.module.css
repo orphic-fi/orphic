@@ -2,8 +2,8 @@
 
 .hero {
   display: grid;
-  grid-template-columns: minmax(0, 6fr) minmax(0, 6fr);
-  gap: 56px;
+  grid-template-columns: minmax(0, 11fr) minmax(0, 10fr);
+  gap: 64px;
   align-items: start;
   padding-bottom: 36px;
   border-bottom: 1px solid var(--line);
@@ -145,8 +145,8 @@
 .board {
   display: flex;
   flex-direction: column;
-  gap: 14px;
-  padding: 22px 22px 24px;
+  gap: 18px;
+  padding: 28px 28px 30px;
   border-radius: 14px;
   background: var(--ink);
   color: var(--accent-ink);
@@ -155,8 +155,8 @@
 .boardHead {
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  margin-bottom: 8px;
+  gap: 6px;
+  margin-bottom: 10px;
 }
 
 .boardCount {
@@ -178,9 +178,9 @@
 
 .lane {
   display: grid;
-  grid-template-columns: 64px minmax(0, 1fr);
+  grid-template-columns: 72px minmax(0, 1fr);
   align-items: center;
-  gap: 12px;
+  gap: 16px;
 }
 
 .laneName {
@@ -189,26 +189,33 @@
 }
 
 .cells {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
+  display: grid;
+  grid-template-columns: repeat(8, minmax(0, 1fr));
+  gap: 8px;
 }
 
 .cell {
-  width: 46px;
-  height: 46px;
+  aspect-ratio: 1;
+  min-width: 0;
   border-radius: 8px;
   border: 1px solid rgba(255, 255, 255, 0.22);
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  font-size: 10px;
+  font-size: 12px;
   font-weight: 600;
-  line-height: 1.1;
+  line-height: 1.2;
   overflow: hidden;
   text-align: center;
-  padding: 2px;
+  padding: 3px;
+}
+
+.cell > span {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .cellOn {
@@ -247,10 +254,10 @@
 
 .row {
   display: grid;
-  grid-template-columns: minmax(0, 2fr) 1fr 1fr 1fr 32px;
-  gap: 12px;
+  grid-template-columns: minmax(0, 1.6fr) 1fr 1fr 1fr 40px;
+  gap: 24px;
   align-items: center;
-  padding: 12px 0;
+  padding: 14px 0;
   border-bottom: 1px solid var(--line);
   font-size: 14px;
   font-variant-numeric: tabular-nums;
@@ -284,6 +291,7 @@
 
 .num {
   white-space: nowrap;
+  text-align: right;
 }
 
 .up {
@@ -306,8 +314,7 @@
   display: flex;
   flex-direction: column;
   gap: 10px;
-  padding-top: 24px;
-  border-top: 1px solid var(--line);
+  padding-top: 8px;
   font-size: 13px;
   color: var(--muted);
   max-width: 70ch;
@@ -353,8 +360,14 @@
   .boardCount {
     font-size: 44px;
   }
+  .lane {
+    grid-template-columns: 1fr;
+    gap: 6px;
+  }
+  .cells {
+    gap: 6px;
+  }
   .cell {
-    width: 40px;
-    height: 40px;
+    font-size: 9px;
   }
 }

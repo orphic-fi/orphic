@@ -117,8 +117,7 @@ export default function SniperPage() {
                     const r = pct(x.p)
                     return (
                       <span key={i} className={`${t.cell} ${t.cellOn} ${r !== null && r < 0 ? t.cellDown : t.cellUp}`} title={x.p.meta?.name ?? x.p.token}>
-                        ${x.p.meta?.symbol ?? '?'}
-                        <small>{r === null ? '' : signed(r)}</small>
+                        {r === null ? '·' : signed(r)}
                       </span>
                     )
                   })}
