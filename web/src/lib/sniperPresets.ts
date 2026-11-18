@@ -22,7 +22,12 @@ export type SniperPreset = {
   slots: number
   /** Which knobs can be changed per session on Circuit without a new upload. */
   perSession: ReadonlyArray<'minMcapUsd' | 'takeProfitPct' | 'stopLossPct'>
+  /** Slot size of the live run on Orphic's wallet, in HYPE, from the session's first log line. Trades are matched to a preset by it until positions carry a session id. */
+  liveSlotHype: number
 }
+
+/** When the current runs on Orphic's wallet started (Proven session 10239, 17 Nov 2026 23:54 UTC). Earlier trades are history, shown on the wallet page only. */
+export const LIVE_RUN_STARTED_AT = Date.UTC(2026, 10, 17, 23, 50)
 
 export const SNIPER_PRESETS: SniperPreset[] = [
   {
@@ -41,6 +46,7 @@ export const SNIPER_PRESETS: SniperPreset[] = [
     trailPct: 0,
     slots: 5,
     perSession: ['minMcapUsd', 'takeProfitPct', 'stopLossPct'],
+    liveSlotHype: 0.0324,
   },
   {
     slug: 'early',
@@ -58,6 +64,7 @@ export const SNIPER_PRESETS: SniperPreset[] = [
     trailPct: 0,
     slots: 8,
     perSession: ['minMcapUsd', 'takeProfitPct', 'stopLossPct'],
+    liveSlotHype: 0.01,
   },
   {
     slug: 'runner',
@@ -75,6 +82,7 @@ export const SNIPER_PRESETS: SniperPreset[] = [
     trailPct: 25,
     slots: 3,
     perSession: ['minMcapUsd', 'takeProfitPct', 'stopLossPct'],
+    liveSlotHype: 0.0599,
   },
 ]
 
@@ -112,3 +120,8 @@ export const sellRule = (p: Pick<SniperPreset, 'takeProfitPct' | 'stopLossPct' |
   p.trailPct > 0
     ? `up ${p.takeProfitPct}% then trail ${p.trailPct}% from peak · −${p.stopLossPct}% out · ${fmtMin(p.timeStopMin)} time stop`
     : `+${p.takeProfitPct}% out · −${p.stopLossPct}% out · ${fmtMin(p.timeStopMin)} time stop`
+
+/** The preset whose live slot size is closest to what a buy spent. */
+export function presetForSpend(spentHype: number): SniperPreset {
+  return SNIPER_PRESETS.reduce((best, p) => (Math.abs(p.liveSlotHype - spentHype) < Math.abs(best.liveSlotHype - spentHype) ? p : best))
+}
