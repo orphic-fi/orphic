@@ -1,12 +1,10 @@
 import { useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import VaultArea from '../components/VaultArea'
-import { addresses } from '../config/addresses'
 import { MGMT_FEE_APY, useVault, type VaultState } from '../hooks/useVault'
 import { fmtPct, fmtUsd } from '../lib/format'
-import { useMorphoVaultV1 } from '../lib/morpho'
 import { settleAtOrAfter } from '../lib/schedule'
-import { useLlamaRates, useMorphoMarkets } from '../lib/venues'
+import { useFelixSpotRate, useHlp, useHyperLendUsdc, useMorphoMarketRates } from '../lib/onchainRates'
 import s from './Vaults.module.css'
 
 /** Junior seeded and first deployed, 8 Nov 2026 21:27 UTC; the base for realised growth. */
@@ -42,9 +40,10 @@ function realised(v: VaultState) {
 export default function Vaults() {
   const senior = useVault('senior')
   const junior = useVault('junior')
-  const felix = useMorphoVaultV1(addresses.hyperEvm.felixVault)
-  const markets = useMorphoMarkets()
-  const llama = useLlamaRates()
+  const markets = useMorphoMarketRates()
+  const felix = useFelixSpotRate(markets.data)
+  const hyperlend = useHyperLendUsdc()
+  const hlp = useHlp()
   const [params] = useSearchParams()
   const [picked, setPicked] = useState<RowId>(params.get('junior') ? 'junior' : 'senior')
   const seniorMode = params.get('senior') === 'withdraw' ? 'exit' : 'deposit'
@@ -58,7 +57,7 @@ export default function Vaults() {
     const days = Math.max(1, Math.round((senior.chainReadAt / 1000 - JUNIOR_OPENED) / 86_400))
     return { text: `${price >= 1 ? '+' : '−'}${Math.abs((price - 1) * 100).toFixed(2)}%`, days }
   })()
-  const felixApy = felix.data?.netApy ?? null
+  const felixApy = felix.spotApy
   const seniorEst = felixApy === null ? null : felixApy - MGMT_FEE_APY
   const bestMarket = (markets.data ?? []).reduce<number | null>((b, m) => (b === null || m.supplyApy > b ? m.supplyApy : b), null)
   const khype = (markets.data ?? []).filter((m) => m.collateral === 'kHYPE')
@@ -74,7 +73,7 @@ export default function Vaults() {
           name: 'Senior USDC',
           sub: 'Morpho Vault V2 · first in line · instant exit while liquid, else at settle',
           rate: seniorEst === null ? '–' : fmtPct(seniorEst),
-          rateLabel: 'est. · Felix 7-day avg, net of fee',
+          rateLabel: 'now · Felix rate net of fee · est.',
           realised: sr.text,
           realisedLabel: sr.text === '–' ? 'reading' : `${sr.days} days, since open`,
           tvl: fmtUsd(senior.tvl),
@@ -125,8 +124,8 @@ export default function Vaults() {
           id: 'hlp',
           name: 'HLP',
           sub: 'Hypercore · 4-day exit · counted as slow',
-          rate: llama.data?.hlp.apy == null ? '–' : fmtPct(llama.data.hlp.apy),
-          rateLabel: 'advertised · DefiLlama',
+          rate: hlp.data?.realised30dAnnualised == null ? '–' : fmtPct(hlp.data.realised30dAnnualised),
+          rateLabel: '30-day realised, annualised · from HLP',
           realised: 'not yet',
           realisedLabel: 'after the Hypercore leg',
           tvl: '$0',
@@ -143,21 +142,21 @@ export default function Vaults() {
           name: 'Felix USDC',
           sub: 'Morpho vault · HyperEVM · audited · where senior sits today',
           rate: felixApy === null ? '–' : fmtPct(felixApy),
-          rateLabel: '7-day avg · Morpho',
-          realised: felix.data?.spotNetApy == null ? '' : fmtPct(felix.data.spotNetApy),
-          realisedLabel: 'spot now',
-          tvl: fmtUsd(felix.data?.totalAssetsUsd ?? null),
+          rateLabel: 'now · computed from its markets',
+          realised: '',
+          realisedLabel: '',
+          tvl: fmtUsd(felix.totalAssetsUsd),
           tvlLabel: 'venue tvl',
         },
         {
           id: 'hyperlend',
           name: 'HyperLend USDC',
           sub: 'lending pool · HyperEVM · needs an adapter before either vault can use it',
-          rate: llama.data?.hyperlendUsdc.apy == null ? '–' : fmtPct(llama.data.hyperlendUsdc.apy),
-          rateLabel: 'now · DefiLlama',
+          rate: hyperlend.apy === null ? '–' : fmtPct(hyperlend.apy),
+          rateLabel: 'now · from the pool contract',
           realised: '',
           realisedLabel: '',
-          tvl: fmtUsd(llama.data?.hyperlendUsdc.tvlUsd ?? null),
+          tvl: fmtUsd(hyperlend.tvlUsd),
           tvlLabel: 'venue tvl',
         },
         {
@@ -165,7 +164,7 @@ export default function Vaults() {
           name: 'Morpho markets',
           sub: `kHYPE, WHYPE and UBTC collateral · allowed for senior today, junior after two signatures${khypeTop ? ` · kHYPE ${Math.round(khypeTop.utilization * 100)}% utilised` : ''}`,
           rate: bestMarket === null ? '–' : `up to ${fmtPct(bestMarket)}`,
-          rateLabel: 'spot · Morpho',
+          rateLabel: 'now · from Morpho Blue and its IRM',
           realised: '',
           realisedLabel: '',
           tvl: fmtUsd((markets.data ?? []).reduce((n, m) => n + m.supplyUsd, 0) || null),
@@ -237,7 +236,10 @@ export default function Vaults() {
               An audited Morpho vault. Earns the base lending rate at the venues the Rotator may use; junior absorbs the first loss before this vault does. Instant exit while the venues are liquid,
               otherwise at the weekly settle.
             </p>
-            <Breakup parts={[{ name: 'Felix USDC', pct: 100, color: 'var(--sen)' }]} note="Allowed: Felix and four Morpho markets, target 15 / 83 / 2 idle. Held in Felix while the book is small: the Rotator moves only when a week of extra yield beats gas three times over." />
+            <Breakup
+              parts={[{ name: 'Felix USDC', pct: 100, color: 'var(--sen)' }]}
+              note="Allowed: Felix and four Morpho markets, target 15 / 83 / 2 idle. Held in Felix while the book is small: the Rotator moves only when a week of extra yield beats gas three times over."
+            />
             <VaultArea key={`s-${seniorMode}`} kind="senior" state={senior} initialMode={seniorMode} />
           </>
         )}
@@ -295,8 +297,9 @@ export default function Vaults() {
             tag="planned, inside junior"
             text="Hyperliquid's market-making vault on Hypercore. The biggest USDC rate with size behind it, and a 4-day withdrawal lock, so the Rotator has to start pulling out a week before a settle needs the money."
             facts={[
-              ['Advertised', llama.data?.hlp.apy == null ? '–' : fmtPct(llama.data.hlp.apy)],
-              ['Venue TVL', fmtUsd(llama.data?.hlp.tvlUsd ?? null)],
+              ['30-day realised, annualised', hlp.data?.realised30dAnnualised == null ? '–' : fmtPct(hlp.data.realised30dAnnualised)],
+              ['APR Hyperliquid reports', hlp.data ? fmtPct(hlp.data.aprReported) : '–'],
+              ['Account value', fmtUsd(hlp.data?.accountValueUsd ?? null)],
               ['Exit', '4 days'],
               ['Needs', 'the Hypercore leg: bridge step and valuation read'],
             ]}
@@ -306,11 +309,10 @@ export default function Vaults() {
           <Info
             name="Felix USDC"
             tag="venue"
-            text="A MetaMorpho vault on HyperEVM, audited, where senior sits today. The rate shown is the 7-day average of Morpho's daily net APY; the spot rate swings with utilisation."
+            text="A MetaMorpho vault on HyperEVM, audited, where senior sits today. The rate is computed here from the vault's own positions: each market's borrow rate times utilisation, weighted by what Felix holds in it, net of Felix's fee. It swings hour to hour with utilisation."
             facts={[
-              ['7-day average', felixApy === null ? '–' : fmtPct(felixApy)],
-              ['Spot now', felix.data?.spotNetApy == null ? '–' : fmtPct(felix.data.spotNetApy)],
-              ['Venue TVL', fmtUsd(felix.data?.totalAssetsUsd ?? null)],
+              ['Rate now', felixApy === null ? '–' : fmtPct(felixApy)],
+              ['Venue TVL', fmtUsd(felix.totalAssetsUsd)],
               ['Exit', 'instant while liquid'],
             ]}
           />
@@ -321,10 +323,10 @@ export default function Vaults() {
             tag="venue, next"
             text="HyperLend's pooled USDC market on HyperEVM. Neither vault can hold it yet: senior needs a Vault V2 adapter for it and junior needs a way to value its aTokens, both new code. Shown so the gap is visible."
             facts={[
-              ['Rate now', llama.data?.hyperlendUsdc.apy == null ? '–' : fmtPct(llama.data.hyperlendUsdc.apy)],
-              ['Venue TVL', fmtUsd(llama.data?.hyperlendUsdc.tvlUsd ?? null)],
+              ['Rate now', hyperlend.apy === null ? '–' : fmtPct(hyperlend.apy)],
+              ['USDC supplied', fmtUsd(hyperlend.tvlUsd)],
               ['Exit', 'instant while liquid'],
-              ['Source', 'DefiLlama'],
+              ['Source', 'the pool contract, read each minute'],
             ]}
           />
         )}

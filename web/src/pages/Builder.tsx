@@ -1,10 +1,8 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { Link } from 'react-router-dom'
-import { addresses } from '../config/addresses'
 import { DEFAULT_CONFIG, STEPS, VENUES, loadDraft, problems, saveDraft, split, toRequest, type BuilderConfig } from '../lib/builder'
 import { fmtPct, fmtUsd } from '../lib/format'
-import { useMorphoVaultV1 } from '../lib/morpho'
-import { useLlamaRates, useMorphoMarkets } from '../lib/venues'
+import { useFelixSpotRate, useHlp, useHyperLendUsdc, useMorphoMarketRates } from '../lib/onchainRates'
 import s from './Builder.module.css'
 
 const REQUEST_TO = 'https://t.me/ushouldcashout'
@@ -25,17 +23,18 @@ export default function Builder() {
   }, [step])
   const set = <K extends keyof BuilderConfig>(k: K, v: BuilderConfig[K]) => setC((x) => ({ ...x, [k]: v }))
 
-  const felix = useMorphoVaultV1(addresses.hyperEvm.felixVault)
-  const markets = useMorphoMarkets()
-  const llama = useLlamaRates()
+  const markets = useMorphoMarketRates()
+  const felix = useFelixSpotRate(markets.data)
+  const hyperlend = useHyperLendUsdc()
+  const hlp = useHlp()
   const rate = (id: string) => {
-    if (id === 'felix') return felix.data?.netApy == null ? '–' : fmtPct(felix.data.netApy)
-    if (id === 'hyperlend') return llama.data?.hyperlendUsdc.apy == null ? '–' : fmtPct(llama.data.hyperlendUsdc.apy)
+    if (id === 'felix') return felix.spotApy === null ? '–' : fmtPct(felix.spotApy)
+    if (id === 'hyperlend') return hyperlend.apy === null ? '–' : fmtPct(hyperlend.apy)
     if (id === 'morpho') {
       const best = (markets.data ?? []).reduce<number | null>((b, m) => (b === null || m.supplyApy > b ? m.supplyApy : b), null)
       return best === null ? '–' : `up to ${fmtPct(best)}`
     }
-    if (id === 'hlp') return llama.data?.hlp.apy == null ? '–' : fmtPct(llama.data.hlp.apy)
+    if (id === 'hlp') return hlp.data?.realised30dAnnualised == null ? '–' : fmtPct(hlp.data.realised30dAnnualised)
     return 'fees, no rate'
   }
 
@@ -155,7 +154,7 @@ export default function Builder() {
                       </div>
                       <div className={s.venueRate}>
                         <span className={s.num}>{rate(v.id)}</span>
-                        <small>rate now, est.</small>
+                        <small>{v.id === 'hlp' ? '30-day realised' : 'rate now'}, from the venue</small>
                       </div>
                       <label className={s.venueCap}>
                         <span className={s.num}>

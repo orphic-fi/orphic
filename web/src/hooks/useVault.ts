@@ -7,7 +7,8 @@ import { vaultV2Abi } from '../abi/vaultV2'
 import { ELYSIUM_IDS, asSupported, hyperEvm } from '../chains'
 import { DEPLOYED, ZERO, addresses, ops } from '../config/addresses'
 import { DEMO, DEMO_LOADED_AT_MS, demoFixture, demoScenario } from '../config/demo'
-import { useMorphoVaultV1, useMorphoVaultV2 } from '../lib/morpho'
+import { useMorphoVaultV2 } from '../lib/morpho'
+import { useFelixSpotRate, useMorphoMarketRates } from '../lib/onchainRates'
 import { useSession } from './useSession'
 
 export type VaultKind = 'senior' | 'junior'
@@ -111,7 +112,9 @@ export function useVault(kind: VaultKind): VaultState {
   const morpho = useMorphoVaultV2(morphoAddress)
   // Senior's assets sit in Felix USDC (a Morpho vault the API does index). While the API has no entry for senior itself,
   // the estimate is Felix's net APY on the share of assets held there, minus senior's 0.5% a year management fee.
-  const felix = useMorphoVaultV1(addresses.hyperEvm.felixVault)
+  // Felix's rate is computed from its own market positions on chain, not read from an indexer.
+  const felixMarkets = useMorphoMarketRates()
+  const felix = useFelixSpotRate(felixMarkets.data)
 
   const seniorReads = useReadContracts({
     contracts: [
@@ -212,7 +215,7 @@ export function useVault(kind: VaultKind): VaultState {
   }, [refetchSenior, refetchSeniorAssets, refetchJunior, refetchWallet, refetchMorpho, refetchOrph])
 
   return useMemo<VaultState>(() => {
-    const felixApy = felix.data?.netApy ?? felix.data?.apy ?? null
+    const felixApy = felix.spotApy
     const seniorTotal = seniorReads.data?.[0]?.result as bigint | undefined
     const felixHeld = seniorReads.data?.[7]?.result as bigint | undefined
     const felixShare = seniorTotal !== undefined && seniorTotal > 0n && felixHeld !== undefined ? Math.min(1, Number(felixHeld) / Number(seniorTotal)) : 1
@@ -222,7 +225,7 @@ export function useVault(kind: VaultKind): VaultState {
       apy: listedApy ?? (morpho.data?.unlisted ? derivedSeniorApy : null),
       apyDerived: listedApy === null && derivedSeniorApy !== null && !!morpho.data?.unlisted,
       apyLoading: morpho.isLoading || felix.isLoading,
-      apyError: morpho.isError && felix.isError,
+      apyError: morpho.isError && felix.spotApy === null && !felix.isLoading,
       apyUnlisted: morpho.data?.unlisted ?? false,
       apyReadAt: morpho.dataUpdatedAt || undefined,
       target,
@@ -239,10 +242,7 @@ export function useVault(kind: VaultKind): VaultState {
         const tvl = Number(f.senior.totalAssets) / 10 ** USDC_DECIMALS
         const cap = ops.caps.seniorUsd
         const perHour = ((Number(f.senior.totalAssets) * Number(f.senior.maxRate)) / 1e18) * 3600
-        const cover =
-          f.senior.coverInProgress > 0n
-            ? { usd: Number(f.senior.coverInProgress) / 10 ** USDC_DECIMALS, hours: perHour > 0 ? Number(f.senior.coverInProgress) / perHour : Infinity }
-            : null
+        const cover = f.senior.coverInProgress > 0n ? { usd: Number(f.senior.coverInProgress) / 10 ** USDC_DECIMALS, hours: perHour > 0 ? Number(f.senior.coverInProgress) / perHour : Infinity } : null
         return {
           ...common,
           kind,
@@ -370,8 +370,7 @@ export function useVault(kind: VaultKind): VaultState {
     const pricedExit = juniorReads.data?.[14]?.result as bigint | undefined
     const tvl = DEPLOYED && totalAssets !== undefined ? Number(totalAssets) / 10 ** USDC_DECIMALS : null
     const cap = DEPLOYED && depositCap !== undefined ? Number(depositCap) / 10 ** USDC_DECIMALS : ops.caps.juniorUsd
-    const balanceAssets =
-      shares !== undefined && pps !== undefined ? (shares * pps) / 10n ** 18n / 10n ** BigInt(SHARE_DECIMALS - USDC_DECIMALS) : undefined
+    const balanceAssets = shares !== undefined && pps !== undefined ? (shares * pps) / 10n ** 18n / 10n ** BigInt(SHARE_DECIMALS - USDC_DECIMALS) : undefined
     // Live NAV: what settle would freeze if it ran now. totalAssets already counts junior's minted senior shares
     // (senior is an allowlisted venue); add the management-fee shares senior owes junior but has not minted yet.
     const nav = (() => {
@@ -428,5 +427,26 @@ export function useVault(kind: VaultKind): VaultState {
       },
       cover: null,
     }
-  }, [kind, morpho, seniorReads, seniorAssets, seniorShares, juniorReads, walletReads, orphReads, stakeTokenRead, orphToken, target, usdc, onElysium, onHyperEvm, refetch])
+  }, [
+    kind,
+    morpho,
+    felix.spotApy,
+    felix.isLoading,
+    seniorReads,
+    seniorAssets,
+    seniorShares,
+    juniorReads,
+    juniorIdleRead.data,
+    seniorForJunior.data,
+    seniorTotalForJunior.data,
+    walletReads,
+    orphReads,
+    stakeTokenRead,
+    orphToken,
+    target,
+    usdc,
+    onElysium,
+    onHyperEvm,
+    refetch,
+  ])
 }

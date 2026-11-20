@@ -281,7 +281,7 @@ export default function VaultArea({ kind, state: v, initialMode = 'deposit' }: {
         ? `1 ${JUNIOR_SYMBOL} = ${fmtNum(Number(v.pricePerShare) / 1e18, 2)} USDC`
         : `1 ${JUNIOR_SYMBOL} = 1.00 USDC`
   const balanceText = isConnected && LIVE && v.usdcBalance !== undefined ? fmtUnits(v.usdcBalance, USDC_DECIMALS) : NA
-  const juniorApyLabel = kind === 'junior' ? 'projected · est.' : v.apyDerived ? 'est. APY · Felix 7-day avg' : 'est. APY · Morpho 7d'
+  const juniorApyLabel = kind === 'junior' ? 'projected · est.' : v.apyDerived ? 'est. APY · Felix now, net of fee' : 'est. APY · Morpho 7d'
 
   return (
     <section className={s.area} data-kind={kind} aria-labelledby={`${kind}-name`}>
@@ -301,7 +301,7 @@ export default function VaultArea({ kind, state: v, initialMode = 'deposit' }: {
       </header>
 
       {kind === 'senior' && v.apyDerived && v.apy !== null && (
-        <p className={s.caption}>Estimate: Felix USDC's 7-day average rate on the share of senior sitting there, minus the 0.5% fee. The spot rate moves hour to hour; the average is what a week has actually paid. Not yet included: senior's 50% share of protocol fees, which starts with the $ORPH pool. Morpho shows the vault's own rate once it indexes it.</p>
+        <p className={s.caption}>Estimate: the rate Felix USDC is earning right now, computed from its own market positions onchain, on the share of senior sitting there, minus the 0.5% fee. It moves hour to hour with utilisation. Not yet included: senior's 50% share of protocol fees, which starts with the $ORPH pool.</p>
       )}
       {kind === 'senior' && !v.apyError && v.apy === null && v.apyUnlisted && <p className={s.caption}>Rate unavailable right now: Morpho does not index this vault yet and the Felix rate could not be read.</p>}
       {kind === 'junior' && v.projection && (
