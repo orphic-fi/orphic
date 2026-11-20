@@ -94,18 +94,26 @@ export function saveDraft(c: BuilderConfig) {
   }
 }
 
-/** What is wrong with the config, in the order a reader would fix it. Empty means ready to request. */
-export function problems(c: BuilderConfig): string[] {
-  const out: string[] = []
-  if (!c.venues.some((v) => v.on)) out.push('Switch on at least one venue.')
-  if (c.template !== 'strategy' && !c.venues.some((v) => v.on && (v.id === 'felix' || v.id === 'hyperlend'))) out.push('A senior vault needs at least one instant-exit lender (Felix or HyperLend).')
-  if (c.template === 'strategy' && c.agent === 'rotator') out.push('A strategy vault needs Ranger or your own agent.')
-  if (c.agent === 'own' && !/^[0-9a-f-]{36}$/i.test(c.ownAgentId ?? '')) out.push('Your own agent needs its Circuit agent id.')
-  if (c.template === 'pair' && (c.juniorCoverPct < 5 || c.juniorCoverPct > 50)) out.push('Junior cover should be between 5% and 50% of senior.')
-  if (!c.name.trim()) out.push('Give the vault a name.')
-  if (!/^[A-Za-z0-9]{2,8}$/.test(c.symbol)) out.push('Symbol: 2 to 8 letters or digits.')
-  if (!/^0x[0-9a-fA-F]{40}$/.test(c.ownerSafe)) out.push('Owner must be a Safe address on HyperEVM.')
-  if (!c.contact.trim()) out.push('A contact for the review (Telegram or email).')
+export interface Problem {
+  step: number
+  text: string
+}
+
+/** What is wrong with the config, each tied to the step that fixes it. Empty means ready to request. */
+export function problems(c: BuilderConfig): Problem[] {
+  const out: Problem[] = []
+  if (!c.venues.some((v) => v.on)) out.push({ step: 1, text: 'Switch on at least one venue.' })
+  if (c.template !== 'strategy' && !c.venues.some((v) => v.on && (v.id === 'felix' || v.id === 'hyperlend')))
+    out.push({ step: 1, text: 'A senior vault needs at least one instant-exit lender, Felix or HyperLend, so exits can always be paid.' })
+  if (c.template === 'strategy' && c.agent === 'rotator') out.push({ step: 2, text: 'A strategy vault needs Ranger or your own agent; the Rotator only moves between lenders.' })
+  if (c.agent === 'rotator-ranger' && !c.venues.some((v) => v.on && v.id === 'nest')) out.push({ step: 1, text: 'Ranger needs the Nest HYPE/USDC range switched on.' })
+  if (c.agent === 'own' && !/^[0-9a-f-]{36}$/i.test(c.ownAgentId ?? '')) out.push({ step: 2, text: 'Your own agent needs its Circuit agent id (36 characters).' })
+  if (c.template === 'pair' && (c.juniorCoverPct < 5 || c.juniorCoverPct > 50)) out.push({ step: 3, text: 'Junior cover should be between 5% and 50% of senior.' })
+  if (c.walletCapUsd > c.seniorCapUsd) out.push({ step: 3, text: 'The per-wallet cap cannot be larger than the vault cap.' })
+  if (!c.name.trim()) out.push({ step: 4, text: 'Give the vault a name.' })
+  if (!/^[A-Za-z0-9]{2,8}$/.test(c.symbol)) out.push({ step: 4, text: 'Symbol: 2 to 8 letters or digits, no spaces.' })
+  if (!/^0x[0-9a-fA-F]{40}$/.test(c.ownerSafe)) out.push({ step: 4, text: 'Owner must be a Safe address on HyperEVM (0x and 40 hex characters).' })
+  if (!c.contact.trim()) out.push({ step: 4, text: 'A contact for the review, Telegram or email.' })
   return out
 }
 
