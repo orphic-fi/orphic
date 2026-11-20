@@ -135,6 +135,10 @@
   color: var(--amber);
 }
 
+.soon {
+  color: var(--muted);
+}
+
 .fine {
   margin: 26px 0 0;
   padding-top: 12px;
