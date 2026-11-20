@@ -1,34 +1,34 @@
 {
-  "runAt": "2026-11-20T20:00:06.934Z",
+  "runAt": "2026-11-20T21:29:38.908Z",
   "mode": "live",
-  "vaultUsd": 316.461079,
-  "bookApy": 0.04150299364001732,
+  "vaultUsd": 316.463271,
+  "bookApy": 0.041463297106657276,
   "decision": {
     "move": false,
-    "reason": "projected weekly gain $0.02 below 3x cost $0.08 = $0.24",
+    "reason": "projected weekly gain $0.02 below 3x cost $0.08 = $0.23",
     "actions": 9,
-    "movedAmount": 268.991917
+    "movedAmount": 268.99378
   },
   "juniorIdle": {
     "action": "hold",
     "note": "idle 5.00 USDC within 20.00 USDC of reserve 5.00 USDC",
     "idleUsdc": 5,
-    "felixUsdc": 76.107484
+    "felixUsdc": 76.108012
   },
   "juniorAccrue": {
-    "called": false,
-    "note": "senior accrued 22.6h ago"
+    "called": true,
+    "note": "accrueInterest sent: senior last accrued 24.1h ago, 4342347536841149 fee shares pending"
   },
   "juniorSync": {
-    "called": false,
-    "note": "senior supply unchanged; syncSenior not needed"
+    "called": true,
+    "note": "syncSenior sent"
   },
   "alerts": [],
   "allocation": [
     {
       "label": "Felix USDC v1.1",
       "share": 1,
-      "rate": 0.04150299364001732
+      "rate": 0.041463297106657276
     }
   ]
 }
