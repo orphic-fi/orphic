@@ -737,3 +737,50 @@
     font-size: 34px;
   }
 }
+
+/* Template picture */
+.picture {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--panel);
+  padding: 14px 16px 6px;
+}
+
+.pbox {
+  fill: var(--field);
+  stroke: var(--line-strong);
+  stroke-width: 1;
+}
+
+.pboxSen {
+  stroke: var(--sen);
+}
+
+.pboxJun {
+  stroke: var(--jun);
+}
+
+.pboxMut {
+  stroke: var(--line);
+}
+
+.ptitle {
+  font: 500 13px Inter, sans-serif;
+  fill: var(--text);
+}
+
+.psub {
+  font: 400 11px Inter, sans-serif;
+  fill: var(--muted);
+}
+
+.pedge {
+  fill: none;
+  stroke: var(--line-strong);
+  stroke-width: 1.5;
+}
+
+.pedgeJun {
+  stroke: var(--jun);
+  stroke-dasharray: 4 4;
+}

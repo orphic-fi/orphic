@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { Link } from 'react-router-dom'
-import { DEFAULT_CONFIG, STEPS, VENUES, loadDraft, problems, saveDraft, split, toRequest, type BuilderConfig } from '../lib/builder'
+import { DEFAULT_CONFIG, STEPS, STRATEGIES, VENUES, loadDraft, problems, saveDraft, split, toRequest, type BuilderConfig } from '../lib/builder'
 import { fmtPct, fmtUsd } from '../lib/format'
 import { useFelixSpotRate, useHlp, useHyperLendUsdc, useMorphoMarketRates } from '../lib/onchainRates'
 import s from './Builder.module.css'
@@ -44,6 +44,7 @@ export default function Builder() {
   const venuesOn = c.venues.filter((v) => v.on)
   const venueName = (id: string) => VENUES.find((v) => v.id === id)?.name.split(',')[0] ?? id
   const isPair = c.template === 'pair'
+  const stepName = (i: number) => (i === 1 && c.template === 'strategy' ? 'Strategy' : STEPS[i])
 
   const copy = async () => {
     try {
@@ -78,7 +79,7 @@ export default function Builder() {
             <li key={n}>
               <button type="button" className={`${s.stepBtn} ${i === step ? s.stepNow : ''} ${i < step ? s.stepDone : ''}`} onClick={() => setStep(i)} aria-current={i === step ? 'step' : undefined}>
                 <span className={`${s.c} ${bad && i < step ? s.cBad : ''}`}>{bad && i < step ? '!' : i < step ? '✓' : i + 1}</span>
-                <span className={s.stepName}>{n}</span>
+                <span className={s.stepName}>{stepName(i)}</span>
               </button>
             </li>
           )
@@ -113,13 +114,56 @@ export default function Builder() {
                   note="Needs Ranger or your own agent."
                 />
               </div>
+              <TemplatePicture c={c} venueName={venueName} />
               <Help>
                 Not sure? <Link to="/vaults">Orphic's own pair</Link> is the first template, live, with real numbers.
               </Help>
             </Step>
           )}
 
-          {step === 1 && (
+          {step === 1 && c.template === 'strategy' && (
+            <Step title="Pick the strategy" why="One vault, one strategy. The strategy decides the venue and the agent; you set its knobs." issues={issuesHere}>
+              <div className={s.opts}>
+                {STRATEGIES.map((st) => (
+                  <Opt
+                    key={st.id}
+                    on={c.strategy === st.id}
+                    onClick={() => setC((x) => ({ ...x, strategy: st.id, agent: st.agent }))}
+                    title={st.name}
+                    text={st.what}
+                    note={st.venue}
+                    tag={st.bet ? 'a bet' : st.id === 'hlp' ? 'coming' : undefined}
+                  />
+                ))}
+              </div>
+              {c.strategy === 'range' && (
+                <div className={s.grid2}>
+                  <Field
+                    label="Range width"
+                    help="How far either side of the price the range reaches. Narrower earns more while in range and leaves it sooner."
+                    input={
+                      <Unit after="% either side">
+                        <input type="number" min={2} max={50} step={1} value={c.rangeWidthPct} onChange={(e) => set('rangeWidthPct', Number(e.target.value))} />
+                      </Unit>
+                    }
+                  />
+                  <Field
+                    label="Flatten to USDC when HYPE moves"
+                    help="A move this size in 24 hours closes the range and parks everything in USDC until it calms."
+                    input={
+                      <Unit after="% in a day">
+                        <input type="number" min={5} max={50} step={1} value={c.flattenMovePct} onChange={(e) => set('flattenMovePct', Number(e.target.value))} />
+                      </Unit>
+                    }
+                  />
+                </div>
+              )}
+              {c.strategy === 'rotation' && <Help>The rotation uses the lenders Orphic already runs for its own book. Caps per lender and the gas rule are on the next step.</Help>}
+              {c.strategy === 'hlp' && <Help>HLP is not live for vaults yet. You can pick it now; the vault starts earning when it is, and nothing here needs to change.</Help>}
+            </Step>
+          )}
+
+          {step === 1 && c.template !== 'strategy' && (
             <Step
               title="Venues the agent may use"
               why="The agent can only send money to venues on this list; the rules contract enforces that onchain. Turn on what you trust and cap each one so no single venue can be the whole book."
@@ -189,33 +233,40 @@ export default function Builder() {
 
           {step === 2 && (
             <Step title="Who runs the book" why="The agent moves money between your venues on rules you can read here. It holds no keys to anything else." issues={issuesHere}>
-              <div className={s.opts}>
-                <Opt
-                  on={c.agent === 'rotator'}
-                  onClick={() => set('agent', 'rotator')}
-                  title="Orphic Rotator"
-                  text="Moves between your lenders on a 7-day rate net of gas, inside your caps, and settles on your schedule. The same agent that runs Orphic's own book."
-                  note="Recommended for the first two templates."
-                />
-                <Opt
-                  on={c.agent === 'rotator-ranger'}
-                  onClick={() => set('agent', 'rotator-ranger')}
-                  title="Rotator plus Ranger"
-                  text="Rotator for the lenders, Ranger for one range on the Nest HYPE/USDC pool. The range is a bet and is labelled as one."
-                  note="Needs the Nest venue on."
-                />
-                <Opt
-                  on={c.agent === 'own'}
-                  onClick={() => set('agent', 'own')}
-                  title="Your own agent"
-                  text="An agent you upload under your Circuit partner id. It can only call the venues you switched on."
-                  note="You bring the Circuit agent id."
-                />
-              </div>
+              {c.template === 'strategy' && (
+                <Help>
+                  {STRATEGIES.find((x) => x.id === c.strategy)?.name} is run by {AGENT_NAME[c.agent]}. The rules below still apply.
+                </Help>
+              )}
+              {c.template !== 'strategy' && (
+                <div className={s.opts}>
+                  <Opt
+                    on={c.agent === 'rotator'}
+                    onClick={() => set('agent', 'rotator')}
+                    title="Orphic Rotator"
+                    text="Moves between your lenders on a 7-day rate net of gas, inside your caps, and settles on your schedule. The same agent that runs Orphic's own book."
+                    note="Recommended for the first two templates."
+                  />
+                  <Opt
+                    on={c.agent === 'rotator-ranger'}
+                    onClick={() => set('agent', 'rotator-ranger')}
+                    title="Rotator plus Ranger"
+                    text="Rotator for the lenders, Ranger for one range on the Nest HYPE/USDC pool. The range is a bet and is labelled as one."
+                    note="Needs the Nest venue on."
+                  />
+                  <Opt
+                    on={c.agent === 'own'}
+                    onClick={() => set('agent', 'own')}
+                    title="Your own agent"
+                    text="Your own agent runs the book under the same rules: it can only call the venues you switched on, and every move is onchain."
+                    note="Orphic onboards it with you."
+                  />
+                </div>
+              )}
               {c.agent === 'own' && (
                 <Field
-                  label="Circuit agent id"
-                  help="From Circuit's agent page, 36 characters."
+                  label="Agent id"
+                  help="The id Orphic gives your agent at onboarding, 36 characters."
                   input={<input value={c.ownAgentId ?? ''} onChange={(e) => set('ownAgentId', e.target.value.trim())} placeholder="00000000-0000-0000-0000-000000000000" />}
                 />
               )}
@@ -425,13 +476,14 @@ export default function Builder() {
                       {c.name || 'Your vault'}
                     </div>
                     <div className={s.pvLine}>
-                      {TEMPLATE_NAME[c.template]} · {venuesOn.map((v) => venueName(v.id)).join(', ') || 'no venues yet'}
+                      {TEMPLATE_NAME[c.template]} ·{' '}
+                      {c.template === 'strategy' ? (STRATEGIES.find((x) => x.id === c.strategy)?.name ?? '') : venuesOn.map((v) => venueName(v.id)).join(', ') || 'no venues yet'}
                     </div>
                     <div className={s.bar}>
                       <i style={{ width: isPair ? '70%' : '100%', background: c.accent }} />
                     </div>
                     <small>{c.disclosure.slice(0, 80)}…</small>
-                    <small>Powered by Orphic · runs on Circuit</small>
+                    <small>Powered by Orphic</small>
                   </div>
                 </div>
               </div>
@@ -443,7 +495,14 @@ export default function Builder() {
               <div className={s.card}>
                 <div className={s.k}>What will be deployed</div>
                 <Row k="Template" v={TEMPLATE_NAME[c.template]} />
-                <Row k="Venues and caps" v={venuesOn.map((v) => `${venueName(v.id)} ${v.capPct}%`).join(' · ') || '–'} />
+                {c.template === 'strategy' ? (
+                  <Row
+                    k="Strategy"
+                    v={`${STRATEGIES.find((x) => x.id === c.strategy)?.name ?? '–'}${c.strategy === 'range' ? ` · ${c.rangeWidthPct}% range · flatten at ${c.flattenMovePct}%` : ''}`}
+                  />
+                ) : (
+                  <Row k="Venues and caps" v={venuesOn.map((v) => `${venueName(v.id)} ${v.capPct}%`).join(' · ') || '–'} />
+                )}
                 <Row k="Agent" v={c.agent === 'own' ? `Own agent ${c.ownAgentId ?? ''}` : AGENT_NAME[c.agent]} />
                 <Row k="Rules" v={`settle every ${c.settleDays} days · move when gain beats gas ${c.gasMultiple}× · pause on a ${c.pauseLossPct}% weekly loss`} />
                 {isPair && <Row k="Junior cover" v={`${c.juniorCoverPct}% of senior`} />}
@@ -502,7 +561,7 @@ export default function Builder() {
             )}
             {step < 5 ? (
               <button type="button" className={s.primary} onClick={() => setStep(step + 1)}>
-                {step === 4 ? 'Review' : `Continue to ${STEPS[step + 1].toLowerCase()}`}
+                {step === 4 ? 'Review' : `Continue to ${stepName(step + 1).toLowerCase()}`}
               </button>
             ) : null}
           </div>
@@ -511,7 +570,11 @@ export default function Builder() {
         <aside className={s.summary}>
           <div className={s.k}>Your vault so far</div>
           <Row k="Template" v={TEMPLATE_NAME[c.template]} hi={step === 0} />
-          <Row k="Venues on" v={venuesOn.map((v) => venueName(v.id)).join(', ') || 'none'} hi={step === 1} />
+          {c.template === 'strategy' ? (
+            <Row k="Strategy" v={STRATEGIES.find((x) => x.id === c.strategy)?.name ?? '–'} hi={step === 1} />
+          ) : (
+            <Row k="Venues on" v={venuesOn.map((v) => venueName(v.id)).join(', ') || 'none'} hi={step === 1} />
+          )}
           <Row k="Agent" v={AGENT_NAME[c.agent]} hi={step === 2} />
           <Row k="Settle" v={`every ${c.settleDays} days`} hi={step === 2} />
           {isPair && <Row k="Junior cover" v={`${c.juniorCoverPct}% of senior`} hi={step === 3} />}
@@ -615,6 +678,72 @@ function Row({ k, v, hi }: { k: string; v: string; hi?: boolean }) {
     <div className={`${s.row} ${hi ? s.rowHi : ''}`}>
       <span>{k}</span>
       <b>{v}</b>
+    </div>
+  )
+}
+
+/** A small picture of the chosen template: who puts money in, where it sits, where the yield goes. Redrawn as choices change. */
+function TemplatePicture({ c, venueName }: { c: BuilderConfig; venueName: (id: string) => string }) {
+  const venues = c.template === 'strategy' ? [STRATEGIES.find((x) => x.id === c.strategy)?.venue ?? ''] : c.venues.filter((v) => v.on).map((v) => venueName(v.id))
+  const pair = c.template === 'pair'
+  const box = (x: number, y: number, w: number, h: number, title: string, sub: string, tone: 'ink' | 'sen' | 'jun' | 'mut' = 'ink') => (
+    <g key={`${title}${y}`}>
+      <rect x={x} y={y} width={w} height={h} rx={8} className={`${s.pbox} ${tone === 'sen' ? s.pboxSen : tone === 'jun' ? s.pboxJun : tone === 'mut' ? s.pboxMut : ''}`} />
+      <text x={x + 12} y={y + (sub ? 22 : 25)} className={s.ptitle}>
+        {title}
+      </text>
+      {sub && (
+        <text x={x + 12} y={y + 40} className={s.psub}>
+          {sub}
+        </text>
+      )}
+    </g>
+  )
+  const edge = (d: string, jun = false) => <path key={d} d={d} className={`${s.pedge} ${jun ? s.pedgeJun : ''}`} />
+  const n = Math.min(5, venues.length)
+  const vy = (i: number) => (n <= 1 ? 126 : 36 + (i * 180) / (n - 1))
+  const strategyName = STRATEGIES.find((x) => x.id === c.strategy)?.name ?? ''
+  return (
+    <div className={s.picture}>
+      <svg viewBox="0 0 820 250" width="100%" role="img" aria-label="How this template moves money">
+        {box(10, 100, 150, 52, 'Depositors', 'USDC in, shares out')}
+        {pair ? (
+          <>
+            {box(260, 40, 170, 52, 'Senior', 'first in line', 'sen')}
+            {box(260, 150, 170, 52, 'Junior', 'takes the first loss', 'jun')}
+            {edge('M160 120 C 210 120 210 66 260 66')}
+            {edge('M160 132 C 210 132 210 176 260 176')}
+            {edge('M345 150 L345 92', true)}
+            <text x={352} y={126} className={s.psub}>
+              covers up to {c.juniorCoverPct}%
+            </text>
+          </>
+        ) : (
+          <>
+            {box(260, 100, 170, 52, c.template === 'senior' ? 'Senior' : 'Strategy vault', c.template === 'senior' ? 'one audited vault' : strategyName, c.template === 'senior' ? 'sen' : 'jun')}
+            {edge('M160 126 L260 126')}
+          </>
+        )}
+        {venues.slice(0, 5).map((v, i) => {
+          const y = vy(i)
+          const from = pair ? (i % 2 ? 176 : 66) : 126
+          return (
+            <g key={v}>
+              {box(560, y - 16, 250, 36, v, '', 'mut')}
+              {edge(`M430 ${from} C 500 ${from} 500 ${y + 2} 560 ${y + 2}`)}
+            </g>
+          )
+        })}
+        {venues.length === 0 && (
+          <text x={560} y={130} className={s.psub}>
+            no venues yet
+          </text>
+        )}
+        <text x={10} y={240} className={s.psub}>
+          {pair ? `Yield: senior holders; ${c.mgmtFeePct}% a year to junior; ${c.perfFeePct}% of yield split 70/20/10.` : `Yield: holders; ${c.perfFeePct}% of yield split 70/20/10.`} Principal stays
+          in the venues; only the agent moves it, and only between them.
+        </text>
+      </svg>
     </div>
   )
 }
