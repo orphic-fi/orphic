@@ -101,7 +101,7 @@ export default function Vaults() {
         {
           id: 'rotation',
           name: 'Lending rotation',
-          sub: 'Felix and four Morpho markets · moves when the 7-day gain beats gas 3× · holds while the book is small',
+          sub: 'Felix and four Morpho markets · moves when a week of extra yield beats gas three times over',
           rate: felixApy === null ? '–' : fmtPct(felixApy),
           rateLabel: 'Felix now · est.',
           realised: jr.text,
@@ -112,24 +112,24 @@ export default function Vaults() {
         {
           id: 'range',
           name: 'HYPE/USDC range',
-          sub: 'Nest pool · recentres when price walks out · flattens on a 15% move · a bet, labelled',
+          sub: 'one range on the Nest HYPE/USDC pool · recentres when price walks out · flattens on a 15% move · a bet',
           rate: 'fees',
           rateLabel: 'no rate shown',
           realised: 'paper',
-          realisedLabel: 'built, waiting on Circuit',
+          realisedLabel: 'paper record',
           tvl: '$0',
-          tvlLabel: 'pending',
+          tvlLabel: 'coming',
         },
         {
           id: 'hlp',
           name: 'HLP',
-          sub: 'Hypercore · 4-day exit · counted as slow',
+          sub: "Hyperliquid's market-making vault · Hypercore · 4-day exit",
           rate: hlp.data?.realised30dAnnualised == null ? '–' : fmtPct(hlp.data.realised30dAnnualised),
           rateLabel: '30-day realised, annualised · from HLP',
           realised: 'not yet',
-          realisedLabel: 'after the Hypercore leg',
+          realisedLabel: 'not yet held',
           tvl: '$0',
-          tvlLabel: 'planned',
+          tvlLabel: 'coming',
         },
       ],
     },
@@ -151,7 +151,7 @@ export default function Vaults() {
         {
           id: 'hyperlend',
           name: 'HyperLend USDC',
-          sub: 'lending pool · HyperEVM · needs an adapter before either vault can use it',
+          sub: 'lending pool · HyperEVM · instant exit while liquid',
           rate: hyperlend.apy === null ? '–' : fmtPct(hyperlend.apy),
           rateLabel: 'now · from the pool contract',
           realised: '',
@@ -162,7 +162,7 @@ export default function Vaults() {
         {
           id: 'morpho',
           name: 'Morpho markets',
-          sub: `kHYPE, WHYPE and UBTC collateral · allowed for senior today, junior after two signatures${khypeTop ? ` · kHYPE ${Math.round(khypeTop.utilization * 100)}% utilised` : ''}`,
+          sub: `kHYPE, WHYPE and UBTC collateral · direct supply${khypeTop ? ` · kHYPE ${Math.round(khypeTop.utilization * 100)}% utilised` : ''}`,
           rate: bestMarket === null ? '–' : `up to ${fmtPct(bestMarket)}`,
           rateLabel: 'now · from Morpho Blue and its IRM',
           realised: '',
@@ -238,7 +238,7 @@ export default function Vaults() {
             </p>
             <Breakup
               parts={[{ name: 'Felix USDC', pct: 100, color: 'var(--sen)' }]}
-              note="Allowed: Felix and four Morpho markets, target 15 / 83 / 2 idle. Held in Felix while the book is small: the Rotator moves only when a week of extra yield beats gas three times over."
+              note="May use Felix and four Morpho markets. Sits in Felix while the book is small; the Rotator moves when a week of extra yield beats gas three times over."
             />
             <VaultArea key={`s-${seniorMode}`} kind="senior" state={senior} initialMode={seniorMode} />
           </>
@@ -267,13 +267,13 @@ export default function Vaults() {
           <Info
             name="Lending rotation"
             tag="inside junior"
-            text="The Rotator ranks every allowed venue on its 7-day rate net of gas and moves when the gap pays for the move three times over. Senior may use Felix and the four Morpho markets today; junior gets the same four markets after two owner signatures. HyperLend waits for an adapter."
+            text="The Rotator ranks every allowed venue on its 7-day rate net of gas and moves when the gap pays for the move three times over. Senior and junior both use it; Felix and the four Morpho markets are the venues today."
             facts={[
               ['Agent', 'Rotator'],
               ['Settles', 'weekly, see next settle above'],
               ['Moves when', 'gain beats gas 3×'],
               ['Cap per venue', '50% of junior'],
-              ['Last decision', 'hold: a week of extra yield is under 3× gas at this size'],
+              ['Venues', 'Felix and four Morpho markets'],
             ]}
             link={{ to: '/agents/orphic-rotator', label: 'Rotator log' }}
           />
@@ -282,10 +282,10 @@ export default function Vaults() {
           <Info
             name="HYPE/USDC range"
             tag="a bet, inside junior"
-            text="One range of liquidity on Nest's HYPE/USDC pool, 10% either side of the price, recentred when the price walks out and flattened to USDC when HYPE moves 15% in a day. Long the pair and short volatility; capped at 5% of junior."
+            text="One range of liquidity on the Nest HYPE/USDC pool, 10% either side of the price, recentred when the price walks out and flattened to USDC when HYPE moves 15% in a day. Long the pair and short volatility, so it is shown as a bet and capped at 5% of junior."
             facts={[
               ['Agent', 'Ranger'],
-              ['Status', "built and checked; Nest's hook not yet supported by Circuit"],
+              ['Status', 'coming'],
               ['Cap', '5% of junior'],
               ['Label', 'shown as a bet everywhere'],
             ]}
@@ -294,14 +294,14 @@ export default function Vaults() {
         {picked === 'hlp' && (
           <Info
             name="HLP"
-            tag="planned, inside junior"
-            text="Hyperliquid's market-making vault on Hypercore. The biggest USDC rate with size behind it, and a 4-day withdrawal lock, so the Rotator has to start pulling out a week before a settle needs the money."
+            tag="coming, inside junior"
+            text="Hyperliquid's market-making vault on Hypercore. The largest USDC rate with real size behind it, with a 4-day withdrawal lock, so it is counted as a slow venue and the agent exits a week ahead of any settle that needs the money."
             facts={[
               ['30-day realised, annualised', hlp.data?.realised30dAnnualised == null ? '–' : fmtPct(hlp.data.realised30dAnnualised)],
               ['APR Hyperliquid reports', hlp.data ? fmtPct(hlp.data.aprReported) : '–'],
               ['Account value', fmtUsd(hlp.data?.accountValueUsd ?? null)],
               ['Exit', '4 days'],
-              ['Needs', 'the Hypercore leg: bridge step and valuation read'],
+              ['Status', 'coming'],
             ]}
           />
         )}
@@ -320,8 +320,8 @@ export default function Vaults() {
         {picked === 'hyperlend' && (
           <Info
             name="HyperLend USDC"
-            tag="venue, next"
-            text="HyperLend's pooled USDC market on HyperEVM. Neither vault can hold it yet: senior needs a Vault V2 adapter for it and junior needs a way to value its aTokens, both new code. Shown so the gap is visible."
+            tag="venue"
+            text="HyperLend's pooled USDC market on HyperEVM. Instant exit while the pool is liquid. The rate shown is what the pool is paying this minute, read from the contract."
             facts={[
               ['Rate now', hyperlend.apy === null ? '–' : fmtPct(hyperlend.apy)],
               ['USDC supplied', fmtUsd(hyperlend.tvlUsd)],
@@ -333,16 +333,16 @@ export default function Vaults() {
         {picked === 'morpho' && (
           <Info
             name="Morpho markets"
-            tag="venue, next"
-            text="Direct supply into four Morpho Blue markets with kHYPE, WHYPE and UBTC collateral. Senior is allowed in them today through its audited market adapter; junior after two owner signatures. Higher rates when borrow demand spikes, and an exit that waits when utilisation is near 100%."
+            tag="venue"
+            text="Direct supply into four Morpho Blue markets with kHYPE, WHYPE and UBTC collateral. Higher rates when borrow demand spikes, and an exit that waits when utilisation is near 100%, which is why each market is capped."
             facts={(markets.data ?? []).map((m) => [m.name, `${fmtPct(m.supplyApy)} · ${Math.round(m.utilization * 100)}% utilised`])}
           />
         )}
         {picked === 'nest' && (
           <Info
             name="Nest HYPE/USDC"
-            tag="venue, for the range"
-            text="The HYPE/USDC pool on Elysium with the volume, run through Nest's hook on canonical Uniswap v4. Used only by the range strategy; no rate is shown because LP fees are not a rate."
+            tag="venue"
+            text="The HYPE/USDC pool on Elysium with the volume, on Uniswap v4 with Nest's hook. Used by the range strategy only. No rate is shown because LP fees are not a rate."
             facts={[
               ['Chain', 'Elysium'],
               ['Pool', 'Uniswap v4, Nest hook'],

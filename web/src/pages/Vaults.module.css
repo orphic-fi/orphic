@@ -51,8 +51,8 @@
 
 .row {
   display: grid;
-  grid-template-columns: minmax(0, 2.2fr) 100px 110px 90px;
-  gap: 18px;
+  grid-template-columns: minmax(0, 2fr) 96px 110px 124px;
+  gap: 16px;
   align-items: baseline;
   width: 100%;
   text-align: left;
@@ -109,7 +109,7 @@
 .n {
   font-family: var(--serif);
   font-weight: 300;
-  font-size: 24px;
+  font-size: 23px;
   line-height: 1;
   letter-spacing: -0.02em;
   font-variant-numeric: tabular-nums;
