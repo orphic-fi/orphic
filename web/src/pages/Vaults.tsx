@@ -102,7 +102,7 @@ export default function Vaults() {
         {
           id: 'rotation',
           name: 'Lending rotation',
-          sub: 'Felix today; HyperLend and Morpho markets once the rules change lands · best 7-day rate net of gas',
+          sub: 'Felix and four Morpho markets · moves when the 7-day gain beats gas 3× · holds while the book is small',
           rate: felixApy === null ? '–' : fmtPct(felixApy),
           rateLabel: 'Felix now · est.',
           realised: jr.text,
@@ -152,7 +152,7 @@ export default function Vaults() {
         {
           id: 'hyperlend',
           name: 'HyperLend USDC',
-          sub: 'lending pool · HyperEVM · in the next rules change',
+          sub: 'lending pool · HyperEVM · needs an adapter before either vault can use it',
           rate: llama.data?.hyperlendUsdc.apy == null ? '–' : fmtPct(llama.data.hyperlendUsdc.apy),
           rateLabel: 'now · DefiLlama',
           realised: '',
@@ -163,7 +163,7 @@ export default function Vaults() {
         {
           id: 'morpho',
           name: 'Morpho markets',
-          sub: `kHYPE, WHYPE and UBTC collateral · direct supply · exit depends on utilisation${khypeTop ? ` · kHYPE ${Math.round(khypeTop.utilization * 100)}% utilised` : ''}`,
+          sub: `kHYPE, WHYPE and UBTC collateral · allowed for senior today, junior after two signatures${khypeTop ? ` · kHYPE ${Math.round(khypeTop.utilization * 100)}% utilised` : ''}`,
           rate: bestMarket === null ? '–' : `up to ${fmtPct(bestMarket)}`,
           rateLabel: 'spot · Morpho',
           realised: '',
@@ -237,7 +237,7 @@ export default function Vaults() {
               An audited Morpho vault. Earns the base lending rate at the venues the Rotator may use; junior absorbs the first loss before this vault does. Instant exit while the venues are liquid,
               otherwise at the weekly settle.
             </p>
-            <Breakup parts={[{ name: 'Felix USDC', pct: 100, color: 'var(--sen)' }]} note="100% in Felix today. HyperLend and the Morpho markets join once the rules change is signed." />
+            <Breakup parts={[{ name: 'Felix USDC', pct: 100, color: 'var(--sen)' }]} note="Allowed: Felix and four Morpho markets, target 15 / 83 / 2 idle. Held in Felix while the book is small: the Rotator moves only when a week of extra yield beats gas three times over." />
             <VaultArea key={`s-${seniorMode}`} kind="senior" state={senior} initialMode={seniorMode} />
           </>
         )}
@@ -265,13 +265,13 @@ export default function Vaults() {
           <Info
             name="Lending rotation"
             tag="inside junior"
-            text="The Rotator ranks every lending venue on its 7-day rate net of gas and moves junior's USDC to the best one when the gap pays for the move three times over. Today the allowlist is Felix only; HyperLend, Hypurrfi and the Morpho markets are in the rules change under review."
+            text="The Rotator ranks every allowed venue on its 7-day rate net of gas and moves when the gap pays for the move three times over. Senior may use Felix and the four Morpho markets today; junior gets the same four markets after two owner signatures. HyperLend waits for an adapter."
             facts={[
               ['Agent', 'Rotator'],
               ['Settles', 'weekly, see next settle above'],
               ['Moves when', 'gain beats gas 3×'],
               ['Cap per venue', '50% of junior'],
-              ['Review', 'Finn, before it goes live'],
+              ['Last decision', 'hold: a week of extra yield is under 3× gas at this size'],
             ]}
             link={{ to: '/agents/orphic-rotator', label: 'Rotator log' }}
           />
@@ -319,7 +319,7 @@ export default function Vaults() {
           <Info
             name="HyperLend USDC"
             tag="venue, next"
-            text="HyperLend's pooled USDC market on HyperEVM. Joins the allowlist in the rules change under review; the Rotator will move between it and Felix on the 7-day rate."
+            text="HyperLend's pooled USDC market on HyperEVM. Neither vault can hold it yet: senior needs a Vault V2 adapter for it and junior needs a way to value its aTokens, both new code. Shown so the gap is visible."
             facts={[
               ['Rate now', llama.data?.hyperlendUsdc.apy == null ? '–' : fmtPct(llama.data.hyperlendUsdc.apy)],
               ['Venue TVL', fmtUsd(llama.data?.hyperlendUsdc.tvlUsd ?? null)],
@@ -332,7 +332,7 @@ export default function Vaults() {
           <Info
             name="Morpho markets"
             tag="venue, next"
-            text="Direct supply into four Morpho Blue markets with kHYPE, WHYPE and UBTC collateral. Higher rates when borrow demand spikes, and an exit that waits when utilisation is near 100%. Junior only, capped per market."
+            text="Direct supply into four Morpho Blue markets with kHYPE, WHYPE and UBTC collateral. Senior is allowed in them today through its audited market adapter; junior after two owner signatures. Higher rates when borrow demand spikes, and an exit that waits when utilisation is near 100%."
             facts={(markets.data ?? []).map((m) => [m.name, `${fmtPct(m.supplyApy)} · ${Math.round(m.utilization * 100)}% utilised`])}
           />
         )}
