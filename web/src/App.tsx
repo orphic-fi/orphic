@@ -15,6 +15,7 @@ import LaunchAgent from './pages/LaunchAgent'
 import Ops from './pages/Ops'
 import Portfolio from './pages/Portfolio'
 import Vaults from './pages/Vaults'
+import Builder from './pages/Builder'
 
 export default function App() {
   return (
@@ -23,6 +24,7 @@ export default function App() {
         <Route element={<Layout />}>
           <Route path="/" element={<Home />} />
           <Route path="/vaults" element={<Vaults />} />
+          <Route path="/builder" element={<Builder />} />
           <Route path="/portfolio" element={<Portfolio />} />
           <Route path="/how-it-works" element={<HowItWorks />} />
           <Route path="/agents" element={<Agents />} />
