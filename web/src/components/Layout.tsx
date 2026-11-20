@@ -87,7 +87,7 @@ export default function Layout() {
             <nav className={s.nav} aria-label="Primary">
               <NavLink to="/vaults">Vaults</NavLink>
               <NavLink to="/portfolio">Portfolio</NavLink>
-              <NavLink to="/agents">Agents</NavLink>
+              <NavLink to="/builder">Builder</NavLink>
               <NavLink to="/docs">Docs</NavLink>
             </nav>
           </div>
