@@ -59,7 +59,7 @@ export default function Builder() {
     <div className={`wrap ${s.page}`}>
       <header className={s.top}>
         <div>
-          <div className={s.k}>Builder</div>
+          <div className={s.k}>Vaults as a service</div>
           <h1 className={s.h1}>Your own vault, on Orphic's rails</h1>
           <p className={s.lede}>
             Six short steps, about five minutes. You choose the shape, the venues, the agent and the fees; Orphic deploys the same audited contracts it runs itself and hands ownership to your Safe.
