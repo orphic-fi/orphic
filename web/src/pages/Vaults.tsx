@@ -1,21 +1,18 @@
-import { useMemo, useState } from 'react'
+import { useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import VaultArea from '../components/VaultArea'
 import { addresses } from '../config/addresses'
 import { MGMT_FEE_APY, useVault, type VaultState } from '../hooks/useVault'
-import { useLedger } from '../lib/elysiumLedger'
 import { fmtPct, fmtUsd } from '../lib/format'
 import { useMorphoVaultV1 } from '../lib/morpho'
 import { settleAtOrAfter } from '../lib/schedule'
-import { LIVE_RUN_STARTED_AT, SNIPER_PRESETS } from '../lib/sniperPresets'
 import { useLlamaRates, useMorphoMarkets } from '../lib/venues'
-import { SNIPER_SHADOW_WALLET } from './SniperPage'
 import s from './Vaults.module.css'
 
 /** Junior seeded and first deployed, 8 Nov 2026 21:27 UTC; the base for realised growth. */
 const JUNIOR_OPENED = 1794173220
 
-type RowId = 'senior' | 'junior' | 'rotation' | 'range' | 'hlp' | 'felix' | 'hyperlend' | 'morpho' | 'nest' | 'sniper'
+type RowId = 'senior' | 'junior' | 'rotation' | 'range' | 'hlp' | 'felix' | 'hyperlend' | 'morpho' | 'nest'
 
 interface Row {
   id: RowId
@@ -48,7 +45,6 @@ export default function Vaults() {
   const felix = useMorphoVaultV1(addresses.hyperEvm.felixVault)
   const markets = useMorphoMarkets()
   const llama = useLlamaRates()
-  const ledger = useLedger(SNIPER_SHADOW_WALLET)
   const [params] = useSearchParams()
   const [picked, setPicked] = useState<RowId>(params.get('junior') ? 'junior' : 'senior')
   const seniorMode = params.get('senior') === 'withdraw' ? 'exit' : 'deposit'
@@ -67,8 +63,6 @@ export default function Vaults() {
   const bestMarket = (markets.data ?? []).reduce<number | null>((b, m) => (b === null || m.supplyApy > b ? m.supplyApy : b), null)
   const khype = (markets.data ?? []).filter((m) => m.collateral === 'kHYPE')
   const khypeTop = khype.reduce<(typeof khype)[number] | null>((b, m) => (b === null || m.supplyApy > b.supplyApy ? m : b), null)
-  const sniperOpen = useMemo(() => (ledger.data?.positions ?? []).filter((p) => p.openedAt >= LIVE_RUN_STARTED_AT && p.held > 0n).length, [ledger.data])
-  const sniperSlots = SNIPER_PRESETS.reduce((n, p) => n + p.slots, 0)
 
   const rows: { title: string; note: string; rows: Row[] }[] = [
     {
@@ -190,24 +184,6 @@ export default function Vaults() {
         },
       ],
     },
-    {
-      title: 'Bets',
-      note: "Orphic's own wallet only, never a vault",
-      rows: [
-        {
-          id: 'sniper',
-          name: 'Sniper',
-          sub: 'Montra launches · three presets · the whole record on the ledger',
-          rate: '',
-          rateLabel: '',
-          realised: ledger.data ? `${sniperOpen} of ${sniperSlots}` : '–',
-          realisedLabel: 'slots in a trade',
-          tvl: 'own wallet',
-          tvlLabel: 'not vault money',
-          tone: 'down',
-        },
-      ],
-    },
   ]
 
   const total = senior.tvl !== null && junior.tvl !== null ? senior.tvl + junior.tvl : null
@@ -220,8 +196,8 @@ export default function Vaults() {
         </div>
         <h1 className={s.h1}>Agentic USDC vaults</h1>
         <p className={s.lede}>
-          One book, two ways in. Senior is first in line. Junior stands behind it, takes the first loss, and earns more. Agents move the book between the venues below and settle every week. Pick a
-          row to see where its money sits.
+          One book, two ways in. Senior is first in line. Junior stands behind it, takes the first loss, and earns more. Agents move the book between the venues below and settle every week. Pick a row
+          to see where its money sits.
         </p>
         {rows.map((g) => (
           <div key={g.title}>
@@ -251,7 +227,6 @@ export default function Vaults() {
             ))}
           </div>
         ))}
-        <p className={s.fine}>Estimates are estimates. Junior takes the first loss. Smart contracts can fail. Every move is onchain; the ledger lists all of them.</p>
       </section>
 
       <aside className={s.panel}>
@@ -269,7 +244,9 @@ export default function Vaults() {
         {picked === 'junior' && (
           <>
             <PanelHead name="Junior USDC" tag="takes the first loss" />
-            <p className={s.ptext}>Stands behind senior. Earns senior's 0.5% a year management fee in senior shares, plus whatever its own USDC earns at the same venues. Exits land at the weekly settle.</p>
+            <p className={s.ptext}>
+              Stands behind senior. Earns senior's 0.5% a year management fee in senior shares, plus whatever its own USDC earns at the same venues. Exits land at the weekly settle.
+            </p>
             <Breakup
               parts={
                 junior.projection
@@ -369,19 +346,6 @@ export default function Vaults() {
               ['Pool', 'Uniswap v4, Nest hook'],
               ['Used by', 'Ranger, once supported'],
             ]}
-          />
-        )}
-        {picked === 'sniper' && (
-          <Info
-            name="Sniper"
-            tag="Orphic's wallet, never a vault"
-            text="Buys new Elysium launches after they prove out and sells on set numbers. Runs on Orphic's own money so the record is public. It never touches senior or junior."
-            facts={[
-              ['Slots in a trade', ledger.data ? `${sniperOpen} of ${sniperSlots}` : '–'],
-              ['Presets', 'Proven, Early, Runner'],
-              ['Record', 'every trade on the ledger'],
-            ]}
-            link={{ to: '/agents/orphic-sniper', label: 'Open the Sniper page' }}
           />
         )}
       </aside>
