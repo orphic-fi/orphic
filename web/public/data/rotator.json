@@ -1,34 +1,54 @@
 {
-  "runAt": "2026-11-21T09:38:30.453Z",
+  "runAt": "2026-11-21T11:41:44.924Z",
   "mode": "live",
-  "vaultUsd": 316.482428,
-  "bookApy": 0.04504106043632357,
+  "vaultUsd": 316.486093,
+  "bookApy": 0.058431309758060594,
   "decision": {
-    "move": true,
-    "reason": "spread rule: 100% of the book sits in Felix USDC v1.1, above 90%; moving once for $0.07 (cap $2.00), weekly gain $0.02",
-    "actions": 9,
-    "movedAmount": 262.680415
+    "move": false,
+    "reason": "no deltas above the dust threshold",
+    "actions": 0,
+    "movedAmount": 0
   },
   "juniorIdle": {
-    "action": "withdraw",
-    "note": "withdraw 75.09 USDC from Felix back to idle (reserve 80.09)",
-    "idleUsdc": 5,
-    "felixUsdc": 76.112623
+    "action": "hold",
+    "note": "idle 80.09 USDC within 20.00 USDC of reserve 80.09 USDC",
+    "idleUsdc": 80.087177,
+    "felixUsdc": 1.025457
   },
   "juniorAccrue": {
     "called": false,
-    "note": "no fee shares pending"
+    "note": "senior accrued 2.0h ago"
   },
   "juniorSync": {
-    "called": true,
-    "note": "syncSenior sent"
+    "called": false,
+    "note": "senior supply unchanged; syncSenior not needed"
   },
   "alerts": [],
   "allocation": [
     {
+      "label": "kHYPE/USDC 62.5%",
+      "share": 0.4909270120756933,
+      "rate": 0.06099130439942075
+    },
+    {
+      "label": "kHYPE/USDC 77%",
+      "share": 0.10163612781557514,
+      "rate": 0.06097327179805407
+    },
+    {
+      "label": "WHYPE/USDC 77%",
+      "share": 0.20229745134488425,
+      "rate": 0.060968371994543843
+    },
+    {
+      "label": "UBTC/USDC 77%",
+      "share": 0.035139537711061444,
+      "rate": 0.019919675551780966
+    },
+    {
       "label": "Felix USDC v1.1",
-      "share": 1,
-      "rate": 0.04504106043632357
+      "share": 0.16999987105278588,
+      "rate": 0.05446021321152279
     }
   ]
 }
