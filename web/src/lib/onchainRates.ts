@@ -28,23 +28,27 @@ export const HLP_VAULT = "0xdfc24b077bc1425ad1dea75bcb6f8158e10df303";
 export const MORPHO_MARKETS = [
   {
     id: "0xe7aa046832007a975d4619260d221229e99cc27da2e6ef162881202b4cd2349b",
-    name: "kHYPE 62.5%",
+    name: "kHYPE loans",
     collateral: "kHYPE",
+    lltv: "62.5%",
   },
   {
     id: "0x96c47d3797394dd25e33f814216793a89d2e6edcc54d1dac3ab4c2b2d82a73b9",
-    name: "kHYPE 77%",
+    name: "kHYPE loans, higher LTV",
     collateral: "kHYPE",
+    lltv: "77%",
   },
   {
     id: "0xd7d38220652d19c87099c3b23de9a70a1893620a050c635d1a94bd947c9c59a8",
-    name: "WHYPE 77%",
+    name: "WHYPE loans",
     collateral: "WHYPE",
+    lltv: "77%",
   },
   {
     id: "0x45af9c72aa97978e143a646498c8922058b7c6f18b6f7b05d7316c8cf7ab942f",
-    name: "UBTC 77%",
+    name: "UBTC loans",
     collateral: "UBTC",
+    lltv: "77%",
   },
 ] as const;
 

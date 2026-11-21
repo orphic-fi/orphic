@@ -5,6 +5,7 @@ import { MGMT_FEE_APY, useVault, type VaultState } from "../hooks/useVault";
 import { fmtPct, fmtUsd } from "../lib/format";
 import { settleAtOrAfter } from "../lib/schedule";
 import {
+  MORPHO_MARKETS,
   useFelixSpotRate,
   useSeniorBreakup,
   useHlp,
@@ -104,7 +105,7 @@ export default function Vaults() {
   const seniorParts = (() => {
     if (!breakup || breakup.total === 0n)
       return [{ name: "Felix USDC", pct: 100, color: "var(--sen)" }];
-    const pctOf = (v: bigint) => Number((v * 10000n) / breakup.total) / 100;
+    const pctOf = (v: bigint) => Number((v * 1000n) / breakup.total) / 10;
     const palette = ["var(--sen)", "#4f7fb3", "#7a8fb0", "#a3b3c9", "#c8d2df"];
     const parts = [
       { name: "Felix USDC", pct: pctOf(breakup.felix), color: palette[0] },
@@ -184,7 +185,7 @@ export default function Vaults() {
         {
           id: "rotation",
           name: "Lending rotation",
-          sub: "Felix today, HyperLend from v1.2 · moves when a week of extra yield beats gas three times over",
+          sub: "Felix today, HyperLend from v1.2 · moves when a week of extra yield beats the gas it costs",
           rate: felixApy === null ? "–" : fmtPct(felixApy),
           rateLabel: "Felix now · est.",
           realised: jr.text,
@@ -357,7 +358,7 @@ export default function Vaults() {
             </p>
             <Breakup
               parts={seniorParts}
-              note="Felix and four Morpho markets, read from the venues. The agent moves when a week of extra yield beats gas three times over."
+              note="Felix and four Morpho markets, read from the venues. The agent moves when a week of extra yield beats the gas it costs."
             />
             <VaultArea
               key={`s-${seniorMode}`}
@@ -426,7 +427,7 @@ export default function Vaults() {
           <Info
             name="Lending rotation"
             tag="inside junior"
-            text="Junior's agent reads each allowed venue's rate from the venue itself and moves when the gap pays for the move three times over, keeping a reserve idle for exits and cover. Felix today; HyperLend joins with junior v1.2, capped at a fifth of the book."
+            text="Junior's agent reads each allowed venue's rate from the venue itself and moves when the gap pays for the move, keeping a reserve idle for exits and cover. Felix today; HyperLend joins with junior v1.2, capped at a fifth of the book."
             facts={[
               ["Agent", "Rotator"],
               ["Settles", "weekly, see next settle above"],
@@ -506,7 +507,7 @@ export default function Vaults() {
             tag="venue"
             text="Direct supply into four Morpho Blue markets with kHYPE, WHYPE and UBTC collateral. Higher rates when borrow demand spikes, and an exit that waits when utilisation is near 100%, which is why each market is capped."
             facts={(markets.data ?? []).map((m) => [
-              m.name,
+              `${m.name} (${MORPHO_MARKETS.find((x) => x.id === m.id)?.lltv ?? ""} LTV)`,
               `${fmtPct(m.supplyApy)} · ${Math.round(m.utilization * 100)}% utilised`,
             ])}
           />
