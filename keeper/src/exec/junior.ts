@@ -4,7 +4,7 @@ import { juniorAbi } from "../abi/junior.js";
 import { vaultV2Abi } from "../abi/vaultV2.js";
 import { erc20Abi } from "../abi/erc20.js";
 import { sendCall, type SignerCtx } from "./send.js";
-import { recallFromFelix } from "./juniorDeploy.js";
+import { recallAll } from "./juniorRotate.js";
 
 const WAD = 10n ** 18n;
 export const SETTLE_PERIOD = 7n * 24n * 3600n;
@@ -277,12 +277,12 @@ export async function juniorWeekly(ctx: JuniorCtx): Promise<JuniorWeeklyResult> 
     log(`junior weekly: ${result.note}`);
     return result;
   }
-  // Before settling, bring everything junior parked in Felix back to idle so the cover bill and matured exits
+  // Before settling, bring everything junior parked in Felix and HyperLend back to idle so the cover bill and matured exits
   // can be paid in full. The hourly idle step redeploys the excess afterwards.
   if (!isPlaceholder(ctx.cfg.vault)) {
-    const recall = await recallFromFelix({ cfg: ctx.cfg, dryRun: ctx.dryRun, client: ctx.client, signer: ctx.signer, agentPrivateKey: ctx.agentPrivateKey, log });
+    const recall = await recallAll({ cfg: ctx.cfg, dryRun: ctx.dryRun, client: ctx.client, signer: ctx.signer, agentPrivateKey: ctx.agentPrivateKey, log, felixRate: 0, gasCostUsdPerAction: 0, hyperlend: ctx.cfg.juniorVenues?.hyperlend && ctx.cfg.juniorVenues.hyperlend.junior.toLowerCase() === ctx.cfg.junior.toLowerCase() ? ctx.cfg.juniorVenues.hyperlend : undefined });
     result.recall = recall.note;
-    if (recall.txHash) result.recallTx = recall.txHash;
+    if (recall.txHashes.length) result.recallTx = recall.txHashes[recall.txHashes.length - 1];
   }
   if (ctx.dryRun) {
     result.note = "dry-run: settle not sent";

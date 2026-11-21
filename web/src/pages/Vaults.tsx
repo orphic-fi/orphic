@@ -6,6 +6,7 @@ import { fmtPct, fmtUsd } from "../lib/format";
 import { settleAtOrAfter } from "../lib/schedule";
 import {
   useFelixSpotRate,
+  useSeniorBreakup,
   useHlp,
   useHyperLendUsdc,
   useMorphoMarketRates,
@@ -99,7 +100,29 @@ export default function Vaults() {
     };
   })();
   const felixApy = felix.spotApy;
-  const seniorEst = felixApy === null ? null : felixApy - MGMT_FEE_APY;
+  const breakup = useSeniorBreakup();
+  const seniorParts = (() => {
+    if (!breakup || breakup.total === 0n)
+      return [{ name: "Felix USDC", pct: 100, color: "var(--sen)" }];
+    const pctOf = (v: bigint) => Number((v * 10000n) / breakup.total) / 100;
+    const palette = ["var(--sen)", "#4f7fb3", "#7a8fb0", "#a3b3c9", "#c8d2df"];
+    const parts = [
+      { name: "Felix USDC", pct: pctOf(breakup.felix), color: palette[0] },
+      ...breakup.markets.map((m, i) => ({
+        name: m.name,
+        pct: pctOf(m.usdc),
+        color: palette[1 + (i % 4)],
+      })),
+    ];
+    if (breakup.idle > 0n)
+      parts.push({
+        name: "idle USDC",
+        pct: pctOf(breakup.idle),
+        color: "var(--muted)",
+      });
+    return parts.filter((p) => p.pct > 0);
+  })();
+  const seniorEst = senior.apy ?? (felixApy === null ? null : felixApy - MGMT_FEE_APY);
   const bestMarket = (markets.data ?? []).reduce<number | null>(
     (b, m) => (b === null || m.supplyApy > b ? m.supplyApy : b),
     null,
@@ -120,7 +143,7 @@ export default function Vaults() {
           name: "Senior USDC",
           sub: "Morpho Vault V2 · first in line · instant exit while liquid, else at settle",
           rate: seniorEst === null ? "–" : fmtPct(seniorEst),
-          rateLabel: "now · Felix rate net of fee · est.",
+          rateLabel: "now · venues, net of fee · est.",
           realised: sr.text,
           realisedLabel:
             sr.text === "–" ? "reading" : `${sr.days} days, since open`,
@@ -161,7 +184,7 @@ export default function Vaults() {
         {
           id: "rotation",
           name: "Lending rotation",
-          sub: "Felix and four Morpho markets · moves when a week of extra yield beats gas three times over",
+          sub: "Felix today, HyperLend from v1.2 · moves when a week of extra yield beats gas three times over",
           rate: felixApy === null ? "–" : fmtPct(felixApy),
           rateLabel: "Felix now · est.",
           realised: jr.text,
@@ -333,8 +356,8 @@ export default function Vaults() {
               the weekly settle.
             </p>
             <Breakup
-              parts={[{ name: "Felix USDC", pct: 100, color: "var(--sen)" }]}
-              note="May use Felix and four Morpho markets. Sits in Felix while the book is small; the Rotator moves when a week of extra yield beats gas three times over."
+              parts={seniorParts}
+              note="Felix and four Morpho markets, read from the venues. The agent moves when a week of extra yield beats gas three times over."
             />
             <VaultArea
               key={`s-${seniorMode}`}
@@ -403,13 +426,13 @@ export default function Vaults() {
           <Info
             name="Lending rotation"
             tag="inside junior"
-            text="The Rotator ranks every allowed venue on its 7-day rate net of gas and moves when the gap pays for the move three times over. Senior and junior both use it; Felix and the four Morpho markets are the venues today."
+            text="Junior's agent reads each allowed venue's rate from the venue itself and moves when the gap pays for the move three times over, keeping a reserve idle for exits and cover. Felix today; HyperLend joins with junior v1.2, capped at a fifth of the book."
             facts={[
               ["Agent", "Rotator"],
               ["Settles", "weekly, see next settle above"],
               ["Moves when", "gain beats gas 3×"],
-              ["Cap per venue", "50% of junior"],
-              ["Venues", "Felix and four Morpho markets"],
+              ["Cap per venue", "HyperLend 20% of junior"],
+              ["Venues", "Felix today; HyperLend from v1.2"],
             ]}
             link={{ to: "/agents/orphic-rotator", label: "Rotator log" }}
           />

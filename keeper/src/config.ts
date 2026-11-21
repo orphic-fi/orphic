@@ -57,6 +57,8 @@ export interface SeniorConfig {
   morphoBlue: Address;
   morphoApi: string;
   hyperlendApi: string;
+  /** Junior's lender venue (v1.2+). Absent for junior v1 and v1.1, which have Felix only. */
+  juniorVenues?: { hyperlend?: { junior: Address; pool: Address; aToken: Address; maxFraction: number } };
   vault: Address | "0xTODO";
   /** JuniorVault. Skipped entirely while a placeholder. */
   junior: Address | "0xTODO";

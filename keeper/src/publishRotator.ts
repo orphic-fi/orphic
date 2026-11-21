@@ -17,7 +17,7 @@ const publicSummary = {
   vaultUsd: total,
   bookApy: r.bookApy?.current ?? null,
   decision: { move: r.decision.move, reason: r.decision.reason, actions: r.decision.actions, movedAmount: r.decision.movedAmount },
-  juniorIdle: r.juniorIdle ? { action: r.juniorIdle.action, note: r.juniorIdle.note, idleUsdc: r.juniorIdle.idleUsdc, felixUsdc: r.juniorIdle.felixUsdc } : undefined,
+  juniorIdle: r.juniorIdle ? { action: r.juniorIdle.action, note: r.juniorIdle.note, idleUsdc: r.juniorIdle.inputs?.idleUsdc, felixUsdc: r.juniorIdle.inputs?.felixUsdc, hyperlendUsdc: r.juniorIdle.inputs?.hyperlendUsdc } : undefined,
   juniorAccrue: r.juniorAccrue ? { called: r.juniorAccrue.called, note: r.juniorAccrue.note } : undefined,
   juniorSync: r.juniorSync ? { called: r.juniorSync.called, note: r.juniorSync.note } : undefined,
   alerts: r.alerts,

@@ -1,92 +1,107 @@
-import { useCallback, useMemo } from 'react'
-import type { Address } from 'viem'
-import { useReadContract, useReadContracts } from 'wagmi'
-import { erc20Abi } from '../abi/erc20'
-import { juniorAbi } from '../abi/junior'
-import { vaultV2Abi } from '../abi/vaultV2'
-import { ELYSIUM_IDS, asSupported, hyperEvm } from '../chains'
-import { DEPLOYED, ZERO, addresses, ops } from '../config/addresses'
-import { DEMO, DEMO_LOADED_AT_MS, demoFixture, demoScenario } from '../config/demo'
-import { useMorphoVaultV2 } from '../lib/morpho'
-import { useFelixSpotRate, useMorphoMarketRates } from '../lib/onchainRates'
-import { useSession } from './useSession'
+import { useCallback, useMemo } from "react";
+import type { Address } from "viem";
+import { useReadContract, useReadContracts } from "wagmi";
+import { erc20Abi } from "../abi/erc20";
+import { juniorAbi } from "../abi/junior";
+import { vaultV2Abi } from "../abi/vaultV2";
+import { ELYSIUM_IDS, asSupported, hyperEvm } from "../chains";
+import { DEPLOYED, ZERO, addresses, ops } from "../config/addresses";
+import {
+  DEMO,
+  DEMO_LOADED_AT_MS,
+  demoFixture,
+  demoScenario,
+} from "../config/demo";
+import { useMorphoVaultV2 } from "../lib/morpho";
+import {
+  useFelixSpotRate,
+  useMorphoMarketRates,
+  useSeniorBreakup,
+} from "../lib/onchainRates";
+import { useSession } from "./useSession";
 
-export type VaultKind = 'senior' | 'junior'
+export type VaultKind = "senior" | "junior";
 
-export const USDC_DECIMALS = 6
-export const ORPH_DECIMALS = 18
-export const SHARE_DECIMALS = 18
+export const USDC_DECIMALS = 6;
+export const ORPH_DECIMALS = 18;
+export const SHARE_DECIMALS = 18;
 
 /** True when the UI should behave as if contracts exist: deployed, or demo fixtures. */
-export const LIVE = DEPLOYED || DEMO
+export const LIVE = DEPLOYED || DEMO;
 /** Senior management fee, 0.5% a year, paid to junior. */
-export const MGMT_FEE_APY = 0.005
+export const MGMT_FEE_APY = 0.005;
 
 /** Required ORPH (wei) for a USDC deposit amount (6 decimals): amount * stakePerAsset / 1e6. */
 export function requiredStake(amount: bigint, stakePerAsset: bigint): bigint {
-  return (amount * stakePerAsset) / 10n ** BigInt(USDC_DECIMALS)
+  return (amount * stakePerAsset) / 10n ** BigInt(USDC_DECIMALS);
 }
 
 export interface VaultState {
-  kind: VaultKind
-  apy: number | null
-  apyLoading: boolean
-  apyError: boolean
-  apyUnlisted?: boolean
+  kind: VaultKind;
+  apy: number | null;
+  apyLoading: boolean;
+  apyError: boolean;
+  apyUnlisted?: boolean;
   /** Senior: APY is derived from Felix (where the assets sit) because Morpho does not index senior yet. */
-  apyDerived?: boolean
+  apyDerived?: boolean;
   /** Junior: the pieces behind the projection, for the explainer. */
-  projection?: { feeShare: number; deployedYield: number; seniorAssets: number; juniorAssets: number; idleShare: number } | null
+  projection?: {
+    feeShare: number;
+    deployedYield: number;
+    seniorAssets: number;
+    juniorAssets: number;
+    idleShare: number;
+  } | null;
   /** Unix ms of the last successful APY read. */
-  apyReadAt: number | undefined
+  apyReadAt: number | undefined;
   /** Unix ms of the last successful chain read. */
-  chainReadAt: number | undefined
-  tvl: number | null
-  cap: number | null
-  capUsed: number | null
+  chainReadAt: number | undefined;
+  tvl: number | null;
+  cap: number | null;
+  capUsed: number | null;
   /** Depositor balance in USDC units (6 decimals). */
-  balanceAssets: bigint | undefined
+  balanceAssets: bigint | undefined;
   /** Depositor share balance. Senior shares use USDC decimals, junior shares 18. */
-  balanceShares: bigint | undefined
-  usdcBalance: bigint | undefined
-  allowance: bigint | undefined
+  balanceShares: bigint | undefined;
+  usdcBalance: bigint | undefined;
+  allowance: bigint | undefined;
   /** Senior: maxWithdraw(user) in USDC. Junior: share balance. */
-  maxWithdraw: bigint | undefined
+  maxWithdraw: bigint | undefined;
   /** Senior shares per 1e6 USDC (osUSDC for 1 USDC), used for the deposit preview. */
-  seniorSharesPerUsdc: bigint | undefined
+  seniorSharesPerUsdc: bigint | undefined;
   /** Junior pricePerShare, 1e18. */
-  pricePerShare: bigint | undefined
+  pricePerShare: bigint | undefined;
   /** Junior lastSettle() unix seconds; undefined when unknown. */
-  lastSettle: number | undefined
+  lastSettle: number | undefined;
   /**
    * Junior live valuation, before the next settle freezes it into pricePerShare. perShare is 1e18 USDC per share;
    * unsettled is the USDC the whole vault has earned (or lost) since the last settle, pending senior fee shares included;
    * mine is the connected wallet's shares at the live price. Display only: exits are priced at settle, not here.
    */
-  nav: { perShare: bigint; unsettled: bigint; mine: bigint | undefined } | null
+  nav: { perShare: bigint; unsettled: bigint; mine: bigint | undefined } | null;
   /** Junior open exit request. */
-  exit: { shares: bigint; readyAt: number } | null
-  stakeBps: number
-  paused: boolean
+  exit: { shares: bigint; readyAt: number } | null;
+  stakeBps: number;
+  paused: boolean;
   stake: {
-    token: Address | undefined
-    address: Address
-    perAsset: bigint | undefined
-    pendingPerAsset: bigint | undefined
-    eta: number | undefined
-    walletCap: bigint | undefined
-    orphBalance: bigint | undefined
-    orphAllowance: bigint | undefined
-  }
-  cover: { usd: number; hours: number } | null
-  target: Address
-  usdc: Address
-  onElysium: boolean
-  onHyperEvm: boolean
-  refetch: () => void
+    token: Address | undefined;
+    address: Address;
+    perAsset: bigint | undefined;
+    pendingPerAsset: bigint | undefined;
+    eta: number | undefined;
+    walletCap: bigint | undefined;
+    orphBalance: bigint | undefined;
+    orphAllowance: bigint | undefined;
+  };
+  cover: { usd: number; hours: number } | null;
+  target: Address;
+  usdc: Address;
+  onElysium: boolean;
+  onHyperEvm: boolean;
+  refetch: () => void;
 }
 
-const emptyStake = (address: Address): VaultState['stake'] => ({
+const emptyStake = (address: Address): VaultState["stake"] => ({
   token: undefined,
   address,
   perAsset: undefined,
@@ -95,135 +110,336 @@ const emptyStake = (address: Address): VaultState['stake'] => ({
   walletCap: undefined,
   orphBalance: undefined,
   orphAllowance: undefined,
-})
+});
 
 export function useVault(kind: VaultKind): VaultState {
-  const { address: account, chainId } = useSession()
-  const onElysium = chainId !== undefined && ELYSIUM_IDS.includes(chainId)
-  const onHyperEvm = chainId === hyperEvm.id
-  const walletChainId = asSupported(chainId)
-  const probe = account ?? addresses.hyperEvm.referenceVault
+  const { address: account, chainId } = useSession();
+  const onElysium = chainId !== undefined && ELYSIUM_IDS.includes(chainId);
+  const onHyperEvm = chainId === hyperEvm.id;
+  const walletChainId = asSupported(chainId);
+  const probe = account ?? addresses.hyperEvm.referenceVault;
 
-  const vaultAddress = kind === 'senior' ? addresses.hyperEvm.senior : addresses.hyperEvm.junior
-  const target = onElysium ? addresses.elysium.bridgeEntry : vaultAddress
-  const usdc = onElysium ? addresses.elysium.usdc : addresses.hyperEvm.usdc
+  const vaultAddress =
+    kind === "senior" ? addresses.hyperEvm.senior : addresses.hyperEvm.junior;
+  const target = onElysium ? addresses.elysium.bridgeEntry : vaultAddress;
+  const usdc = onElysium ? addresses.elysium.usdc : addresses.hyperEvm.usdc;
 
-  const morphoAddress = DEPLOYED ? addresses.hyperEvm.senior : addresses.hyperEvm.referenceVault
-  const morpho = useMorphoVaultV2(morphoAddress)
+  const morphoAddress = DEPLOYED
+    ? addresses.hyperEvm.senior
+    : addresses.hyperEvm.referenceVault;
+  const morpho = useMorphoVaultV2(morphoAddress);
   // Senior's assets sit in Felix USDC (a Morpho vault the API does index). While the API has no entry for senior itself,
   // the estimate is Felix's net APY on the share of assets held there, minus senior's 0.5% a year management fee.
   // Felix's rate is computed from its own market positions on chain, not read from an indexer.
-  const felixMarkets = useMorphoMarketRates()
-  const felix = useFelixSpotRate(felixMarkets.data)
+  const felixMarkets = useMorphoMarketRates();
+  const felix = useFelixSpotRate(felixMarkets.data);
+  const breakup = useSeniorBreakup();
 
   const seniorReads = useReadContracts({
     contracts: [
-      { address: vaultAddress, abi: vaultV2Abi, functionName: 'totalAssets', chainId: hyperEvm.id },
-      { address: vaultAddress, abi: vaultV2Abi, functionName: 'balanceOf', args: [probe], chainId: hyperEvm.id },
+      {
+        address: vaultAddress,
+        abi: vaultV2Abi,
+        functionName: "totalAssets",
+        chainId: hyperEvm.id,
+      },
+      {
+        address: vaultAddress,
+        abi: vaultV2Abi,
+        functionName: "balanceOf",
+        args: [probe],
+        chainId: hyperEvm.id,
+      },
       // Vault V2 hard-codes maxWithdraw to 0 (it cannot promise a revert-free gate), so liquidity is idle USDC plus what the
       // liquidity adapter (Felix) lets the vault pull right now.
-      { address: addresses.hyperEvm.usdc, abi: erc20Abi, functionName: 'balanceOf', args: [vaultAddress], chainId: hyperEvm.id },
-      { address: vaultAddress, abi: vaultV2Abi, functionName: 'maxRate', chainId: hyperEvm.id },
-      { address: addresses.hyperEvm.junior, abi: juniorAbi, functionName: 'coverInProgress', chainId: hyperEvm.id },
-      { address: vaultAddress, abi: vaultV2Abi, functionName: 'convertToShares', args: [10n ** BigInt(USDC_DECIMALS)], chainId: hyperEvm.id },
-      { address: addresses.hyperEvm.felixVault, abi: vaultV2Abi, functionName: 'maxWithdraw', args: [addresses.hyperEvm.felixAdapter], chainId: hyperEvm.id },
-      { address: addresses.hyperEvm.felixVault, abi: vaultV2Abi, functionName: 'maxWithdraw', args: [addresses.hyperEvm.felixAdapter], chainId: hyperEvm.id },
+      {
+        address: addresses.hyperEvm.usdc,
+        abi: erc20Abi,
+        functionName: "balanceOf",
+        args: [vaultAddress],
+        chainId: hyperEvm.id,
+      },
+      {
+        address: vaultAddress,
+        abi: vaultV2Abi,
+        functionName: "maxRate",
+        chainId: hyperEvm.id,
+      },
+      {
+        address: addresses.hyperEvm.junior,
+        abi: juniorAbi,
+        functionName: "coverInProgress",
+        chainId: hyperEvm.id,
+      },
+      {
+        address: vaultAddress,
+        abi: vaultV2Abi,
+        functionName: "convertToShares",
+        args: [10n ** BigInt(USDC_DECIMALS)],
+        chainId: hyperEvm.id,
+      },
+      {
+        address: addresses.hyperEvm.felixVault,
+        abi: vaultV2Abi,
+        functionName: "maxWithdraw",
+        args: [addresses.hyperEvm.felixAdapter],
+        chainId: hyperEvm.id,
+      },
+      {
+        address: addresses.hyperEvm.felixVault,
+        abi: vaultV2Abi,
+        functionName: "maxWithdraw",
+        args: [addresses.hyperEvm.felixAdapter],
+        chainId: hyperEvm.id,
+      },
     ],
-    query: { enabled: DEPLOYED && kind === 'senior', refetchInterval: 30_000 },
-  })
-  const seniorShares = seniorReads.data?.[1]?.result as bigint | undefined
+    query: { enabled: DEPLOYED && kind === "senior", refetchInterval: 30_000 },
+  });
+  const seniorShares = seniorReads.data?.[1]?.result as bigint | undefined;
   const seniorAssets = useReadContract({
     address: vaultAddress,
     abi: vaultV2Abi,
-    functionName: 'convertToAssets',
+    functionName: "convertToAssets",
     args: [seniorShares ?? 0n],
     chainId: hyperEvm.id,
-    query: { enabled: DEPLOYED && kind === 'senior' && seniorShares !== undefined },
-  })
+    query: {
+      enabled: DEPLOYED && kind === "senior" && seniorShares !== undefined,
+    },
+  });
 
   const juniorReads = useReadContracts({
     contracts: [
-      { address: vaultAddress, abi: juniorAbi, functionName: 'totalAssets', chainId: hyperEvm.id },
-      { address: vaultAddress, abi: juniorAbi, functionName: 'depositCap', chainId: hyperEvm.id },
-      { address: vaultAddress, abi: juniorAbi, functionName: 'balanceOf', args: [probe], chainId: hyperEvm.id },
-      { address: vaultAddress, abi: juniorAbi, functionName: 'pricePerShare', chainId: hyperEvm.id },
-      { address: vaultAddress, abi: juniorAbi, functionName: 'seeded', chainId: hyperEvm.id },
-      { address: vaultAddress, abi: juniorAbi, functionName: 'depositsPaused', chainId: hyperEvm.id },
-      { address: vaultAddress, abi: juniorAbi, functionName: 'stakeToken', chainId: hyperEvm.id },
-      { address: vaultAddress, abi: juniorAbi, functionName: 'stakePerAsset', chainId: hyperEvm.id },
-      { address: vaultAddress, abi: juniorAbi, functionName: 'pendingStakePerAsset', chainId: hyperEvm.id },
-      { address: vaultAddress, abi: juniorAbi, functionName: 'stakeEta', chainId: hyperEvm.id },
-      { address: vaultAddress, abi: juniorAbi, functionName: 'walletCap', chainId: hyperEvm.id },
-      { address: vaultAddress, abi: juniorAbi, functionName: 'lastSettle', chainId: hyperEvm.id },
-      { address: vaultAddress, abi: juniorAbi, functionName: 'exitOf', args: [probe], chainId: hyperEvm.id },
-      { address: vaultAddress, abi: juniorAbi, functionName: 'totalSupply', chainId: hyperEvm.id },
-      { address: vaultAddress, abi: juniorAbi, functionName: 'pricedExitShares', chainId: hyperEvm.id },
+      {
+        address: vaultAddress,
+        abi: juniorAbi,
+        functionName: "totalAssets",
+        chainId: hyperEvm.id,
+      },
+      {
+        address: vaultAddress,
+        abi: juniorAbi,
+        functionName: "depositCap",
+        chainId: hyperEvm.id,
+      },
+      {
+        address: vaultAddress,
+        abi: juniorAbi,
+        functionName: "balanceOf",
+        args: [probe],
+        chainId: hyperEvm.id,
+      },
+      {
+        address: vaultAddress,
+        abi: juniorAbi,
+        functionName: "pricePerShare",
+        chainId: hyperEvm.id,
+      },
+      {
+        address: vaultAddress,
+        abi: juniorAbi,
+        functionName: "seeded",
+        chainId: hyperEvm.id,
+      },
+      {
+        address: vaultAddress,
+        abi: juniorAbi,
+        functionName: "depositsPaused",
+        chainId: hyperEvm.id,
+      },
+      {
+        address: vaultAddress,
+        abi: juniorAbi,
+        functionName: "stakeToken",
+        chainId: hyperEvm.id,
+      },
+      {
+        address: vaultAddress,
+        abi: juniorAbi,
+        functionName: "stakePerAsset",
+        chainId: hyperEvm.id,
+      },
+      {
+        address: vaultAddress,
+        abi: juniorAbi,
+        functionName: "pendingStakePerAsset",
+        chainId: hyperEvm.id,
+      },
+      {
+        address: vaultAddress,
+        abi: juniorAbi,
+        functionName: "stakeEta",
+        chainId: hyperEvm.id,
+      },
+      {
+        address: vaultAddress,
+        abi: juniorAbi,
+        functionName: "walletCap",
+        chainId: hyperEvm.id,
+      },
+      {
+        address: vaultAddress,
+        abi: juniorAbi,
+        functionName: "lastSettle",
+        chainId: hyperEvm.id,
+      },
+      {
+        address: vaultAddress,
+        abi: juniorAbi,
+        functionName: "exitOf",
+        args: [probe],
+        chainId: hyperEvm.id,
+      },
+      {
+        address: vaultAddress,
+        abi: juniorAbi,
+        functionName: "totalSupply",
+        chainId: hyperEvm.id,
+      },
+      {
+        address: vaultAddress,
+        abi: juniorAbi,
+        functionName: "pricedExitShares",
+        chainId: hyperEvm.id,
+      },
     ],
-    query: { enabled: DEPLOYED && kind === 'junior', refetchInterval: 30_000 },
-  })
+    query: { enabled: DEPLOYED && kind === "junior", refetchInterval: 30_000 },
+  });
 
   const juniorIdleRead = useReadContract({
     address: addresses.hyperEvm.usdc,
     abi: erc20Abi,
-    functionName: 'balanceOf',
+    functionName: "balanceOf",
     args: [addresses.hyperEvm.junior],
     chainId: hyperEvm.id,
-    query: { enabled: DEPLOYED && kind === 'junior', refetchInterval: 60_000 },
-  })
+    query: { enabled: DEPLOYED && kind === "junior", refetchInterval: 60_000 },
+  });
   // Senior as seen from junior: assets (for the fee projection), supply and the fee shares the next accrueInterest
   // would mint to junior (so junior's live value does not wait for a transaction).
   const seniorForJunior = useReadContracts({
     contracts: [
-      { address: addresses.hyperEvm.senior, abi: vaultV2Abi, functionName: 'totalAssets', chainId: hyperEvm.id },
-      { address: addresses.hyperEvm.senior, abi: vaultV2Abi, functionName: 'totalSupply', chainId: hyperEvm.id },
-      { address: addresses.hyperEvm.senior, abi: vaultV2Abi, functionName: 'accrueInterestView', chainId: hyperEvm.id },
+      {
+        address: addresses.hyperEvm.senior,
+        abi: vaultV2Abi,
+        functionName: "totalAssets",
+        chainId: hyperEvm.id,
+      },
+      {
+        address: addresses.hyperEvm.senior,
+        abi: vaultV2Abi,
+        functionName: "totalSupply",
+        chainId: hyperEvm.id,
+      },
+      {
+        address: addresses.hyperEvm.senior,
+        abi: vaultV2Abi,
+        functionName: "accrueInterestView",
+        chainId: hyperEvm.id,
+      },
     ],
-    query: { enabled: DEPLOYED && kind === 'junior', refetchInterval: 60_000 },
-  })
-  const seniorTotalForJunior = { data: seniorForJunior.data?.[0]?.result as bigint | undefined }
-  const stakeTokenRead = juniorReads.data?.[6]?.result as Address | undefined
-  const orphToken: Address = stakeTokenRead && stakeTokenRead !== ZERO ? stakeTokenRead : addresses.hyperEvm.orph
+    query: { enabled: DEPLOYED && kind === "junior", refetchInterval: 60_000 },
+  });
+  const seniorTotalForJunior = {
+    data: seniorForJunior.data?.[0]?.result as bigint | undefined,
+  };
+  const stakeTokenRead = juniorReads.data?.[6]?.result as Address | undefined;
+  const orphToken: Address =
+    stakeTokenRead && stakeTokenRead !== ZERO
+      ? stakeTokenRead
+      : addresses.hyperEvm.orph;
   const orphReads = useReadContracts({
     contracts: [
-      { address: orphToken, abi: erc20Abi, functionName: 'balanceOf', args: [probe], chainId: hyperEvm.id },
-      { address: orphToken, abi: erc20Abi, functionName: 'allowance', args: [probe, addresses.hyperEvm.junior], chainId: hyperEvm.id },
+      {
+        address: orphToken,
+        abi: erc20Abi,
+        functionName: "balanceOf",
+        args: [probe],
+        chainId: hyperEvm.id,
+      },
+      {
+        address: orphToken,
+        abi: erc20Abi,
+        functionName: "allowance",
+        args: [probe, addresses.hyperEvm.junior],
+        chainId: hyperEvm.id,
+      },
     ],
-    query: { enabled: DEPLOYED && kind === 'junior' && !!account && orphToken !== ZERO, refetchInterval: 20_000 },
-  })
+    query: {
+      enabled: DEPLOYED && kind === "junior" && !!account && orphToken !== ZERO,
+      refetchInterval: 20_000,
+    },
+  });
 
   const walletReads = useReadContracts({
     contracts: [
-      { address: usdc, abi: erc20Abi, functionName: 'balanceOf', args: [probe], chainId: walletChainId },
-      { address: usdc, abi: erc20Abi, functionName: 'allowance', args: [probe, target], chainId: walletChainId },
+      {
+        address: usdc,
+        abi: erc20Abi,
+        functionName: "balanceOf",
+        args: [probe],
+        chainId: walletChainId,
+      },
+      {
+        address: usdc,
+        abi: erc20Abi,
+        functionName: "allowance",
+        args: [probe, target],
+        chainId: walletChainId,
+      },
     ],
-    query: { enabled: DEPLOYED && !!account && (onElysium || onHyperEvm), refetchInterval: 20_000 },
-  })
+    query: {
+      enabled: DEPLOYED && !!account && (onElysium || onHyperEvm),
+      refetchInterval: 20_000,
+    },
+  });
 
-  const refetchSenior = seniorReads.refetch
-  const refetchSeniorAssets = seniorAssets.refetch
-  const refetchJunior = juniorReads.refetch
-  const refetchWallet = walletReads.refetch
-  const refetchMorpho = morpho.refetch
-  const refetchOrph = orphReads.refetch
+  const refetchSenior = seniorReads.refetch;
+  const refetchSeniorAssets = seniorAssets.refetch;
+  const refetchJunior = juniorReads.refetch;
+  const refetchWallet = walletReads.refetch;
+  const refetchMorpho = morpho.refetch;
+  const refetchOrph = orphReads.refetch;
   const refetch = useCallback(() => {
-    void refetchSenior()
-    void refetchSeniorAssets()
-    void refetchJunior()
-    void refetchWallet()
-    void refetchMorpho()
-    void refetchOrph()
-  }, [refetchSenior, refetchSeniorAssets, refetchJunior, refetchWallet, refetchMorpho, refetchOrph])
+    void refetchSenior();
+    void refetchSeniorAssets();
+    void refetchJunior();
+    void refetchWallet();
+    void refetchMorpho();
+    void refetchOrph();
+  }, [
+    refetchSenior,
+    refetchSeniorAssets,
+    refetchJunior,
+    refetchWallet,
+    refetchMorpho,
+    refetchOrph,
+  ]);
 
   return useMemo<VaultState>(() => {
-    const felixApy = felix.spotApy
-    const seniorTotal = seniorReads.data?.[0]?.result as bigint | undefined
-    const felixHeld = seniorReads.data?.[7]?.result as bigint | undefined
-    const felixShare = seniorTotal !== undefined && seniorTotal > 0n && felixHeld !== undefined ? Math.min(1, Number(felixHeld) / Number(seniorTotal)) : 1
-    const derivedSeniorApy = felixApy !== null ? Math.max(0, felixApy * felixShare - MGMT_FEE_APY) : null
-    const listedApy = morpho.data?.netApy ?? morpho.data?.apy ?? null
+    const felixApy = felix.spotApy;
+    // Blend of what each venue pays right now, weighted by where senior's money sits (read from the venues),
+    // net of the management fee. Idle earns nothing. Before the breakup loads, assume all of it sits in Felix.
+    let derivedSeniorApy: number | null = null;
+    if (felixApy !== null) {
+      if (breakup && breakup.total > 0n && felixMarkets.data) {
+        const total = Number(breakup.total);
+        let gross = felixApy * (Number(breakup.felix) / total);
+        for (const m of breakup.markets) {
+          const r =
+            felixMarkets.data.find((x) => x.name === m.name)?.supplyApy ?? 0;
+          gross += r * (Number(m.usdc) / total);
+        }
+        derivedSeniorApy = Math.max(0, gross - MGMT_FEE_APY);
+      } else {
+        derivedSeniorApy = Math.max(0, felixApy - MGMT_FEE_APY);
+      }
+    }
+    const listedApy = morpho.data?.netApy ?? morpho.data?.apy ?? null;
     const common = {
       apy: listedApy ?? (morpho.data?.unlisted ? derivedSeniorApy : null),
-      apyDerived: listedApy === null && derivedSeniorApy !== null && !!morpho.data?.unlisted,
+      apyDerived:
+        listedApy === null &&
+        derivedSeniorApy !== null &&
+        !!morpho.data?.unlisted,
       apyLoading: morpho.isLoading || felix.isLoading,
       apyError: morpho.isError && felix.spotApy === null && !felix.isLoading,
       apyUnlisted: morpho.data?.unlisted ?? false,
@@ -233,16 +449,27 @@ export function useVault(kind: VaultKind): VaultState {
       onElysium,
       onHyperEvm,
       refetch,
-    }
+    };
 
     if (DEMO) {
-      const f = demoFixture(demoScenario())
-      const now = DEMO_LOADED_AT_MS
-      if (kind === 'senior') {
-        const tvl = Number(f.senior.totalAssets) / 10 ** USDC_DECIMALS
-        const cap = ops.caps.seniorUsd
-        const perHour = ((Number(f.senior.totalAssets) * Number(f.senior.maxRate)) / 1e18) * 3600
-        const cover = f.senior.coverInProgress > 0n ? { usd: Number(f.senior.coverInProgress) / 10 ** USDC_DECIMALS, hours: perHour > 0 ? Number(f.senior.coverInProgress) / perHour : Infinity } : null
+      const f = demoFixture(demoScenario());
+      const now = DEMO_LOADED_AT_MS;
+      if (kind === "senior") {
+        const tvl = Number(f.senior.totalAssets) / 10 ** USDC_DECIMALS;
+        const cap = ops.caps.seniorUsd;
+        const perHour =
+          ((Number(f.senior.totalAssets) * Number(f.senior.maxRate)) / 1e18) *
+          3600;
+        const cover =
+          f.senior.coverInProgress > 0n
+            ? {
+                usd: Number(f.senior.coverInProgress) / 10 ** USDC_DECIMALS,
+                hours:
+                  perHour > 0
+                    ? Number(f.senior.coverInProgress) / perHour
+                    : Infinity,
+              }
+            : null;
         return {
           ...common,
           kind,
@@ -254,9 +481,14 @@ export function useVault(kind: VaultKind): VaultState {
           balanceShares: f.senior.shares,
           usdcBalance: f.wallet.usdc,
           allowance: f.wallet.usdcAllowance,
-          maxWithdraw: f.senior.availableLiquidity < f.senior.maxWithdraw ? f.senior.availableLiquidity : f.senior.maxWithdraw,
+          maxWithdraw:
+            f.senior.availableLiquidity < f.senior.maxWithdraw
+              ? f.senior.availableLiquidity
+              : f.senior.maxWithdraw,
           // osUSDC per 1 USDC, 18 decimals: 1e18 * 1e6 / pricePerShare(6dp)
-          seniorSharesPerUsdc: (10n ** BigInt(SHARE_DECIMALS) * 10n ** BigInt(USDC_DECIMALS)) / f.senior.pricePerShare,
+          seniorSharesPerUsdc:
+            (10n ** BigInt(SHARE_DECIMALS) * 10n ** BigInt(USDC_DECIMALS)) /
+            f.senior.pricePerShare,
           pricePerShare: undefined,
           lastSettle: undefined,
           nav: null,
@@ -265,10 +497,10 @@ export function useVault(kind: VaultKind): VaultState {
           paused: false,
           stake: emptyStake(addresses.hyperEvm.orph),
           cover,
-        }
+        };
       }
-      const tvl = Number(f.junior.totalAssets) / 10 ** USDC_DECIMALS
-      const cap = Number(f.junior.depositCap) / 10 ** USDC_DECIMALS
+      const tvl = Number(f.junior.totalAssets) / 10 ** USDC_DECIMALS;
+      const cap = Number(f.junior.depositCap) / 10 ** USDC_DECIMALS;
       return {
         ...common,
         kind,
@@ -277,7 +509,10 @@ export function useVault(kind: VaultKind): VaultState {
         tvl,
         cap,
         capUsed: Math.min(1, tvl / cap),
-        balanceAssets: (f.junior.shares * f.junior.pricePerShare) / 10n ** 18n / 10n ** BigInt(SHARE_DECIMALS - USDC_DECIMALS),
+        balanceAssets:
+          (f.junior.shares * f.junior.pricePerShare) /
+          10n ** 18n /
+          10n ** BigInt(SHARE_DECIMALS - USDC_DECIMALS),
         balanceShares: f.junior.shares,
         usdcBalance: f.wallet.usdc,
         allowance: f.wallet.usdcAllowance,
@@ -286,7 +521,13 @@ export function useVault(kind: VaultKind): VaultState {
         pricePerShare: f.junior.pricePerShare,
         lastSettle: Number(f.junior.lastSettle),
         nav: null,
-        exit: f.junior.exit.shares > 0n ? { shares: f.junior.exit.shares, readyAt: Number(f.junior.exit.readyAt) } : null,
+        exit:
+          f.junior.exit.shares > 0n
+            ? {
+                shares: f.junior.exit.shares,
+                readyAt: Number(f.junior.exit.readyAt),
+              }
+            : null,
         stakeBps: Number(f.junior.stakeBps),
         paused: f.junior.paused,
         stake: {
@@ -300,21 +541,33 @@ export function useVault(kind: VaultKind): VaultState {
           orphAllowance: f.wallet.orphAllowance,
         },
         cover: null,
-      }
+      };
     }
 
-    if (kind === 'senior') {
-      const totalAssets = seniorReads.data?.[0]?.result as bigint | undefined
-      const maxRate = seniorReads.data?.[3]?.result as bigint | undefined
-      const coverRaw = seniorReads.data?.[4]?.result as bigint | undefined
-      let cover: { usd: number; hours: number } | null = null
-      if (DEPLOYED && coverRaw !== undefined && coverRaw > 0n && totalAssets !== undefined && maxRate !== undefined) {
+    if (kind === "senior") {
+      const totalAssets = seniorReads.data?.[0]?.result as bigint | undefined;
+      const maxRate = seniorReads.data?.[3]?.result as bigint | undefined;
+      const coverRaw = seniorReads.data?.[4]?.result as bigint | undefined;
+      let cover: { usd: number; hours: number } | null = null;
+      if (
+        DEPLOYED &&
+        coverRaw !== undefined &&
+        coverRaw > 0n &&
+        totalAssets !== undefined &&
+        maxRate !== undefined
+      ) {
         // hours = cover / (totalAssets * maxRate / 1e18 * 3600); maxRate is per second, WAD scaled.
-        const perHour = ((Number(totalAssets) * Number(maxRate)) / 1e18) * 3600
-        cover = { usd: Number(coverRaw) / 10 ** USDC_DECIMALS, hours: perHour > 0 ? Number(coverRaw) / perHour : Infinity }
+        const perHour = ((Number(totalAssets) * Number(maxRate)) / 1e18) * 3600;
+        cover = {
+          usd: Number(coverRaw) / 10 ** USDC_DECIMALS,
+          hours: perHour > 0 ? Number(coverRaw) / perHour : Infinity,
+        };
       }
-      const tvl = DEPLOYED && totalAssets !== undefined ? Number(totalAssets) / 10 ** USDC_DECIMALS : null // reference TVL is Felix, not ours
-      const cap = ops.caps.seniorUsd
+      const tvl =
+        DEPLOYED && totalAssets !== undefined
+          ? Number(totalAssets) / 10 ** USDC_DECIMALS
+          : null; // reference TVL is Felix, not ours
+      const cap = ops.caps.seniorUsd;
       return {
         ...common,
         kind,
@@ -327,14 +580,16 @@ export function useVault(kind: VaultKind): VaultState {
         usdcBalance: walletReads.data?.[0]?.result as bigint | undefined,
         allowance: walletReads.data?.[1]?.result as bigint | undefined,
         maxWithdraw: (() => {
-          const idle = seniorReads.data?.[2]?.result as bigint | undefined
-          const felix = seniorReads.data?.[6]?.result as bigint | undefined
-          const mine = seniorAssets.data as bigint | undefined
-          if (idle === undefined || felix === undefined || mine === undefined) return undefined
-          const liquidity = idle + felix
-          return liquidity < mine ? liquidity : mine
+          const idle = seniorReads.data?.[2]?.result as bigint | undefined;
+          const felix = seniorReads.data?.[6]?.result as bigint | undefined;
+          const mine = seniorAssets.data as bigint | undefined;
+          if (idle === undefined || felix === undefined || mine === undefined)
+            return undefined;
+          const liquidity = idle + felix;
+          return liquidity < mine ? liquidity : mine;
         })(),
-        seniorSharesPerUsdc: seniorReads.data?.[5]?.result as bigint | undefined,
+        seniorSharesPerUsdc: seniorReads.data?.[5]?.result as
+          bigint | undefined,
         pricePerShare: undefined,
         lastSettle: undefined,
         nav: null,
@@ -343,59 +598,105 @@ export function useVault(kind: VaultKind): VaultState {
         paused: ops.paused,
         stake: emptyStake(addresses.hyperEvm.orph),
         cover,
-      }
+      };
     }
 
-    const totalAssets = juniorReads.data?.[0]?.result as bigint | undefined
-    const depositCap = juniorReads.data?.[1]?.result as bigint | undefined
+    const totalAssets = juniorReads.data?.[0]?.result as bigint | undefined;
+    const depositCap = juniorReads.data?.[1]?.result as bigint | undefined;
     // Junior's projected rate: senior's 0.5% fee spread over junior assets, plus Felix's rate on the share of junior
     // USDC the agent has deployed there (idle USDC earns nothing). An estimate from today's balances, not a promise.
-    const juniorIdle = juniorIdleRead.data as bigint | undefined
+    const juniorIdle = juniorIdleRead.data as bigint | undefined;
     const juniorProjection = (() => {
-      if (!DEPLOYED || totalAssets === undefined || totalAssets === 0n || seniorTotalForJunior.data === undefined) return null
-      const seniorA = Number(seniorTotalForJunior.data) / 10 ** USDC_DECIMALS
-      const juniorA = Number(totalAssets) / 10 ** USDC_DECIMALS
-      const idle = juniorIdle !== undefined ? Math.min(1, Number(juniorIdle) / Number(totalAssets)) : 1
-      const feeShare = (MGMT_FEE_APY * seniorA) / juniorA
-      const deployedYield = felixApy !== null ? felixApy * (1 - idle) : 0
-      return { feeShare, deployedYield, seniorAssets: seniorA, juniorAssets: juniorA, idleShare: idle }
-    })()
-    const shares = juniorReads.data?.[2]?.result as bigint | undefined
-    const pps = juniorReads.data?.[3]?.result as bigint | undefined
-    const seeded = juniorReads.data?.[4]?.result as boolean | undefined
-    const paused = juniorReads.data?.[5]?.result as boolean | undefined
-    const lastSettle = juniorReads.data?.[11]?.result as bigint | undefined
-    const exitRaw = juniorReads.data?.[12]?.result as readonly [bigint, bigint, number] | undefined
-    const juniorSupply = juniorReads.data?.[13]?.result as bigint | undefined
-    const pricedExit = juniorReads.data?.[14]?.result as bigint | undefined
-    const tvl = DEPLOYED && totalAssets !== undefined ? Number(totalAssets) / 10 ** USDC_DECIMALS : null
-    const cap = DEPLOYED && depositCap !== undefined ? Number(depositCap) / 10 ** USDC_DECIMALS : ops.caps.juniorUsd
-    const balanceAssets = shares !== undefined && pps !== undefined ? (shares * pps) / 10n ** 18n / 10n ** BigInt(SHARE_DECIMALS - USDC_DECIMALS) : undefined
+      if (
+        !DEPLOYED ||
+        totalAssets === undefined ||
+        totalAssets === 0n ||
+        seniorTotalForJunior.data === undefined
+      )
+        return null;
+      const seniorA = Number(seniorTotalForJunior.data) / 10 ** USDC_DECIMALS;
+      const juniorA = Number(totalAssets) / 10 ** USDC_DECIMALS;
+      const idle =
+        juniorIdle !== undefined
+          ? Math.min(1, Number(juniorIdle) / Number(totalAssets))
+          : 1;
+      const feeShare = (MGMT_FEE_APY * seniorA) / juniorA;
+      const deployedYield = felixApy !== null ? felixApy * (1 - idle) : 0;
+      return {
+        feeShare,
+        deployedYield,
+        seniorAssets: seniorA,
+        juniorAssets: juniorA,
+        idleShare: idle,
+      };
+    })();
+    const shares = juniorReads.data?.[2]?.result as bigint | undefined;
+    const pps = juniorReads.data?.[3]?.result as bigint | undefined;
+    const seeded = juniorReads.data?.[4]?.result as boolean | undefined;
+    const paused = juniorReads.data?.[5]?.result as boolean | undefined;
+    const lastSettle = juniorReads.data?.[11]?.result as bigint | undefined;
+    const exitRaw = juniorReads.data?.[12]?.result as
+      readonly [bigint, bigint, number] | undefined;
+    const juniorSupply = juniorReads.data?.[13]?.result as bigint | undefined;
+    const pricedExit = juniorReads.data?.[14]?.result as bigint | undefined;
+    const tvl =
+      DEPLOYED && totalAssets !== undefined
+        ? Number(totalAssets) / 10 ** USDC_DECIMALS
+        : null;
+    const cap =
+      DEPLOYED && depositCap !== undefined
+        ? Number(depositCap) / 10 ** USDC_DECIMALS
+        : ops.caps.juniorUsd;
+    const balanceAssets =
+      shares !== undefined && pps !== undefined
+        ? (shares * pps) /
+          10n ** 18n /
+          10n ** BigInt(SHARE_DECIMALS - USDC_DECIMALS)
+        : undefined;
     // Live NAV: what settle would freeze if it ran now. totalAssets already counts junior's minted senior shares
     // (senior is an allowlisted venue); add the management-fee shares senior owes junior but has not minted yet.
     const nav = (() => {
-      if (!DEPLOYED || totalAssets === undefined || juniorSupply === undefined || pricedExit === undefined || pps === undefined) return null
-      const liveSupply = juniorSupply - pricedExit
-      if (liveSupply <= 0n) return null
-      const sA = seniorForJunior.data?.[0]?.result as bigint | undefined
-      const sS = seniorForJunior.data?.[1]?.result as bigint | undefined
-      const view = seniorForJunior.data?.[2]?.result as readonly [bigint, bigint, bigint] | undefined
-      const pendingFee = sA !== undefined && sS !== undefined && view !== undefined && sS + view[2] > 0n ? (view[2] * sA) / (sS + view[2]) : 0n
-      const total = totalAssets + pendingFee
-      const scale = 10n ** BigInt(SHARE_DECIMALS - USDC_DECIMALS)
-      const perShare = (total * scale * 10n ** 18n) / liveSupply
-      const settledValue = (liveSupply * pps) / 10n ** 18n / scale
+      if (
+        !DEPLOYED ||
+        totalAssets === undefined ||
+        juniorSupply === undefined ||
+        pricedExit === undefined ||
+        pps === undefined
+      )
+        return null;
+      const liveSupply = juniorSupply - pricedExit;
+      if (liveSupply <= 0n) return null;
+      const sA = seniorForJunior.data?.[0]?.result as bigint | undefined;
+      const sS = seniorForJunior.data?.[1]?.result as bigint | undefined;
+      const view = seniorForJunior.data?.[2]?.result as
+        readonly [bigint, bigint, bigint] | undefined;
+      const pendingFee =
+        sA !== undefined &&
+        sS !== undefined &&
+        view !== undefined &&
+        sS + view[2] > 0n
+          ? (view[2] * sA) / (sS + view[2])
+          : 0n;
+      const total = totalAssets + pendingFee;
+      const scale = 10n ** BigInt(SHARE_DECIMALS - USDC_DECIMALS);
+      const perShare = (total * scale * 10n ** 18n) / liveSupply;
+      const settledValue = (liveSupply * pps) / 10n ** 18n / scale;
       return {
         perShare,
         unsettled: total - settledValue,
-        mine: shares !== undefined ? (shares * perShare) / 10n ** 18n / scale : undefined,
-      }
-    })()
+        mine:
+          shares !== undefined
+            ? (shares * perShare) / 10n ** 18n / scale
+            : undefined,
+      };
+    })();
     return {
       ...common,
       kind,
       nav,
-      apy: juniorProjection ? juniorProjection.feeShare + juniorProjection.deployedYield : null,
+      apy: juniorProjection
+        ? juniorProjection.feeShare + juniorProjection.deployedYield
+        : null,
       apyDerived: !!juniorProjection,
       projection: juniorProjection,
       apyLoading: false,
@@ -412,7 +713,10 @@ export function useVault(kind: VaultKind): VaultState {
       seniorSharesPerUsdc: undefined,
       pricePerShare: pps,
       lastSettle: lastSettle !== undefined ? Number(lastSettle) : undefined,
-      exit: exitRaw && exitRaw[0] > 0n ? { shares: exitRaw[0], readyAt: Number(exitRaw[1]) } : null,
+      exit:
+        exitRaw && exitRaw[0] > 0n
+          ? { shares: exitRaw[0], readyAt: Number(exitRaw[1]) }
+          : null,
       stakeBps: 2000, // design target: stakePerAsset is set from the 7-day TWAP so the stake is about 20% of the deposit
       paused: (paused ?? true) || seeded === false, // unknown state reads as paused, never as open
       stake: {
@@ -420,18 +724,23 @@ export function useVault(kind: VaultKind): VaultState {
         address: orphToken,
         perAsset: juniorReads.data?.[7]?.result as bigint | undefined,
         pendingPerAsset: juniorReads.data?.[8]?.result as bigint | undefined,
-        eta: juniorReads.data?.[9]?.result !== undefined ? Number(juniorReads.data[9].result as bigint) : undefined,
+        eta:
+          juniorReads.data?.[9]?.result !== undefined
+            ? Number(juniorReads.data[9].result as bigint)
+            : undefined,
         walletCap: juniorReads.data?.[10]?.result as bigint | undefined,
         orphBalance: orphReads.data?.[0]?.result as bigint | undefined,
         orphAllowance: orphReads.data?.[1]?.result as bigint | undefined,
       },
       cover: null,
-    }
+    };
   }, [
     kind,
     morpho,
     felix.spotApy,
     felix.isLoading,
+    breakup,
+    felixMarkets.data,
     seniorReads,
     seniorAssets,
     seniorShares,
@@ -448,5 +757,5 @@ export function useVault(kind: VaultKind): VaultState {
     onElysium,
     onHyperEvm,
     refetch,
-  ])
+  ]);
 }

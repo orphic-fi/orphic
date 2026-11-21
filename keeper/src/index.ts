@@ -8,7 +8,7 @@ import { buildPlan, validatePlan } from "./exec/plan.js";
 import { executePlan, weeklyClose, type ExecContext } from "./exec/send.js";
 import type { TxSigner } from "./exec/signer.js";
 import { accrueSenior, distributeRouter, juniorWeekly, readJuniorStatus, syncSenior, type JuniorCtx } from "./exec/junior.js";
-import { manageJuniorIdle } from "./exec/juniorDeploy.js";
+import { rotateJunior } from "./exec/juniorRotate.js";
 import { sampleOrphPrice } from "./data/orph.js";
 import { checkSeniorDrift } from "./exec/drift.js";
 import { bookApy, humanSummary, writeReport, type RunReport } from "./report.js";
@@ -163,16 +163,20 @@ export async function run(opts: RunOptions, cfg: SeniorConfig = loadConfig(opts.
     juniorWeeklyResult = { checked: false, note: `junior weekly failed: ${(err as Error).message}` };
     log(juniorWeeklyResult.note);
   }
-  // Junior idle: deploy excess to Felix or pull back to the reserve. Skipped on a settle tick, where the recall
-  // before settle takes precedence (the next hourly tick redeploys the excess).
+  // Junior rotation: Felix vs HyperLend by rate net of gas, reserve kept idle. Skipped on a settle tick, where the
+  // recall before settle takes precedence (the next hourly tick redeploys).
   let juniorIdle: RunReport["juniorIdle"];
   if (opts.weekly || juniorWeeklyResult?.settleDue) {
-    juniorIdle = { checked: false, action: "skipped", note: "settle tick: idle management deferred to the next hour" };
+    juniorIdle = { checked: false, action: "skipped", note: "settle tick: rotation deferred to the next hour" };
   } else {
     try {
-      juniorIdle = await manageJuniorIdle({ ...jctx, log });
+      const gasCostUsdPerAction = 300_000 * gasPriceGwei * 1e-9 * morpho.hypePriceUsd;
+      // The lender venue exists on junior v1.2 only; never offer it to an older junior, whose allowlist would refuse it.
+      const hlCfg = cfg.juniorVenues?.hyperlend;
+      const hl = hlCfg && hlCfg.junior.toLowerCase() === cfg.junior.toLowerCase() ? hlCfg : undefined;
+      juniorIdle = await rotateJunior({ ...jctx, log, felixRate: morpho.felix.netApy, gasCostUsdPerAction, hyperlend: hl, marginFactor: cfg.economics.marginFactor });
     } catch (err) {
-      juniorIdle = { checked: false, action: "skipped", note: `junior idle management failed: ${(err as Error).message}` };
+      juniorIdle = { checked: false, action: "skipped", note: `junior rotation failed: ${(err as Error).message}` };
       warnings.push(juniorIdle.note);
     }
   }

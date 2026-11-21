@@ -1,4 +1,4 @@
-import type { JuniorIdleResult } from "./exec/juniorDeploy.js";
+import type { JuniorRotateResult } from "./exec/juniorRotate.js";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import type { JuniorStatus, JuniorWeeklyResult, SyncResult } from "./exec/junior.js";
@@ -31,7 +31,7 @@ export interface RunReport {
   juniorSync?: SyncResult;
   juniorAccrue?: SyncResult;
   juniorStatus?: JuniorStatus;
-  juniorIdle?: JuniorIdleResult;
+  juniorIdle?: JuniorRotateResult;
   juniorWeekly?: JuniorWeeklyResult;
   orphPrice?: OrphPriceResult;
   drift?: DriftResult;

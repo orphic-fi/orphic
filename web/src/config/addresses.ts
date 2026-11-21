@@ -25,6 +25,7 @@ export const addresses = {
     // Felix USDC v1.1 (MetaMorpho), senior's liquidity adapter target, and the adapter that holds it.
     felixVault: '0x8A862fD6c12f9ad34C9c2ff45AB2b6712e8CEa27' as Address,
     felixAdapter: '0x0cdfdbC51744Ba1ed88bB8752098105fb43f37AC' as Address,
+    marketAdapter: '0x7b00b45e77afe7e07a2C9910FF9c5CE538386fb1' as Address,
     // ORPH stake token. Placeholder until deployment.
     orph: ZERO,
     // Reference vault used for APY and TVL while our vault does not exist.
