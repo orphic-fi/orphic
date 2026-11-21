@@ -268,6 +268,8 @@ export interface DecideInput {
   plan: PlanStep[];
   hypePriceUsd: number;
   gasPriceGwei: number;
+  /** What the keeper has already spent in the rolling 24 hours (from the spend ledger). */
+  spentTodayUsd?: number;
 }
 
 export function decide(input: DecideInput): Decision {
@@ -308,10 +310,15 @@ export function decide(input: DecideInput): Decision {
   const biggestReduced = !!biggest && movedKeys.has(biggest.key as Hex | "felix") && biggest.amount < biggest.currentAmount;
   const spreadApplies = actions > 0 && maxConc > 0 && concentration > maxConc && biggestReduced && totalCostUsd <= costCap && weeklyGainUsd > -costCap;
 
+  const dailyCap = e.dailyCostCapUsd ?? 0;
+  const spent = input.spentTodayUsd ?? 0;
+  const overDailyCap = dailyCap > 0 && spent + totalCostUsd > dailyCap;
+
   let move = false;
   let reason: string;
   let spread: Decision["spread"];
   if (actions === 0) reason = "no deltas above the dust threshold";
+  else if (overDailyCap) reason = `daily cost cap: ${fmt(spent)} spent in 24h, this move costs ${fmt(totalCostUsd)}, cap ${fmt(dailyCap)}`;
   else if (spreadApplies) {
     move = true;
     spread = { concentration, maxConcentration: maxConc, costCapUsd: costCap };

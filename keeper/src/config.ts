@@ -43,6 +43,9 @@ export interface Economics {
    *  weekly gain does not clear the margin, as long as the one-off cost stays under spreadCostCapUsd. 0 disables. */
   maxConcentration?: number;
   spreadCostCapUsd?: number;
+  /** Hard ceiling on what the keeper may spend on gas plus slippage in any rolling 24 hours, across senior and
+   *  junior moves. The margin rule decides whether a move pays; this decides whether we can afford it today. */
+  dailyCostCapUsd?: number;
   slippagePenalty: number;
   gasPerAction: number;
   fallbackGasPriceGwei: number;
@@ -151,6 +154,7 @@ export function validateConfig(cfg: SeniorConfig): void {
   const mc = cfg.economics.maxConcentration ?? 0;
   if (mc < 0 || mc > 1) throw new Error("maxConcentration must be between 0 and 1");
   if ((cfg.economics.spreadCostCapUsd ?? 0) < 0) throw new Error("spreadCostCapUsd must be >= 0");
+  if ((cfg.economics.dailyCostCapUsd ?? 0) < 0) throw new Error("dailyCostCapUsd must be >= 0");
 }
 
 /** Tiny .env loader so the keeper has no dotenv dependency. Never logs values. */

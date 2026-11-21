@@ -66,7 +66,8 @@
   },
 
   "economics": {
-    "marginFactor": 3,
+    "marginFactor": 1,
+    "dailyCostCapUsd": 1,
     "maxConcentration": 0.9,
     "spreadCostCapUsd": 2,
     "slippagePenalty": 0.0002,

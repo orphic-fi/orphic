@@ -39,6 +39,8 @@ export interface JuniorRotateCtx extends IdleCtx {
   hyperlend?: HyperlendVenue;
   minMoveUsdc?: number;
   marginFactor?: number;
+  /** What the daily cost cap still allows; a plan costing more than this holds (reserve pull-backs are exempt). */
+  dailyCostLeftUsd?: number;
 }
 
 export interface JuniorRotateResult {
@@ -115,6 +117,11 @@ export async function rotateJunior(ctx: JuniorRotateCtx): Promise<JuniorRotateRe
   if (plan.actions.length === 0) {
     log(`junior: hold (${plan.reason})`);
     return { checked: true, action: "hold", plan, inputs, note: plan.reason };
+  }
+  if (ctx.dailyCostLeftUsd !== undefined && !plan.reason.startsWith("reserve") && plan.costUsd > ctx.dailyCostLeftUsd) {
+    const note = `daily cost cap: this move costs $${plan.costUsd.toFixed(2)}, $${ctx.dailyCostLeftUsd.toFixed(2)} left today`;
+    log(`junior: hold (${note})`);
+    return { checked: true, action: "hold", plan, inputs, note };
   }
   const steps = plan.actions.map((a) => encode(ctx, junior, a));
   const verb = `${plan.reason}: ${steps.map((s) => s.label).join("; ")}`;

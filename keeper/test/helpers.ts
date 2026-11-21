@@ -23,7 +23,10 @@ export function fixture<T = unknown>(name: string): T {
 
 export function cfg(overrides: Partial<SeniorConfig> = {}): SeniorConfig {
   const base = loadConfig();
-  return structuredClone({ ...base, ...overrides, constraints: { ...base.constraints, ...(overrides.constraints ?? {}) }, economics: { ...base.economics, ...(overrides.economics ?? {}) } });
+  // The rules under test assume the production economics (3x margin, no daily cap); the live config may be tuned
+  // for a proving period, so tests pin these and override explicitly where a test wants something else.
+  const economics = { ...base.economics, marginFactor: 3, dailyCostCapUsd: 0, ...(overrides.economics ?? {}) };
+  return structuredClone({ ...base, ...overrides, constraints: { ...base.constraints, ...(overrides.constraints ?? {}) }, economics });
 }
 
 /** The pre-deploy shape of the config: every Orphic address still a placeholder. Tests of placeholder handling use this. */

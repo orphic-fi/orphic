@@ -207,6 +207,18 @@ describe("rule 4: move only when gain beats cost by the margin", () => {
     expect(d2.move).toBe(false);
   });
 
+  it("daily cost cap: holds when today's spend plus this move would exceed the cap", () => {
+    const c = cfg({ economics: { marginFactor: 1, dailyCostCapUsd: 1 } as never });
+    const s = state({ totalAssets: 316, idle: 6, positions: { felix: 310 } }, c);
+    const p = proposeAllocation({ cfg: c, markets: markets(), felix: felix(), state: s });
+    const { plan } = buildPlan(c, s, p);
+    const fresh = decide({ cfg: c, proposal: p, plan, hypePriceUsd: 30, gasPriceGwei: 0.1, spentTodayUsd: 0 });
+    const capped = decide({ cfg: c, proposal: p, plan, hypePriceUsd: 30, gasPriceGwei: 0.1, spentTodayUsd: 0.99 });
+    expect(fresh.totalCostUsd).toBeLessThan(1);
+    expect(capped.move).toBe(false);
+    expect(capped.reason).toMatch(/daily cost cap/);
+  });
+
   it("projects a lower rate for the market we crowd into", () => {
     const c = cfg();
     const s = state({}, c);

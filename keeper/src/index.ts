@@ -9,6 +9,7 @@ import { executePlan, weeklyClose, type ExecContext } from "./exec/send.js";
 import type { TxSigner } from "./exec/signer.js";
 import { accrueSenior, distributeRouter, juniorWeekly, readJuniorStatus, syncSenior, type JuniorCtx } from "./exec/junior.js";
 import { rotateJunior } from "./exec/juniorRotate.js";
+import { readSpend, recordSpend, spentSince } from "./exec/spend.js";
 import { sampleOrphPrice } from "./data/orph.js";
 import { checkSeniorDrift } from "./exec/drift.js";
 import { bookApy, humanSummary, writeReport, type RunReport } from "./report.js";
@@ -96,7 +97,9 @@ export async function run(opts: RunOptions, cfg: SeniorConfig = loadConfig(opts.
   const proposal = proposeAllocation({ cfg, markets: morpho.markets, felix: morpho.felix, state });
   const { plan, notes: planNotes } = buildPlan(cfg, state, proposal);
   validatePlan(cfg, state, plan);
-  const decision = decide({ cfg, proposal, plan, hypePriceUsd: morpho.hypePriceUsd, gasPriceGwei });
+  const nowTs = Math.floor(opts.now.getTime() / 1000);
+  const spentTodayUsd = spentSince(opts.opsDir ? readSpend(opts.opsDir) : [], nowTs - 24 * 3600);
+  const decision = decide({ cfg, proposal, plan, hypePriceUsd: morpho.hypePriceUsd, gasPriceGwei, spentTodayUsd });
 
   const ctx: ExecContext = { cfg, dryRun: opts.dryRun, opsDir: opts.opsDir, state, markets: morpho.markets, client, signer: deps.signer, agentPrivateKey: opts.agentPrivateKey, log };
 
@@ -104,7 +107,10 @@ export async function run(opts: RunOptions, cfg: SeniorConfig = loadConfig(opts.
   let execution: ExecutionResult[] = [];
   let error: string | undefined;
   try {
-    if (decision.move) execution = await executePlan(ctx, plan);
+    if (decision.move) {
+      execution = await executePlan(ctx, plan);
+      if (!opts.dryRun && opts.opsDir) recordSpend(opts.opsDir, { ts: nowTs, what: "senior", costUsd: decision.totalCostUsd, note: decision.reason });
+    }
     else {
       log(`HOLD: ${decision.reason}`);
       if (plan.length) await executePlan({ ...ctx, dryRun: true }, plan).then(() => undefined);
@@ -174,7 +180,10 @@ export async function run(opts: RunOptions, cfg: SeniorConfig = loadConfig(opts.
       // The lender venue exists on junior v1.2 only; never offer it to an older junior, whose allowlist would refuse it.
       const hlCfg = cfg.juniorVenues?.hyperlend;
       const hl = hlCfg && hlCfg.junior.toLowerCase() === cfg.junior.toLowerCase() ? hlCfg : undefined;
-      juniorIdle = await rotateJunior({ ...jctx, log, felixRate: morpho.felix.netApy, gasCostUsdPerAction, hyperlend: hl, marginFactor: cfg.economics.marginFactor });
+      const dailyCap = cfg.economics.dailyCostCapUsd ?? 0;
+      const spentNow = spentSince(opts.opsDir ? readSpend(opts.opsDir) : [], nowTs - 24 * 3600);
+      juniorIdle = await rotateJunior({ ...jctx, log, felixRate: morpho.felix.netApy, gasCostUsdPerAction, hyperlend: hl, marginFactor: cfg.economics.marginFactor, dailyCostLeftUsd: dailyCap > 0 ? Math.max(0, dailyCap - spentNow) : undefined });
+      if (juniorIdle.action === "move" && juniorIdle.txHashes?.length && juniorIdle.plan && opts.opsDir) recordSpend(opts.opsDir, { ts: nowTs, what: "junior", costUsd: juniorIdle.plan.costUsd, note: juniorIdle.plan.reason });
     } catch (err) {
       juniorIdle = { checked: false, action: "skipped", note: `junior rotation failed: ${(err as Error).message}` };
       warnings.push(juniorIdle.note);
