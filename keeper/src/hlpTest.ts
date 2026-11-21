@@ -3,6 +3,7 @@
  *
  *   bridge    USDC on HyperEVM -> HyperCore perps balance, through Circle's CoreDepositWallet (a new Core account
  *             pays a 1 USDC creation fee on its first deposit; deposits of 1 USDC or less to a new account fail)
+ *   toperp    HyperCore spot -> perps balance (usdClassTransfer); the deposit wallet credits a new account on spot
  *   deposit   HyperCore perps balance -> HLP vault (vaultTransfer, isDeposit true)
  *   status    what the wallet holds on Core and in HLP, plus the vault's own numbers
  *   withdraw  HLP -> HyperCore perps balance (vaultTransfer, isDeposit false; HLP has a 4-day lock from the last
@@ -88,6 +89,18 @@ async function main() {
     return;
   }
 
+  if (cmd === "toperp" || cmd === "tospot") {
+    if (!(amount > 0)) throw new Error(`${cmd} <usdc>`);
+    try {
+      const res = await exchange.usdClassTransfer({ amount: String(amount), toPerp: cmd === "toperp" });
+      logLine(cmd, `${amount} USDC ${cmd === "toperp" ? "spot -> perps" : "perps -> spot"}: ${JSON.stringify(res)}`);
+    } catch (err) {
+      logLine(cmd, `${amount} USDC class transfer FAILED: ${(err as Error).message}`);
+      process.exitCode = 1;
+    }
+    return;
+  }
+
   if (cmd === "deposit" || cmd === "withdraw") {
     if (!(amount > 0)) throw new Error(`${cmd} <usdc>`);
     const usd = Math.round(amount * 1e6);
@@ -100,7 +113,7 @@ async function main() {
     }
     return;
   }
-  throw new Error("usage: hlpTest <bridge <usdc> | deposit <usdc> | status | withdraw <usdc>>");
+  throw new Error("usage: hlpTest <bridge <usdc> | toperp <usdc> | deposit <usdc> | status | withdraw <usdc> | tospot <usdc>>");
 }
 
 main().catch((e) => {

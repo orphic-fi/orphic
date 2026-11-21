@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       cmd:
-        description: "bridge | deposit | status | withdraw"
+        description: "bridge | toperp | deposit | status | withdraw | tospot"
         required: true
         default: "status"
       amount:
