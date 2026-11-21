@@ -15591,14 +15591,14 @@ var senior_default = {
     { key: "0x96c47d3797394dd25e33f814216793a89d2e6edcc54d1dac3ab4c2b2d82a73b9", label: "kHYPE/USDC 77%", weight: 0.1 },
     { key: "0xd7d38220652d19c87099c3b23de9a70a1893620a050c635d1a94bd947c9c59a8", label: "WHYPE/USDC 77%", weight: 0.2 },
     { key: "0x45af9c72aa97978e143a646498c8922058b7c6f18b6f7b05d7316c8cf7ab942f", label: "UBTC/USDC 77%", weight: 0.05 },
-    { key: "felix", label: "Felix USDC v1.1", weight: 0.15 },
-    { key: "idle", label: "Idle USDC", weight: 0.02 }
+    { key: "felix", label: "Felix USDC v1.1", weight: 0.17 },
+    { key: "idle", label: "Idle USDC", weight: 0 }
   ],
   excludedMarkets: [
     "0x8eecdd03f1e12e03c04abefdb3f536067e071ad2c3f63e7b04c9a034889d0ba5"
   ],
   constraints: {
-    minIdle: 0.02,
+    minIdle: 0,
     minFelix: 0.1,
     maxShareOfMarketSupply: 0.5,
     maxShareOfFelixAssets: 0.5,

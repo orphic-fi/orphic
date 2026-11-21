@@ -36,8 +36,8 @@ describe("rule 3: proposal", () => {
     expect(line(p, UBTC).weight).toBeLessThan(0.19);
     const bucket = [K62, K77, WHYPE, UBTC].reduce((s, k) => s + line(p, k).weight, 0);
     expect(bucket).toBeCloseTo(0.83, 6);
-    expect(line(p, "felix").weight).toBeCloseTo(0.15, 6);
-    expect(line(p, "idle").weight).toBeCloseTo(0.02, 6);
+    expect(line(p, "felix").weight).toBeCloseTo(0.17, 6);
+    expect(line(p, "idle").weight).toBeCloseTo(0, 6);
     expect(line(p, K77).reasons.some((r) => r.includes("rate tilt"))).toBe(true);
   });
 
@@ -61,9 +61,9 @@ describe("rule 3: proposal", () => {
     expect(sumAmounts(p)).toBeCloseTo(2_000_000, 3);
   });
 
-  it("keeps idle at or above 2% and Felix at or above 10%", () => {
-    const c = cfg();
-    c.targets = c.targets.map((t) => (t.key === "idle" ? { ...t, weight: 0.02 } : t));
+  it("keeps idle at or above minIdle and Felix at or above 10%", () => {
+    const c = cfg({ constraints: { minIdle: 0.02 } as never });
+    c.targets = c.targets.map((t) => (t.key === "idle" ? { ...t, weight: 0.02 } : t.key === "felix" ? { ...t, weight: 0.15 } : t));
     // Tiny markets everywhere so most weight is pushed toward Felix and idle.
     const ms = markets().map((m) => ({ ...m, supplyAssets: 50_000, borrowAssets: 40_000 }));
     const p = proposeAllocation({ cfg: c, markets: ms, felix: felix(), state: state({}, c) });
