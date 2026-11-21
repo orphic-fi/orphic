@@ -11,7 +11,7 @@
  * Every call appends one line to ops/hlp-test.log. Amounts are in whole USDC on the command line.
  * Needs AGENT_PRIVATE_KEY (the keeper's key) and sends real transactions: run only on purpose.
  */
-import { appendFileSync, mkdirSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync } from "node:fs";
 import { resolve } from "node:path";
 import { createPublicClient, createWalletClient, http, parseAbi, type Address, type Hex } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
@@ -40,8 +40,11 @@ function logLine(cmd: string, text: string) {
 
 async function main() {
   const [cmd, amountArg] = process.argv.slice(2);
-  const key = process.env.AGENT_PRIVATE_KEY as Hex | undefined;
+  const raw = process.env.AGENT_PRIVATE_KEY?.trim();
+  const key = raw ? ((raw.startsWith("0x") ? raw : `0x${raw}`) as Hex) : undefined;
   const rpc = process.env.HYPEREVM_RPC ?? "https://rpc.hyperliquid.xyz/evm";
+  mkdirSync(opsDir, { recursive: true });
+  if (!existsSync(resolve(opsDir, "hlp-test.log"))) appendFileSync(resolve(opsDir, "hlp-test.log"), "");
   const pub = createPublicClient({ chain: hyperEvm, transport: http(rpc) });
   const info = new hl.InfoClient({ transport: new hl.HttpTransport() });
 
