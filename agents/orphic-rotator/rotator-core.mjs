@@ -13521,6 +13521,9 @@ function validateConfig(cfg) {
     throw new Error("maxClipFraction must be in (0, 1]");
   }
   if (cfg.economics.marginFactor < 1) throw new Error("marginFactor must be >= 1");
+  const mc = cfg.economics.maxConcentration ?? 0;
+  if (mc < 0 || mc > 1) throw new Error("maxConcentration must be between 0 and 1");
+  if ((cfg.economics.spreadCostCapUsd ?? 0) < 0) throw new Error("spreadCostCapUsd must be >= 0");
 }
 function loadDotEnv(path = resolve(keeperRoot, ".env")) {
   if (!existsSync(path)) return;
@@ -14377,16 +14380,29 @@ function decide(input) {
   const slippageCostUsd = movedAmount * e.slippagePenalty;
   const totalCostUsd = gasCostUsd + slippageCostUsd;
   const threshold = e.marginFactor * totalCostUsd;
+  const maxConc = e.maxConcentration ?? 0;
+  const costCap = e.spreadCostCapUsd ?? 0;
+  const total = proposal.lines.reduce((s, l) => s + l.currentAmount, 0);
+  const biggest = proposal.lines.reduce((b, l) => b === null || l.currentAmount > b.currentAmount ? l : b, null);
+  const concentration = total > 0 && biggest ? biggest.currentAmount / total : 0;
+  const biggestReduced = !!biggest && movedKeys.has(biggest.key) && biggest.amount < biggest.currentAmount;
+  const spreadApplies = actions > 0 && maxConc > 0 && concentration > maxConc && biggestReduced && totalCostUsd <= costCap && weeklyGainUsd > -costCap;
   let move = false;
   let reason;
+  let spread;
   if (actions === 0) reason = "no deltas above the dust threshold";
-  else if (weeklyGainUsd <= 0) reason = `projected weekly gain ${fmt(weeklyGainUsd)} is not positive`;
+  else if (spreadApplies) {
+    move = true;
+    spread = { concentration, maxConcentration: maxConc, costCapUsd: costCap };
+    reason = `spread rule: ${(concentration * 100).toFixed(0)}% of the book sits in ${biggest.label}, above ${(maxConc * 100).toFixed(0)}%; moving once for ${fmt(totalCostUsd)} (cap ${fmt(costCap)}), weekly gain ${fmt(weeklyGainUsd)}`;
+  } else if (weeklyGainUsd <= 0) reason = `projected weekly gain ${fmt(weeklyGainUsd)} is not positive`;
   else if (weeklyGainUsd <= threshold) reason = `projected weekly gain ${fmt(weeklyGainUsd)} below ${e.marginFactor}x cost ${fmt(totalCostUsd)} = ${fmt(threshold)}`;
   else {
     move = true;
     reason = `projected weekly gain ${fmt(weeklyGainUsd)} exceeds ${e.marginFactor}x cost ${fmt(totalCostUsd)} = ${fmt(threshold)}`;
   }
   return {
+    spread,
     move,
     movedAmount: r6(movedAmount),
     weeklyGainUsd,
@@ -15019,6 +15035,32 @@ async function accrueSenior(ctx) {
   log(`accrue: senior.accrueInterest() sent ${hash2} (${d.reason})`);
   return { called: true, txHash: hash2, note: `accrueInterest sent: ${d.reason}` };
 }
+var feeRouterAbi = [
+  { type: "function", name: "distribute", inputs: [], outputs: [], stateMutability: "nonpayable" },
+  { type: "function", name: "totalParked", inputs: [{ name: "token", type: "address" }], outputs: [{ type: "uint256" }], stateMutability: "view" }
+];
+async function distributeRouter(ctx) {
+  const log = ctx.log ?? ((l) => console.log(l));
+  const router = ctx.cfg.feeRouter;
+  if (!router || isPlaceholder(router) || !ctx.client) return { called: false, note: "no fee router; distribute skipped" };
+  const [bal, parked] = await Promise.all([
+    ctx.client.readContract({ address: ctx.cfg.usdc, abi: erc20Abi, functionName: "balanceOf", args: [router] }),
+    ctx.client.readContract({ address: router, abi: feeRouterAbi, functionName: "totalParked", args: [ctx.cfg.usdc] })
+  ]);
+  const free = bal > parked ? bal - parked : 0n;
+  const minimum = 10n ** BigInt(ctx.cfg.usdcDecimals);
+  if (free < minimum) {
+    log(`distribute: skip (router holds ${(Number(free) / 10 ** ctx.cfg.usdcDecimals).toFixed(2)} USDC free)`);
+    return { called: false, note: "nothing to split" };
+  }
+  if (ctx.dryRun) {
+    log(`distribute: would split ${(Number(free) / 10 ** ctx.cfg.usdcDecimals).toFixed(2)} USDC (dry-run)`);
+    return { called: false, note: "dry-run: would distribute" };
+  }
+  const hash2 = await sendCall(ctx, router, encodeFunctionData({ abi: feeRouterAbi, functionName: "distribute" }), "distribute");
+  log(`distribute: FeeRouter.distribute() sent ${hash2}`);
+  return { called: true, txHash: hash2, note: "distribute sent" };
+}
 async function juniorWeekly(ctx) {
   const log = ctx.log ?? ((l) => console.log(l));
   if (!juniorEnabled(ctx.cfg)) {
@@ -15407,6 +15449,12 @@ async function run(opts, cfg = loadConfig(opts.configPath), deps = {}) {
     log(juniorAccrue.note);
   }
   try {
+    const d = await distributeRouter(jctx);
+    if (d.called) log(`router: ${d.note}`);
+  } catch (err) {
+    log(`distribute failed: ${err.message}`);
+  }
+  try {
     juniorSync = await syncSenior(jctx);
   } catch (err) {
     juniorSync = { called: false, note: `syncSenior failed: ${err.message}` };
@@ -15571,6 +15619,8 @@ var senior_default = {
   },
   economics: {
     marginFactor: 3,
+    maxConcentration: 0.9,
+    spreadCostCapUsd: 2,
     slippagePenalty: 2e-4,
     gasPerAction: 4e5,
     fallbackGasPriceGwei: 0.1,

@@ -39,6 +39,10 @@ export interface Constraints {
 
 export interface Economics {
   marginFactor: number;
+  /** Spread rule: when more than this share of the book sits in one venue and the plan reduces it, move even if the
+   *  weekly gain does not clear the margin, as long as the one-off cost stays under spreadCostCapUsd. 0 disables. */
+  maxConcentration?: number;
+  spreadCostCapUsd?: number;
   slippagePenalty: number;
   gasPerAction: number;
   fallbackGasPriceGwei: number;
@@ -142,6 +146,9 @@ export function validateConfig(cfg: SeniorConfig): void {
     throw new Error("maxClipFraction must be in (0, 1]");
   }
   if (cfg.economics.marginFactor < 1) throw new Error("marginFactor must be >= 1");
+  const mc = cfg.economics.maxConcentration ?? 0;
+  if (mc < 0 || mc > 1) throw new Error("maxConcentration must be between 0 and 1");
+  if ((cfg.economics.spreadCostCapUsd ?? 0) < 0) throw new Error("spreadCostCapUsd must be >= 0");
 }
 
 /** Tiny .env loader so the keeper has no dotenv dependency. Never logs values. */

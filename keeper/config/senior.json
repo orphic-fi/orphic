@@ -65,6 +65,8 @@
 
   "economics": {
     "marginFactor": 3,
+    "maxConcentration": 0.9,
+    "spreadCostCapUsd": 2,
     "slippagePenalty": 0.0002,
     "gasPerAction": 400000,
     "fallbackGasPriceGwei": 0.1,

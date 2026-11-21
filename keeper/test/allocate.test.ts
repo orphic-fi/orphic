@@ -163,6 +163,50 @@ describe("rule 4: move only when gain beats cost by the margin", () => {
     expect(d.move).toBe(false);
   });
 
+  it("spread rule: a small book almost all in one venue moves once even when the gain is below the margin", () => {
+    const c = cfg({ economics: { maxConcentration: 0.9, spreadCostCapUsd: 0.5 } as never });
+    // $316 book, 98% in Felix: the weekly gain is cents, the margin rule would hold forever.
+    const s = state({ totalAssets: 316, idle: 6, positions: { felix: 310 } }, c);
+    const p = proposeAllocation({ cfg: c, markets: markets(), felix: felix(), state: s });
+    const { plan } = buildPlan(c, s, p);
+    const d = decide({ cfg: c, proposal: p, plan, hypePriceUsd: 30, gasPriceGwei: 0.1 });
+    expect(plan.length).toBeGreaterThan(0);
+    expect(d.weeklyGainUsd).toBeLessThan(d.threshold);
+    expect(d.totalCostUsd).toBeLessThan(0.5);
+    expect(d.move).toBe(true);
+    expect(d.spread?.concentration).toBeGreaterThan(0.9);
+    expect(d.reason).toMatch(/spread rule/);
+  });
+
+  it("spread rule: stays off for a big book, where the margin rule governs", () => {
+    const c = cfg({ economics: { maxConcentration: 0.9, spreadCostCapUsd: 0.5 } as never });
+    const s = state({}, c); // $2M, 98% in Felix; slippage alone is hundreds of dollars
+    const p = proposeAllocation({ cfg: c, markets: markets(), felix: felix(), state: s });
+    const { plan } = buildPlan(c, s, p);
+    const d = decide({ cfg: c, proposal: p, plan, hypePriceUsd: 30, gasPriceGwei: 0.1 });
+    expect(d.totalCostUsd).toBeGreaterThan(0.5);
+    expect(d.move).toBe(false);
+    expect(d.spread).toBeUndefined();
+  });
+
+  it("spread rule: off when maxConcentration is 0, and off once the book is spread", () => {
+    const off = cfg({ economics: { maxConcentration: 0, spreadCostCapUsd: 0.5 } as never });
+    const s = state({ totalAssets: 316, idle: 6, positions: { felix: 310 } }, off);
+    const p = proposeAllocation({ cfg: off, markets: markets(), felix: felix(), state: s });
+    const { plan } = buildPlan(off, s, p);
+    expect(decide({ cfg: off, proposal: p, plan, hypePriceUsd: 30, gasPriceGwei: 0.1 }).move).toBe(false);
+
+    const on = cfg({ economics: { maxConcentration: 0.9, spreadCostCapUsd: 0.5 } as never });
+    const spreadState = stateAtTarget(316, on);
+    spreadState.positions[K62]! -= 5;
+    spreadState.positions.felix! += 5;
+    const p2 = proposeAllocation({ cfg: on, markets: markets(), felix: felix(), state: spreadState });
+    const { plan: plan2 } = buildPlan(on, spreadState, p2);
+    const d2 = decide({ cfg: on, proposal: p2, plan: plan2, hypePriceUsd: 30, gasPriceGwei: 0.1 });
+    expect(d2.spread).toBeUndefined();
+    expect(d2.move).toBe(false);
+  });
+
   it("projects a lower rate for the market we crowd into", () => {
     const c = cfg();
     const s = state({}, c);
