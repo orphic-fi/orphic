@@ -1,16 +1,16 @@
 {
-  "name": "Senior: apply fee recipient and gate (after the timelock)",
+  "name": "Senior: apply fee recipient and gate (timelock expired 20 Nov 17:18 UTC)",
   "deployer": "0x9EDfDc92A46adbfa7b6189295376bEF4599c5F29",
   "chainId": 999,
   "script": "manual",
   "steps": [
     {
-      "title": "setManagementFeeRecipient(junior v1.1)",
-      "what": "Applies the submitted change: fee shares now mint to the new junior.",
+      "title": "execute setManagementFeeRecipient(junior v1.1)",
+      "what": "Senior's 0.5% management fee shares go to junior v1.1 from now on. Anyone may send this; the timelock has passed.",
       "to": "0x3F7382bd8BFC6C548CAa2D7B4dfCe628B12A9759",
       "data": "0x9faae4640000000000000000000000009c265f8fa3cc4ec68a2491c7135a649f2b58269b",
       "value": "0x0",
-      "gas": "0x249f0",
+      "gas": "0x30d40",
       "readbacks": [
         {
           "label": "managementFeeRecipient == junior v1.1",
@@ -21,12 +21,12 @@
       ]
     },
     {
-      "title": "setReceiveSharesGate(gate)",
-      "what": "Applies the submitted change: the gate is live on senior.",
+      "title": "execute setReceiveSharesGate(gate)",
+      "what": "The SeniorShareGate now decides who may receive senior shares; it refuses new shares while a loss is open.",
       "to": "0x3F7382bd8BFC6C548CAa2D7B4dfCe628B12A9759",
       "data": "0x2cb19f98000000000000000000000000e502ba6d40b3296a6bf709592ae1b74ba6f5a931",
       "value": "0x0",
-      "gas": "0x249f0",
+      "gas": "0x30d40",
       "readbacks": [
         {
           "label": "receiveSharesGate == gate",

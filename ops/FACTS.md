@@ -200,3 +200,5 @@ web/src/lib/onchainRates.ts. Morpho markets: Morpho Blue market() + idToMarketPa
 
 ## Vaults page: Private Credit row (20 Nov)
 - Third Core row "Orphic Private Credit": 90-day terms, KYC required, coming soon. Rate column reads "fixed", set per term, no number shown by design. Side panel: status Deposits not open, first window to be announced. No contract exists yet.
+
+- Plan8 (execute fee recipient + gate on senior; anyone may send, timelock passed 20 Nov 17:18 UTC) and plan8b (requestExit of all 79.999999999999 old-junior shares from 0x2DBE; notice to 28 Nov 00:00 UTC, priced at the settle of Sun 29 Nov, claim then) written 21 Nov, both simulated ok. After the claim: deposit into v1.1, setDepositsPaused(false), switch keeper and web to v1.1.

@@ -1,0 +1,26 @@
+{
+  "name": "Old junior: request exit of all shares (from the hardware wallet)",
+  "deployer": "0x2DBE1Ba83084dAF698Acea79CBAfe0493f42FecC",
+  "chainId": 999,
+  "script": "manual",
+  "steps": [
+    {
+      "title": "requestExit(all 79.999999999999 shares) on old junior",
+      "what": "Locks your 80 shares in the old junior for exit. Notice runs to 28 Nov 00:00 UTC; the exit is priced at the first settle after that (Sun 29 Nov 21:41 UTC) and claimed then.",
+      "to": "0x20D5F4f78858D257eA047EB5F47773E361697F2E",
+      "data": "0x721c6513000000000000000000000000000000000000000000000004563918244f30bdc0",
+      "value": "0x0",
+      "gas": "0x30d40",
+      "readbacks": [
+        {
+          "label": "balanceOf(owner) == 0 (shares moved into the vault)",
+          "to": "0x20D5F4f78858D257eA047EB5F47773E361697F2E",
+          "data": "0x70a082310000000000000000000000002dbe1ba83084daf698acea79cbafe0493f42fecc",
+          "expect": "0x0000000000000000000000000000000000000000000000000000000000000000"
+        }
+      ]
+    }
+  ],
+  "verify": [],
+  "logs": []
+}
