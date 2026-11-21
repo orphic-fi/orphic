@@ -4,6 +4,7 @@ import { DEFAULT_CONFIG, STEPS, STRATEGIES, VENUES, loadDraft, problems, saveDra
 import { fmtPct, fmtUsd } from '../lib/format'
 import { useFelixSpotRate, useHlp, useHyperLendUsdc, useMorphoMarketRates } from '../lib/onchainRates'
 import BuilderPlatform from './BuilderPlatform'
+import SitePreview from './SitePreview'
 import s from './Builder.module.css'
 
 const REQUEST_TO = 'https://t.me/ushouldcashout'
@@ -16,6 +17,7 @@ export default function Builder() {
   const [c, setC] = useState<BuilderConfig>(() => loadDraft())
   const [step, setStep] = useState(0)
   const [copied, setCopied] = useState(false)
+  const [preview, setPreview] = useState(false)
   const wizard = useRef<HTMLDivElement>(null)
   const first = useRef(true)
   useEffect(() => {
@@ -35,6 +37,14 @@ export default function Builder() {
   const felix = useFelixSpotRate(markets.data)
   const hyperlend = useHyperLendUsdc()
   const hlp = useHlp()
+  const bestMorpho = (markets.data ?? []).reduce<number | null>((b, m) => (b === null || m.supplyApy > b ? m.supplyApy : b), null)
+  const liveRates: Record<string, number | null> = {
+    felix: felix.spotApy,
+    hyperlend: hyperlend.apy,
+    morpho: bestMorpho,
+    hlp: hlp.data?.realised30dAnnualised ?? null,
+    nest: null,
+  }
   const rate = (id: string) => {
     if (id === 'felix') return felix.spotApy === null ? '–' : fmtPct(felix.spotApy)
     if (id === 'hyperlend') return hyperlend.apy === null ? '–' : fmtPct(hyperlend.apy)
@@ -67,6 +77,7 @@ export default function Builder() {
   return (
     <div className={`wrap ${s.page}`}>
       <BuilderPlatform onConfigure={toWizard} />
+      {preview && <SitePreview c={c} rates={liveRates} onClose={() => setPreview(false)} />}
       <header className={s.top} ref={wizard}>
         <div>
           <div className={s.k}>White label: configure your vault</div>
@@ -500,7 +511,7 @@ export default function Builder() {
           )}
 
           {step === 5 && (
-            <Step title="Review and request" why="Check the summary, then send the config to Orphic. Nothing moves until you accept ownership from your Safe." issues={issues}>
+            <Step title="Review and request" why="See the page your depositors would get, check the summary, then send the config to Orphic. Nothing moves until you accept ownership from your Safe." issues={issues}>
               <div className={s.card}>
                 <div className={s.k}>What will be deployed</div>
                 <Row k="Template" v={TEMPLATE_NAME[c.template]} />
@@ -542,7 +553,10 @@ export default function Builder() {
               </div>
 
               <div className={s.actions}>
-                <button type="button" className={s.primary} disabled={issues.length > 0} onClick={copy}>
+                <button type="button" className={s.primary} onClick={() => setPreview(true)}>
+                  Preview your site
+                </button>
+                <button type="button" className={s.ghost} disabled={issues.length > 0} onClick={copy}>
                   {copied ? 'Copied' : 'Copy the config'}
                 </button>
                 <a href={REQUEST_TO} target="_blank" rel="noreferrer" className={s.ghost}>

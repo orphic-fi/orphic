@@ -22,15 +22,16 @@ export default function BuilderPlatform({ onConfigure }: { onConfigure: () => vo
         <h1 className={s.h1}>One engine. Your vault, your brand, your domain.</h1>
         <p className={s.lede}>
           Launch an agentic USDC vault for your community, treasury or app without building one. Every builder vault runs on the same audited contracts, the same agent
-          and the same venues Orphic uses for its own book. You choose the shape, the name and the fees; your Safe owns it; it lives on your domain.
+          and the same venues Orphic uses for its own book. Configure it in five minutes, see the page your depositors would get, then send it to Orphic to deploy. Your
+          Safe owns it; it lives on your domain.
         </p>
         <div className={s.heroActions}>
-          <a href="#apply" className={s.primary}>
-            Apply to build
-          </a>
-          <button type="button" className={s.ghost} onClick={onConfigure}>
-            Configure a vault first
+          <button type="button" className={s.primary} onClick={onConfigure}>
+            Configure your vault
           </button>
+          <a href="#apply" className={s.ghost}>
+            Or just apply
+          </a>
         </div>
       </header>
 
