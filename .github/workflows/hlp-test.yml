@@ -39,6 +39,6 @@ jobs:
           cd ..
           git config user.name "orphic-keeper"
           git config user.email "keeper@orphic.fi"
-          git add keeper/ops/hlp-test.log
+          git add -f keeper/ops/hlp-test.log
           git diff --cached --quiet || git commit -m "hlp test: ${{ github.event.inputs.cmd }} ${{ github.event.inputs.amount }}"
-          git pull --rebase -q origin main && git push -q origin main
+          git pull --rebase -q origin main && git push -q
