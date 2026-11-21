@@ -10,7 +10,7 @@
       "to": "0x3F7382bd8BFC6C548CAa2D7B4dfCe628B12A9759",
       "data": "0x9faae4640000000000000000000000009c265f8fa3cc4ec68a2491c7135a649f2b58269b",
       "value": "0x0",
-      "gas": "0x30d40",
+      "gas": "0xaae60",
       "readbacks": [
         {
           "label": "managementFeeRecipient == junior v1.1",
@@ -26,7 +26,7 @@
       "to": "0x3F7382bd8BFC6C548CAa2D7B4dfCe628B12A9759",
       "data": "0x2cb19f98000000000000000000000000e502ba6d40b3296a6bf709592ae1b74ba6f5a931",
       "value": "0x0",
-      "gas": "0x30d40",
+      "gas": "0xaae60",
       "readbacks": [
         {
           "label": "receiveSharesGate == gate",

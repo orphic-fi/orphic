@@ -10,7 +10,7 @@
       "to": "0x20D5F4f78858D257eA047EB5F47773E361697F2E",
       "data": "0x721c6513000000000000000000000000000000000000000000000004563918244f30bdc0",
       "value": "0x0",
-      "gas": "0x30d40",
+      "gas": "0x493e0",
       "readbacks": [
         {
           "label": "balanceOf(owner) == 0 (shares moved into the vault)",
