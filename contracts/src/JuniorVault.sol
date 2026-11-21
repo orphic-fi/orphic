@@ -18,6 +18,12 @@ import {MorphoBalancesLib} from "morpho-blue/libraries/periphery/MorphoBalancesL
 import {IVaultV2} from "vault-v2/interfaces/IVaultV2.sol";
 import {IAdapter} from "vault-v2/interfaces/IAdapter.sol";
 
+/// @dev The two views every Aave v3 aToken exposes; enough to bind an aToken to its pool and underlying.
+interface IAToken {
+    function UNDERLYING_ASSET_ADDRESS() external view returns (address);
+    function POOL() external view returns (address);
+}
+
 /// @title JuniorVault
 /// @notice First-loss tranche for Orphic. ERC-20 share token over USDC.
 ///  - deposit: pulls USDC, and (once the stake token is set) a stake of `stakePerAsset` ORPH per USDC, held here and
@@ -91,6 +97,11 @@ contract JuniorVault is ERC20, Ownable2Step, ReentrancyGuard, Multicall {
     mapping(Id => bool) public isMarket;
     address[] public vaults; // ERC-4626 vaults the agent may deposit to (Felix v1.1, senior for fee shares)
     mapping(address => bool) public isVault;
+    // Aave-style lending pools (HyperLend). The pool is the venue the agent calls; the aToken is what we hold and
+    // value, 1:1 with USDC, growing in place. The aToken itself is never a venue: no rule can target it.
+    address[] public lenders;
+    mapping(address => bool) public isLender;
+    mapping(address => address) public lenderAToken; // pool => aToken
 
     // Agent allowlist. receiverOffset is the calldata byte offset (after the 4-byte selector) of the address that must
     // equal this contract, or type(uint256).max when the call has no receiver to check.
@@ -115,6 +126,8 @@ contract JuniorVault is ERC20, Ownable2Step, ReentrancyGuard, Multicall {
     event VaultAdded(address indexed vault);
     event MarketRemoved(Id indexed id);
     event VaultRemoved(address indexed vault);
+    event LenderAdded(address indexed pool, address indexed aToken);
+    event LenderRemoved(address indexed pool);
     event StakeTokenSet(address token, uint256 stakePerAsset);
     event StakePerAssetSet(uint256 stakePerAsset);
     event StakePerAssetProposed(uint256 stakePerAsset, uint256 eta);
@@ -418,6 +431,13 @@ contract JuniorVault is ERC20, Ownable2Step, ReentrancyGuard, Multicall {
                 complete = false;
             }
         }
+        for (uint256 i = 0; i < lenders.length; i++) {
+            try this.lenderAssets(i) returns (uint256 a) {
+                total += a;
+            } catch {
+                complete = false;
+            }
+        }
     }
 
     function marketAssets(uint256 i) external view returns (uint256) {
@@ -428,6 +448,11 @@ contract JuniorVault is ERC20, Ownable2Step, ReentrancyGuard, Multicall {
         IERC4626 v = IERC4626(vaults[i]);
         uint256 bal = v.balanceOf(address(this));
         return bal == 0 ? 0 : v.convertToAssets(bal);
+    }
+
+    /// @dev An Aave-style aToken balance is the underlying owed, in the underlying's decimals, interest included.
+    function lenderAssets(uint256 i) external view returns (uint256) {
+        return IERC20(lenderAToken[lenders[i]]).balanceOf(address(this));
     }
 
     /// @dev Mint at the worse of the frozen price and the live price, so a deposit just before settle cannot take
@@ -451,6 +476,10 @@ contract JuniorVault is ERC20, Ownable2Step, ReentrancyGuard, Multicall {
         return vaults.length;
     }
 
+    function lendersLength() external view returns (uint256) {
+        return lenders.length;
+    }
+
     /* AGENT */
 
     /// @notice The only way the agent moves money. Target and selector must be allowlisted; the receiver word must be us.
@@ -462,7 +491,7 @@ contract JuniorVault is ERC20, Ownable2Step, ReentrancyGuard, Multicall {
         if (selector == IERC20.approve.selector) {
             (address spender,) = abi.decode(data[4:], (address, uint256));
             if (!approvals[target][spender]) revert NotAllowed();
-            if (spender != address(morpho) && !isVault[spender]) revert NotAllowed(); // removed venues die at once
+            if (spender != address(morpho) && !isVault[spender] && !isLender[spender]) revert NotAllowed(); // removed venues die at once
         } else {
             Rule memory rule = rules[target][selector];
             if (!rule.allowed) revert NotAllowed();
@@ -471,7 +500,7 @@ contract JuniorVault is ERC20, Ownable2Step, ReentrancyGuard, Multicall {
                 if (data.length < 4 + 160) revert NotAllowed();
                 MarketParams memory mp = abi.decode(data[4:164], (MarketParams));
                 if (!isMarket[mp.id()]) revert NotAllowed();
-            } else if (!isVault[target]) {
+            } else if (!isVault[target] && !isLender[target]) {
                 revert NotAllowed();
             }
             if (rule.receiverOffset != type(uint256).max) {
@@ -499,7 +528,7 @@ contract JuniorVault is ERC20, Ownable2Step, ReentrancyGuard, Multicall {
 
     function setRule(address target, bytes4 selector, bool allowed, uint256 receiverOffset) external onlyOwner {
         // targets are the valuation universe and nothing else: never the asset, never the stake token, never arbitrary
-        if (allowed && target != address(morpho) && !isVault[target]) revert NotAllowed();
+        if (allowed && target != address(morpho) && !isVault[target] && !isLender[target]) revert NotAllowed();
         if (
             selector == IERC20.transfer.selector || selector == IERC20.transferFrom.selector
                 || selector == IERC20.approve.selector
@@ -509,7 +538,7 @@ contract JuniorVault is ERC20, Ownable2Step, ReentrancyGuard, Multicall {
     }
 
     function setApprovalRule(address token, address spender, bool allowed) external onlyOwner {
-        if (allowed && spender != address(morpho) && !isVault[spender]) revert NotAllowed(); // only trusted venues
+        if (allowed && spender != address(morpho) && !isVault[spender] && !isLender[spender]) revert NotAllowed(); // only trusted venues
         if (token == address(stakeToken) && address(stakeToken) != address(0)) revert NotAllowed();
         approvals[token][spender] = allowed;
         emit ApprovalRuleSet(token, spender, allowed);
@@ -571,10 +600,47 @@ contract JuniorVault is ERC20, Ownable2Step, ReentrancyGuard, Multicall {
         emit VaultAdded(vault);
     }
 
+    /// @notice Allow an Aave-style pool. The aToken must name this asset and this pool, so the pair cannot be mismatched.
+    function addLender(address pool, address aToken) external onlyOwner {
+        if (pool == address(this) || pool == address(asset) || aToken == address(asset)) revert WrongAsset();
+        if (IAToken(aToken).UNDERLYING_ASSET_ADDRESS() != address(asset)) revert WrongAsset();
+        if (IAToken(aToken).POOL() != pool) revert WrongAsset();
+        if (lenders.length >= MAX_MARKETS) revert TooMany();
+        if (isLender[pool] || isVault[pool]) revert AlreadySet();
+        isLender[pool] = true;
+        lenderAToken[pool] = aToken;
+        lenders.push(pool);
+        emit LenderAdded(pool, aToken);
+    }
+
+    function removeLender(uint256 i) external onlyOwner {
+        address pool = lenders[i];
+        if (IERC20(lenderAToken[pool]).balanceOf(address(this)) != 0) revert NotAllowed(); // exit first
+        _dropLender(i);
+    }
+
+    /// @notice Drop a lender without calling it, for one whose aToken view reverts. Any position is abandoned from the
+    ///         valuation on purpose; the agent can still not reach it afterwards.
+    function forceRemoveLender(uint256 i) external onlyOwner {
+        _dropLender(i);
+    }
+
+    function _dropLender(uint256 i) internal {
+        address pool = lenders[i];
+        isLender[pool] = false;
+        delete lenderAToken[pool];
+        lenders[i] = lenders[lenders.length - 1];
+        lenders.pop();
+        emit LenderRemoved(pool);
+    }
+
     /// @notice One-way. Turns the stake gate on. Stakes are quoted in ORPH wei per 1 USDC (1e6).
     function setStakeToken(IERC20 token, uint256 stakePerAsset_) external onlyOwner {
         if (address(stakeToken) != address(0)) revert AlreadySet();
-        if (address(token) == address(asset) || isVault[address(token)] || address(token) == address(morpho)) {
+        if (
+            address(token) == address(asset) || isVault[address(token)] || isLender[address(token)]
+                || address(token) == address(morpho)
+        ) {
             revert WrongAsset();
         }
         stakeToken = token;
