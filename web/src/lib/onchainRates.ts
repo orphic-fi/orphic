@@ -394,42 +394,53 @@ export function useHlp() {
  *  positions held by the market adapter, and USDC idle in the vault itself. USDC, 6 decimals. */
 export function useSeniorBreakup() {
   const ids = MORPHO_MARKETS.map((m) => m.id as Hex);
+  // Three ABIs in one batch: wagmi cannot infer one contract type across them, so the batch is typed loosely and
+  // each result is narrowed where it is read.
+  type AnyCall = {
+    address: Address;
+    abi: readonly unknown[];
+    functionName: string;
+    args?: readonly unknown[];
+    chainId: number;
+  };
+  const contracts: AnyCall[] = [
+    {
+      address: addresses.hyperEvm.felixVault,
+      abi: metaMorphoAbi,
+      functionName: "balanceOf",
+      args: [addresses.hyperEvm.felixAdapter],
+      chainId: hyperEvm.id,
+    },
+    {
+      address: addresses.hyperEvm.usdc,
+      abi: erc20Abi,
+      functionName: "balanceOf",
+      args: [addresses.hyperEvm.senior],
+      chainId: hyperEvm.id,
+    },
+  ];
+  for (const id of ids) {
+    contracts.push({
+      address: MORPHO_BLUE,
+      abi: morphoAbi,
+      functionName: "position",
+      args: [id, addresses.hyperEvm.marketAdapter],
+      chainId: hyperEvm.id,
+    });
+    contracts.push({
+      address: MORPHO_BLUE,
+      abi: morphoAbi,
+      functionName: "market",
+      args: [id],
+      chainId: hyperEvm.id,
+    });
+  }
   const r = useReadContracts({
-    contracts: [
-      {
-        address: addresses.hyperEvm.felixVault,
-        abi: metaMorphoAbi,
-        functionName: "balanceOf",
-        args: [addresses.hyperEvm.felixAdapter],
-        chainId: hyperEvm.id,
-      },
-      {
-        address: addresses.hyperEvm.usdc,
-        abi: erc20Abi,
-        functionName: "balanceOf",
-        args: [addresses.hyperEvm.senior],
-        chainId: hyperEvm.id,
-      },
-      ...ids.flatMap((id) => [
-        {
-          address: MORPHO_BLUE,
-          abi: morphoAbi,
-          functionName: "position",
-          args: [id, addresses.hyperEvm.marketAdapter],
-          chainId: hyperEvm.id,
-        } as const,
-        {
-          address: MORPHO_BLUE,
-          abi: morphoAbi,
-          functionName: "market",
-          args: [id],
-          chainId: hyperEvm.id,
-        } as const,
-      ]),
-    ],
+    contracts: contracts as never,
     query: { refetchInterval: 60_000 },
   });
-  const felixShares = r.data?.[0]?.result as bigint | undefined;
+  const results = r.data as { result?: unknown }[] | undefined;
+  const felixShares = results?.[0]?.result as bigint | undefined;
   const felix = useReadContracts({
     contracts: [
       {
@@ -442,13 +453,13 @@ export function useSeniorBreakup() {
     ],
     query: { enabled: felixShares !== undefined, refetchInterval: 60_000 },
   });
-  if (!r.data) return null;
-  const idle = (r.data[1]?.result as bigint | undefined) ?? 0n;
+  if (!results) return null;
+  const idle = (results[1]?.result as bigint | undefined) ?? 0n;
   const felixUsdc = (felix.data?.[0]?.result as bigint | undefined) ?? 0n;
   const markets = MORPHO_MARKETS.map((m, i) => {
-    const pos = r.data![2 + i * 2]?.result as
+    const pos = results[2 + i * 2]?.result as
       readonly [bigint, bigint, bigint] | undefined;
-    const mk = r.data![3 + i * 2]?.result as
+    const mk = results[3 + i * 2]?.result as
       readonly [bigint, bigint, bigint, bigint, bigint, bigint] | undefined;
     if (!pos || !mk || mk[1] === 0n) return { name: m.name, usdc: 0n };
     return { name: m.name, usdc: (pos[0] * mk[0]) / mk[1] };
