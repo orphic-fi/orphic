@@ -1,0 +1,44 @@
+# HLP plumbing test with the agent wallet: the path junior v1.3 will take. Manual only. Real money (about $10).
+name: hlp-test
+on:
+  workflow_dispatch:
+    inputs:
+      cmd:
+        description: "bridge | deposit | status | withdraw"
+        required: true
+        default: "status"
+      amount:
+        description: "whole USDC (bridge/deposit/withdraw)"
+        required: false
+        default: ""
+permissions:
+  contents: write
+concurrency: keeper
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: keeper
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: keeper/package-lock.json
+      - run: npm ci
+      - name: Run
+        env:
+          AGENT_PRIVATE_KEY: ${{ github.event.inputs.cmd != 'status' && secrets.AGENT_PRIVATE_KEY || '' }}
+          AGENT_ADDRESS: ${{ vars.EXPECTED_AGENT }}
+        run: npx tsx src/hlpTest.ts ${{ github.event.inputs.cmd }} ${{ github.event.inputs.amount }}
+      - name: Commit the log line
+        if: always()
+        run: |
+          cd ..
+          git config user.name "orphic-keeper"
+          git config user.email "keeper@orphic.fi"
+          git add keeper/ops/hlp-test.log
+          git diff --cached --quiet || git commit -m "hlp test: ${{ github.event.inputs.cmd }} ${{ github.event.inputs.amount }}"
+          git pull --rebase -q origin main && git push -q origin main
