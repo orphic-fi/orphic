@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useState, type ReactNode } from 'react'
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import { DEFAULT_CONFIG, STEPS, STRATEGIES, VENUES, loadDraft, problems, saveDraft, split, toRequest, type BuilderConfig } from '../lib/builder'
 import { fmtPct, fmtUsd } from '../lib/format'
 import { useFelixSpotRate, useHlp, useHyperLendUsdc, useMorphoMarketRates } from '../lib/onchainRates'
+import BuilderPlatform from './BuilderPlatform'
 import s from './Builder.module.css'
 
 const REQUEST_TO = 'https://t.me/ushouldcashout'
@@ -15,12 +16,19 @@ export default function Builder() {
   const [c, setC] = useState<BuilderConfig>(() => loadDraft())
   const [step, setStep] = useState(0)
   const [copied, setCopied] = useState(false)
+  const wizard = useRef<HTMLDivElement>(null)
+  const first = useRef(true)
   useEffect(() => {
     saveDraft(c)
   }, [c])
   useEffect(() => {
-    window.scrollTo({ top: 0 })
+    if (first.current) {
+      first.current = false
+      return
+    }
+    wizard.current?.scrollIntoView({ block: 'start' })
   }, [step])
+  const toWizard = () => wizard.current?.scrollIntoView({ block: 'start', behavior: 'smooth' })
   const set = <K extends keyof BuilderConfig>(k: K, v: BuilderConfig[K]) => setC((x) => ({ ...x, [k]: v }))
 
   const markets = useMorphoMarketRates()
@@ -58,13 +66,14 @@ export default function Builder() {
 
   return (
     <div className={`wrap ${s.page}`}>
-      <header className={s.top}>
+      <BuilderPlatform onConfigure={toWizard} />
+      <header className={s.top} ref={wizard}>
         <div>
-          <div className={s.k}>Vaults as a service</div>
+          <div className={s.k}>White label: configure your vault</div>
           <h1 className={s.h1}>Your own vault, on Orphic's rails</h1>
           <p className={s.lede}>
             Six short steps, about five minutes. You choose the shape, the venues, the agent and the fees; Orphic deploys the same audited contracts it runs itself and hands ownership to your Safe.
-            Nothing deploys from this page.
+            It goes live on a domain you own. Nothing deploys from this page.
           </p>
         </div>
         <button type="button" className={s.reset} onClick={() => setC(DEFAULT_CONFIG)}>
@@ -438,7 +447,7 @@ export default function Builder() {
                   />
                   <Field
                     label="Where it lives"
-                    help="A domain you own, pointed at Orphic; or leave blank to embed the vault in your own app with one script tag."
+                    help="A domain you own, pointed at Orphic. Your depositors never see orphic.fi. Leave blank if you are embedding the vault in your own app instead."
                     input={<input value={c.domain} onChange={(e) => set('domain', e.target.value.trim())} placeholder="vaults.yourapp.xyz" />}
                   />
                   <Field
@@ -527,7 +536,7 @@ export default function Builder() {
                     <b>Orphic deploys and verifies.</b> The same scripts and signer flow Orphic uses for its own pair; the state is read back onchain and compared with this page.
                   </li>
                   <li>
-                    <b>Your Safe accepts ownership, one signature.</b> Deposits open, the vault page goes live at your domain or in your app, and Orphic keeps nothing but the agent role.
+                    <b>Your Safe accepts ownership, one signature.</b> Deposits open, the vault goes live on your domain or in your app, and Orphic keeps nothing but the agent role.
                   </li>
                 </ol>
               </div>
