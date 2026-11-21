@@ -9,7 +9,7 @@ const POOL = { currency0: NATIVE, currency1: USDC, fee: 8388608, tickSpacing: 10
 
 const GAS_RESERVE = "0.03"; // HYPE kept for fees
 const RECENTRE_COOLDOWN_MS = 6 * 3600_000;
-const MAX_AGE_MS = 72 * 3600_000;
+const EDGE_PCT = 2; // recentre once the price is this close to either edge of the range
 
 export const run: RunFunction = async (agent) => {
   const width = String(agent.settings.widthPct);
@@ -42,14 +42,18 @@ export const run: RunFunction = async (agent) => {
     return agent.log(`Flat: HYPE is ${(move * 100).toFixed(1)}% on the day. Reopens once the 24h move is back inside ${agent.settings.flattenMovePct}%.`);
   }
 
-  // 2. A range that is still in place: hold it, or take it down when it has drifted out or grown old.
+  // 2. A range that is still in place: hold it while the price sits inside it; recentre when the price leaves or gets near an edge.
   if (pos?.position) {
     const openedAt = Number((await agent.memory.get({ key: "openedAt" }))?.value ?? 0);
     const age = Date.now() - openedAt;
     const inRange = pos.range?.inRange ?? false;
-    if (inRange && age < MAX_AGE_MS) return agent.log(`In range (${pos.range?.lowerPercent}% to ${pos.range?.upperPercent}%), worth $${pos.valueUsd ?? "?"}; holding.`);
-    if (age < RECENTRE_COOLDOWN_MS) return agent.log(`${inRange ? "Range is 72h old" : "Price left the range"} but it was opened ${Math.round(age / 60_000)} min ago; recentring no sooner than 6h after opening.`);
-    await agent.log(`${inRange ? "Range is 72h old" : "Price left the range"}: closing it to recentre on the current price.`);
+    const lower = Math.abs(Number(pos.range?.lowerPercent ?? -100));
+    const upper = Math.abs(Number(pos.range?.upperPercent ?? 100));
+    const nearEdge = inRange && Math.min(lower, upper) < EDGE_PCT;
+    if (inRange && !nearEdge) return agent.log(`In range (${pos.range?.lowerPercent}% to ${pos.range?.upperPercent}%), worth $${pos.valueUsd ?? "?"}; holding.`);
+    const why = inRange ? `Price is within ${EDGE_PCT}% of the range edge` : "Price left the range";
+    if (age < RECENTRE_COOLDOWN_MS) return agent.log(`${why} but it was opened ${Math.round(age / 60_000)} min ago; recentring no sooner than 6h after opening.`);
+    await agent.log(`${why}: closing it to recentre on the current price.`);
     await agent.liquidity.positions.change({ network: NET, action: { protocol: "uniswap-v4", kind: "remove", position: pos.position, percent: "100" } }, { once: `remove/${pos.position}` });
   }
 
