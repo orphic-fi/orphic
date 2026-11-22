@@ -1,8 +1,8 @@
 {
-  "runAt": "2026-11-22T03:03:27.381Z",
+  "runAt": "2026-11-22T08:43:48.481Z",
   "mode": "live",
-  "vaultUsd": 316.512262,
-  "bookApy": 0.04821057991310541,
+  "vaultUsd": 316.521814,
+  "bookApy": 0.04740339727027471,
   "decision": {
     "move": false,
     "reason": "no deltas above the dust threshold",
@@ -11,45 +11,45 @@
   },
   "juniorIdle": {
     "action": "hold",
-    "note": "at target: Felix 1.03 USDC (4.46%), HyperLend 0.00 USDC (0.00%), idle 80.09 USDC for a reserve of 80.09 USDC",
+    "note": "at target: Felix 1.03 USDC (4.39%), HyperLend 0.00 USDC (0.00%), idle 80.09 USDC for a reserve of 80.09 USDC",
     "idleUsdc": 80.087177,
-    "felixUsdc": 1.025536,
+    "felixUsdc": 1.025565,
     "hyperlendUsdc": 0
   },
   "juniorAccrue": {
     "called": false,
-    "note": "senior accrued 2.4h ago"
+    "note": "senior accrued 8.1h ago"
   },
   "juniorSync": {
-    "called": true,
-    "note": "syncSenior sent"
+    "called": false,
+    "note": "senior supply unchanged; syncSenior not needed"
   },
   "alerts": [],
   "allocation": [
     {
       "label": "kHYPE/USDC 62.5%",
-      "share": 0.4909288854028663,
-      "rate": 0.05026985257731483
+      "share": 0.490929525634527,
+      "rate": 0.049575179974021076
     },
     {
       "label": "kHYPE/USDC 77%",
-      "share": 0.10163640042482777,
-      "rate": 0.049754094448898445
+      "share": 0.10163649889861935,
+      "rate": 0.04897060520183122
     },
     {
       "label": "WHYPE/USDC 77%",
-      "share": 0.20229796973868897,
-      "rate": 0.04956232682639837
+      "share": 0.20229814871464122,
+      "rate": 0.04869280801598497
     },
     {
       "label": "UBTC/USDC 77%",
-      "share": 0.03513789617414569,
-      "rate": 0.024800215575389455
+      "share": 0.03513735391393909,
+      "rate": 0.02196170944744864
     },
     {
       "label": "Felix USDC v1.1",
-      "share": 0.16999885141890647,
-      "rate": 0.044571152075689804
+      "share": 0.16999847283827332,
+      "rate": 0.043918838924295156
     }
   ]
 }
