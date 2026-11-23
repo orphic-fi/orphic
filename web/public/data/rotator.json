@@ -1,8 +1,8 @@
 {
-  "runAt": "2026-11-22T22:44:28.074Z",
+  "runAt": "2026-11-23T03:56:55.645Z",
   "mode": "live",
-  "vaultUsd": 316.544394,
-  "bookApy": 0.043716673512903856,
+  "vaultUsd": 316.552628,
+  "bookApy": 0.04532312058256709,
   "decision": {
     "move": false,
     "reason": "no deltas above the dust threshold",
@@ -11,14 +11,14 @@
   },
   "juniorIdle": {
     "action": "hold",
-    "note": "at target: Felix 0.00 USDC (4.06%), HyperLend 0.00 USDC (0.00%), idle 81.11 USDC for a reserve of 80.09 USDC",
+    "note": "at target: Felix 0.00 USDC (4.19%), HyperLend 0.00 USDC (0.00%), idle 81.11 USDC for a reserve of 80.16 USDC",
     "idleUsdc": 81.11281,
     "felixUsdc": 0,
     "hyperlendUsdc": 0
   },
   "juniorAccrue": {
     "called": false,
-    "note": "senior accrued 22.1h ago"
+    "note": "senior accrued 3.2h ago"
   },
   "juniorSync": {
     "called": false,
@@ -28,28 +28,28 @@
   "allocation": [
     {
       "label": "kHYPE/USDC 62.5%",
-      "share": 0.49093109827748205,
-      "rate": 0.04569631624651227
+      "share": 0.490931643758143,
+      "rate": 0.04736875311270798
     },
     {
       "label": "kHYPE/USDC 77%",
-      "share": 0.1016367486198476,
-      "rate": 0.04525443604866422
+      "share": 0.10163683430232016,
+      "rate": 0.046720381869222595
     },
     {
       "label": "WHYPE/USDC 77%",
-      "share": 0.20229863239972587,
-      "rate": 0.04524458525730869
+      "share": 0.20229880385008206,
+      "rate": 0.046721614472981475
     },
     {
       "label": "UBTC/USDC 77%",
-      "share": 0.03513590893036002,
-      "rate": 0.018107201173984063
+      "share": 0.03513542778106394,
+      "rate": 0.021211139373595547
     },
     {
       "label": "Felix USDC v1.1",
-      "share": 0.1699976117725844,
-      "rate": 0.04055519536886854
+      "share": 0.16999729030839067,
+      "rate": 0.04189949059319192
     }
   ]
 }
