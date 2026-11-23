@@ -3,7 +3,6 @@ import { Link } from 'react-router-dom'
 import { DEFAULT_CONFIG, STEPS, STRATEGIES, VENUES, loadDraft, problems, saveDraft, split, toRequest, type BuilderConfig } from '../lib/builder'
 import { fmtPct, fmtUsd } from '../lib/format'
 import { useFelixSpotRate, useHlp, useHyperLendUsdc, useMorphoMarketRates } from '../lib/onchainRates'
-import BuilderPlatform from './BuilderPlatform'
 import SitePreview from './SitePreview'
 import s from './Builder.module.css'
 
@@ -18,7 +17,6 @@ export default function Builder() {
   const [step, setStep] = useState(0)
   const [copied, setCopied] = useState(false)
   const [preview, setPreview] = useState(false)
-  const wizard = useRef<HTMLDivElement>(null)
   const first = useRef(true)
   useEffect(() => {
     saveDraft(c)
@@ -28,9 +26,8 @@ export default function Builder() {
       first.current = false
       return
     }
-    wizard.current?.scrollIntoView({ block: 'start' })
+    window.scrollTo({ top: 0 })
   }, [step])
-  const toWizard = () => wizard.current?.scrollIntoView({ block: 'start', behavior: 'smooth' })
   const set = <K extends keyof BuilderConfig>(k: K, v: BuilderConfig[K]) => setC((x) => ({ ...x, [k]: v }))
 
   const markets = useMorphoMarketRates()
@@ -76,15 +73,14 @@ export default function Builder() {
 
   return (
     <div className={`wrap ${s.page}`}>
-      <BuilderPlatform onConfigure={toWizard} />
       {preview && <SitePreview c={c} rates={liveRates} onClose={() => setPreview(false)} />}
-      <header className={s.top} ref={wizard}>
+      <header className={s.top}>
         <div>
-          <div className={s.k}>White label: configure your vault</div>
+          <div className={s.k}>Vaults as a service</div>
           <h1 className={s.h1}>Your own vault, on Orphic's rails</h1>
           <p className={s.lede}>
             Six short steps, about five minutes. You choose the shape, the venues, the agent and the fees; Orphic deploys the same audited contracts it runs itself and hands ownership to your Safe.
-            It goes live on a domain you own. Nothing deploys from this page.
+            Nothing deploys from this page.
           </p>
         </div>
         <button type="button" className={s.reset} onClick={() => setC(DEFAULT_CONFIG)}>
