@@ -100,6 +100,31 @@
   margin-top: 4px;
 }
 
+.parts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  margin-top: 6px;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--muted);
+}
+
+.parts span {
+  display: inline-flex;
+  align-items: center;
+  white-space: nowrap;
+}
+
+.parts i {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  margin-right: 6px;
+  flex: none;
+}
+
 .cell {
   display: flex;
   flex-direction: column;

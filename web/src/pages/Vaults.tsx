@@ -33,6 +33,8 @@ interface Row {
   id: RowId;
   name: string;
   sub: string;
+  /** Live make-up by venue, read from the chain; shown as colour-coded bullets in place of sub when present. */
+  parts?: { name: string; pct: number; color: string }[];
   rate: string;
   rateLabel: string;
   realised: string;
@@ -123,6 +125,20 @@ export default function Vaults() {
       });
     return parts.filter((p) => p.pct > 0);
   })();
+  const juniorParts = junior.projection
+    ? [
+        {
+          name: "Felix USDC",
+          pct: Math.round((1 - junior.projection.idleShare) * 100),
+          color: "var(--sen)",
+        },
+        {
+          name: "idle USDC",
+          pct: Math.round(junior.projection.idleShare * 100),
+          color: "var(--faint)",
+        },
+      ].filter((p) => p.pct > 0)
+    : [];
   const seniorEst = senior.apy ?? (felixApy === null ? null : felixApy - MGMT_FEE_APY);
   const bestMarket = (markets.data ?? []).reduce<number | null>(
     (b, m) => (b === null || m.supplyApy > b ? m.supplyApy : b),
@@ -143,6 +159,10 @@ export default function Vaults() {
           id: "senior",
           name: "Senior USDC",
           sub: "Morpho Vault V2 · first in line · instant exit while liquid, else at settle",
+          parts: seniorParts.map((p) => ({
+            ...p,
+            name: p.name.replace(" USDC", "").replace(" loans, higher LTV", " high LTV").replace(" loans", ""),
+          })),
           rate: seniorEst === null ? "–" : fmtPct(seniorEst),
           rateLabel: "now · venues, net of fee · est.",
           realised: sr.text,
@@ -156,6 +176,7 @@ export default function Vaults() {
           id: "junior",
           name: "Junior USDC",
           sub: "takes the first loss · earns senior's 0.5% fee · exit at settle",
+          parts: juniorParts.map((p) => ({ ...p, name: p.name.replace(" USDC", "") })),
           rate: junior.apy === null ? "–" : fmtPct(junior.apy),
           rateLabel: "projected · est.",
           realised: jr.text,
@@ -168,6 +189,7 @@ export default function Vaults() {
           id: "credit",
           name: "Orphic Private Credit",
           sub: "90-day terms · KYC required · coming soon",
+          parts: [{ name: "nothing allocated yet", pct: 0, color: "var(--faint)" }],
           rate: "fixed",
           rateLabel: "set per term · announced at the first window",
           realised: "not open",
@@ -312,7 +334,19 @@ export default function Vaults() {
               >
                 <span className={s.nameCell}>
                   <span className={s.name}>{r.name}</span>
-                  <span className={s.sub}>{r.sub}</span>
+                  {r.parts && r.parts.length > 0 ? (
+                    <span className={s.parts} aria-label={r.sub}>
+                      {r.parts.map((p) => (
+                        <span key={p.name}>
+                          <i style={{ background: p.color }} />
+                          {p.name}
+                          {p.pct > 0 ? ` ${p.pct}%` : ""}
+                        </span>
+                      ))}
+                    </span>
+                  ) : (
+                    <span className={s.sub}>{r.sub}</span>
+                  )}
                 </span>
                 <span className={s.cell}>
                   {r.rate && (
@@ -377,24 +411,7 @@ export default function Vaults() {
               venues. Exits land at the weekly settle.
             </p>
             <Breakup
-              parts={
-                junior.projection
-                  ? [
-                      {
-                        name: "Felix USDC",
-                        pct: Math.round(
-                          (1 - junior.projection.idleShare) * 100,
-                        ),
-                        color: "var(--sen)",
-                      },
-                      {
-                        name: "idle USDC",
-                        pct: Math.round(junior.projection.idleShare * 100),
-                        color: "var(--faint)",
-                      },
-                    ]
-                  : []
-              }
+              parts={juniorParts}
               note={
                 junior.projection
                   ? "Senior shares received as fee are counted in the price per share."
