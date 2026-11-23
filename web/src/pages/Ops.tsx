@@ -1,4 +1,4 @@
-import { useReadContracts } from 'wagmi'
+import { useAccount, useReadContracts, useSwitchChain, useWaitForTransactionReceipt, useWriteContract } from 'wagmi'
 import { juniorAbi } from '../abi/junior'
 import { DEPLOYED, ZERO, addresses, ops } from '../config/addresses'
 import { elysium, hyperEvm } from '../chains'
@@ -27,14 +27,30 @@ export default function Ops() {
       { address: junior, abi: juniorAbi, functionName: 'coverInProgress', chainId: hyperEvm.id },
       { address: junior, abi: juniorAbi, functionName: 'seniorPriceBase', chainId: hyperEvm.id },
       { address: junior, abi: juniorAbi, functionName: 'depositsPaused', chainId: hyperEvm.id },
+      { address: junior, abi: juniorAbi, functionName: 'owner', chainId: hyperEvm.id },
     ],
     query: { enabled: DEPLOYED, refetchInterval: 30_000 },
   })
-  const r = (i: number) => (DEPLOYED ? (reads.data?.[i]?.result as bigint | boolean | undefined) : undefined)
+  const r = (i: number) => (DEPLOYED ? (reads.data?.[i]?.result as bigint | boolean | string | undefined) : undefined)
   const big = (i: number) => (typeof r(i) === 'bigint' ? (r(i) as bigint) : undefined)
   const wad = (v: bigint | undefined) => (v === undefined ? NA : fmtNum(Number(v) / 1e18, 2))
   const lastSettle = big(1)
   const paused = typeof r(6) === 'boolean' ? (r(6) as boolean) : ops.paused
+  const owner = typeof r(7) === 'string' ? (r(7) as string) : undefined
+
+  // Owner-only switch. Anyone can see the page; only the vault owner's wallet can send the call, and the contract
+  // refuses it from anyone else anyway.
+  const { address, chainId } = useAccount()
+  const { switchChain } = useSwitchChain()
+  const { writeContract, data: hash, isPending, error, reset } = useWriteContract()
+  const receipt = useWaitForTransactionReceipt({ hash, chainId: hyperEvm.id })
+  const isOwner = !!address && !!owner && address.toLowerCase() === owner.toLowerCase()
+  if (receipt.isSuccess && hash) void reads.refetch()
+  const flip = () => {
+    if (chainId !== hyperEvm.id) return switchChain({ chainId: hyperEvm.id })
+    reset()
+    writeContract({ address: junior, abi: juniorAbi, functionName: 'setDepositsPaused', args: [!paused], chainId: hyperEvm.id })
+  }
 
   return (
     <div className="wrap" style={{ paddingTop: 32, paddingBottom: 56, flex: 1, width: "100%" }}>
@@ -50,7 +66,19 @@ export default function Ops() {
         </li>
         <li>
           <span>Deposits paused</span>
-          <span>{paused ? 'yes' : 'no'}</span>
+          <span>
+            {paused ? 'yes' : 'no'}
+            {isOwner && (
+              <>
+                {' '}
+                <button type="button" onClick={flip} disabled={isPending || receipt.isLoading} style={{ marginLeft: 10, font: 'inherit', fontSize: 13, padding: '4px 10px', borderRadius: 8, border: '1px solid var(--line)', background: 'var(--panel)', color: 'var(--text)', cursor: 'pointer' }}>
+                  {chainId !== hyperEvm.id ? 'Switch to HyperEVM' : isPending ? 'Confirm in wallet' : receipt.isLoading ? 'Sending' : paused ? 'Unpause deposits' : 'Pause deposits'}
+                </button>
+                {receipt.isSuccess && <span className={s.muted}> done</span>}
+                {error && <span className={s.muted}> {error.message.split('\n')[0].slice(0, 80)}</span>}
+              </>
+            )}
+          </span>
         </li>
         <li>
           <span>Last settle</span>

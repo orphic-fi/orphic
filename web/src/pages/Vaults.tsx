@@ -15,7 +15,8 @@ import {
 import s from "./Vaults.module.css";
 
 /** Junior seeded and first deployed, 8 Nov 2026 21:27 UTC; the base for realised growth. */
-const JUNIOR_OPENED = 1794173220;
+const JUNIOR_OPENED = 1794173220; // 8 Nov 2026, senior and the first junior
+const JUNIOR_V12_OPENED = 1795278420; // 21 Nov 2026 16:27 UTC, junior v1.2 seeded; its price per share starts at 1 then
 
 type RowId =
   | "senior"
@@ -60,7 +61,7 @@ function realised(v: VaultState) {
   if (!v.pricePerShare || !v.chainReadAt) return { text: "–", days: 0 };
   const days = Math.max(
     1,
-    Math.round((v.chainReadAt / 1000 - JUNIOR_OPENED) / 86_400),
+    Math.round((v.chainReadAt / 1000 - JUNIOR_V12_OPENED) / 86_400),
   );
   const r = Number(v.pricePerShare) / 1e18 - 1;
   return {
@@ -129,8 +130,13 @@ export default function Vaults() {
     ? [
         {
           name: "Felix USDC",
-          pct: Math.round((1 - junior.projection.idleShare) * 100),
+          pct: Math.round(junior.projection.felixShare * 100),
           color: "var(--sen)",
+        },
+        {
+          name: "HyperLend USDC",
+          pct: Math.round(junior.projection.hyperlendShare * 100),
+          color: "#4f7fb3",
         },
         {
           name: "idle USDC",
@@ -207,7 +213,7 @@ export default function Vaults() {
         {
           id: "rotation",
           name: "Lending rotation",
-          sub: "Felix today, HyperLend from v1.2 · moves when a week of extra yield beats the gas it costs",
+          sub: "Felix and HyperLend · moves when a week of extra yield beats the gas it costs",
           rate: felixApy === null ? "–" : fmtPct(felixApy),
           rateLabel: "Felix now · est.",
           realised: jr.text,
@@ -444,13 +450,13 @@ export default function Vaults() {
           <Info
             name="Lending rotation"
             tag="inside junior"
-            text="Junior's agent reads each allowed venue's rate from the venue itself and moves when the gap pays for the move, keeping a reserve idle for exits and cover. Felix today; HyperLend joins with junior v1.2, capped at a fifth of the book."
+            text="Junior's agent reads each allowed venue's rate from the venue itself and moves when the gap pays for the move, keeping a reserve idle for exits and cover. Felix and HyperLend, HyperLend capped at a fifth of the book."
             facts={[
               ["Agent", "Rotator"],
               ["Settles", "weekly, see next settle above"],
               ["Moves when", "gain beats gas 3×"],
               ["Cap per venue", "HyperLend 20% of junior"],
-              ["Venues", "Felix today; HyperLend from v1.2"],
+              ["Venues", "Felix and HyperLend"],
             ]}
             link={{ to: "/agents/orphic-rotator", label: "Rotator log" }}
           />

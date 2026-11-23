@@ -18,8 +18,10 @@ export const addresses = {
     usdc: '0xb88339CB7199b77E23DB6E890353E22632Ba630f' as Address,
     // Orphic senior: Morpho Vault V2, deployed 8 Nov 2026 (block 50747831).
     senior: '0x3F7382bd8BFC6C548CAa2D7B4dfCe628B12A9759' as Address,
-    // Orphic junior: JuniorVault, deployed 8 Nov 2026 (block 50748319).
-    junior: '0x20D5F4f78858D257eA047EB5F47773E361697F2E' as Address,
+    // Orphic junior v1.2: JuniorVault, HyperLend venue, deployed 22 Nov 2026. The first junior
+    // (0x20D5F4f78858D257eA047EB5F47773E361697F2E) is in full exit; its balance moves here after the 29 Nov settle.
+    junior: '0xF293D890De6755aB40B8cbD60872aa00351796CE' as Address,
+    juniorV1: '0x20D5F4f78858D257eA047EB5F47773E361697F2E' as Address,
     // FeeRouter, deployed 8 Nov 2026.
     feeRouter: '0xC2d2C5e56798Bfd0EEc67EEC12ddC2b521b1aA37' as Address,
     // Felix USDC v1.1 (MetaMorpho), senior's liquidity adapter target, and the adapter that holds it.

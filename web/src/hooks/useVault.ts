@@ -14,7 +14,9 @@ import {
 } from "../config/demo";
 import { useMorphoVaultV2 } from "../lib/morpho";
 import {
+  HYPERLEND_AUSDC,
   useFelixSpotRate,
+  useHyperLendUsdc,
   useMorphoMarketRates,
   useSeniorBreakup,
 } from "../lib/onchainRates";
@@ -51,6 +53,9 @@ export interface VaultState {
     seniorAssets: number;
     juniorAssets: number;
     idleShare: number;
+    /** Share of junior assets in Felix and in HyperLend, read from the venues. */
+    felixShare: number;
+    hyperlendShare: number;
   } | null;
   /** Unix ms of the last successful APY read. */
   apyReadAt: number | undefined;
@@ -313,6 +318,16 @@ export function useVault(kind: VaultKind): VaultState {
     chainId: hyperEvm.id,
     query: { enabled: DEPLOYED && kind === "junior", refetchInterval: 60_000 },
   });
+  // Where junior's deployed USDC sits: Felix shares (valued at Felix's own rate) and HyperLend aUSDC (1:1).
+  const juniorVenueReads = useReadContracts({
+    contracts: [
+      { address: addresses.hyperEvm.felixVault, abi: vaultV2Abi, functionName: "balanceOf", args: [addresses.hyperEvm.junior], chainId: hyperEvm.id },
+      { address: addresses.hyperEvm.felixVault, abi: vaultV2Abi, functionName: "convertToShares", args: [10n ** BigInt(USDC_DECIMALS)], chainId: hyperEvm.id },
+      { address: HYPERLEND_AUSDC, abi: erc20Abi, functionName: "balanceOf", args: [addresses.hyperEvm.junior], chainId: hyperEvm.id },
+    ],
+    query: { enabled: DEPLOYED && kind === "junior", refetchInterval: 60_000 },
+  });
+  const hyperlend = useHyperLendUsdc();
   // Senior as seen from junior: assets (for the fee projection), supply and the fee shares the next accrueInterest
   // would mint to junior (so junior's live value does not wait for a transaction).
   const seniorForJunior = useReadContracts({
@@ -603,8 +618,8 @@ export function useVault(kind: VaultKind): VaultState {
 
     const totalAssets = juniorReads.data?.[0]?.result as bigint | undefined;
     const depositCap = juniorReads.data?.[1]?.result as bigint | undefined;
-    // Junior's projected rate: senior's 0.5% fee spread over junior assets, plus Felix's rate on the share of junior
-    // USDC the agent has deployed there (idle USDC earns nothing). An estimate from today's balances, not a promise.
+    // Junior's projected rate: senior's 0.5% fee spread over junior assets, plus each venue's rate on the share of
+    // junior USDC deployed there (idle USDC earns nothing). An estimate from today's balances, not a promise.
     const juniorIdle = juniorIdleRead.data as bigint | undefined;
     const juniorProjection = (() => {
       if (
@@ -621,13 +636,24 @@ export function useVault(kind: VaultKind): VaultState {
           ? Math.min(1, Number(juniorIdle) / Number(totalAssets))
           : 1;
       const feeShare = (MGMT_FEE_APY * seniorA) / juniorA;
-      const deployedYield = felixApy !== null ? felixApy * (1 - idle) : 0;
+      const fShares = juniorVenueReads.data?.[0]?.result as bigint | undefined;
+      const fPerUsdc = juniorVenueReads.data?.[1]?.result as bigint | undefined;
+      const aUsdc = juniorVenueReads.data?.[2]?.result as bigint | undefined;
+      const felixA = fShares !== undefined && fPerUsdc !== undefined && fPerUsdc > 0n
+        ? Number(fShares) / Number(fPerUsdc)
+        : 0;
+      const hlA = aUsdc !== undefined ? Number(aUsdc) / 10 ** USDC_DECIMALS : 0;
+      const felixShare = Math.min(1, felixA / juniorA);
+      const hyperlendShare = Math.min(1 - felixShare, hlA / juniorA);
+      const deployedYield = (felixApy ?? 0) * felixShare + (hyperlend.apy ?? 0) * hyperlendShare;
       return {
         feeShare,
         deployedYield,
         seniorAssets: seniorA,
         juniorAssets: juniorA,
         idleShare: idle,
+        felixShare,
+        hyperlendShare,
       };
     })();
     const shares = juniorReads.data?.[2]?.result as bigint | undefined;
@@ -694,7 +720,8 @@ export function useVault(kind: VaultKind): VaultState {
       ...common,
       kind,
       nav,
-      apy: juniorProjection
+      // No projection while junior holds only its seed: 0.5% of senior over a few dollars is a silly number.
+      apy: juniorProjection && juniorProjection.juniorAssets >= 25
         ? juniorProjection.feeShare + juniorProjection.deployedYield
         : null,
       apyDerived: !!juniorProjection,
@@ -746,6 +773,8 @@ export function useVault(kind: VaultKind): VaultState {
     seniorShares,
     juniorReads,
     juniorIdleRead.data,
+    juniorVenueReads.data,
+    hyperlend.apy,
     seniorForJunior.data,
     seniorTotalForJunior.data,
     walletReads,
