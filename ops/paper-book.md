@@ -1,15 +1,15 @@
 # Paper book, junior strategies
 
-Marked 2026-11-24T09:14:12Z, 2.68 days since 2026-11-21T16:51:00Z. $45 paper per line. All figures are estimates from onchain state; nothing is sent, nothing is promised. Annualised = simple, return × 365 / days, and means little this early.
+Marked 2026-11-24T09:29:29Z, 2.69 days since 2026-11-21T16:51:00Z. $45 paper per line. All figures are estimates from onchain state; nothing is sent, nothing is promised. Annualised = simple, return × 365 / days, and means little this early.
 
 | Strategy | Equity | Fees or yield | Total return | Annualised | Hold same tokens | Note |
 |---|---|---|---|---|---|---|
-| Nest ±10%, Circuit Ranger (live paper) | $45.25 | $0.1330 (0.295%, 40.1%/yr) | 0.185% | 25.2% | $46.24 (2.388%) | in range -235830..-233810, 2 ranges, HYPE 63.30 |
-| Nest ±20%, own rule | $46.03 | $0.0766 (0.170%, 23.1%/yr) | 2.294% | 312.0% | $46.07 (2.386%) | in range -237550..-233480, 1 range, HYPE 63.30 |
-| Project X 0.05% ±10%, own rule | $45.72 | $0.4881 (1.085%, 147.6%/yr) | 1.596% | 217.1% | $45.98 (2.177%) | in range -235570..-233550, 2 ranges, HYPE 63.29 |
-| Project X 0.05% ±20%, own rule | $46.12 | $0.2374 (0.528%, 71.8%/yr) | 2.485% | 338.2% | $45.98 (2.177%) | in range -237510..-233440, 1 range, HYPE 63.29 |
-| Project X 0.3% ±10%, own rule | $45.76 | $0.5818 (1.293%, 175.9%/yr) | 1.694% | 230.4% | $45.97 (2.160%) | in range -235560..-233520, 2 ranges, HYPE 63.13 |
-| HLP (Hypercore vault) | $45.01 | $0.0130 (0.029%, 3.9%/yr) | 0.029% | 3.9% | $45.00 (0.000%) | Hypercore reports 16.4% APR trailing; 4-day exit |
+| Nest ±10%, Circuit Ranger (live paper) | $45.20 | $0.1335 (0.296%, 40.1%/yr) | 0.078% | 10.6% | $46.20 (2.302%) | in range -235830..-233810, 2 ranges, HYPE 63.19 |
+| Nest ±20%, own rule | $46.00 | $0.0769 (0.171%, 23.2%/yr) | 2.227% | 301.8% | $46.03 (2.300%) | in range -237550..-233480, 1 range, HYPE 63.19 |
+| Project X 0.05% ±10%, own rule | $45.65 | $0.4910 (1.091%, 147.9%/yr) | 1.443% | 195.6% | $45.92 (2.052%) | in range -235570..-233550, 2 ranges, HYPE 63.14 |
+| Project X 0.05% ±20%, own rule | $46.07 | $0.2387 (0.530%, 71.9%/yr) | 2.388% | 323.6% | $45.92 (2.052%) | in range -237510..-233440, 1 range, HYPE 63.14 |
+| Project X 0.3% ±10%, own rule | $45.76 | $0.5845 (1.299%, 176.0%/yr) | 1.688% | 228.7% | $45.97 (2.151%) | in range -235560..-233520, 2 ranges, HYPE 63.12 |
+| HLP (Hypercore vault) | $45.01 | $0.0131 (0.029%, 3.9%/yr) | 0.029% | 3.9% | $45.00 (0.000%) | Hypercore reports 16.4% APR trailing; 4-day exit |
 | Felix USDC, hold | $45.01 | $0.0136 (0.030%, 4.1%/yr) | 0.030% | 4.1% | $45.00 (0.000%) | price per share, Morpho vault |
 | HyperLend USDC, hold | $45.02 | $0.0158 (0.035%, 4.8%/yr) | 0.035% | 4.8% | $45.00 (0.000%) | liquidity index; supply APY now 3.93% |
 | Lending rotation, Felix or HyperLend (0.5 pt rule, no gas) | $45.02 | $0.0156 (0.035%, 4.7%/yr) | 0.035% | 4.7% | $45.00 (0.000%) | in hyperlend, 1 move; Felix 3.98% realised 24h, HyperLend 3.93% posted |
