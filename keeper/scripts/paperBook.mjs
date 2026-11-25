@@ -53,6 +53,7 @@ const STRATS = [
   { id: "px05_10", type: "range", pool: "px05", pct: 10, driver: "rule", name: "Project X 0.05% ±10%, own rule" },
   { id: "px05_20", type: "range", pool: "px05", pct: 20, driver: "rule", name: "Project X 0.05% ±20%, own rule" },
   { id: "px30_10", type: "range", pool: "px30", pct: 10, driver: "rule", name: "Project X 0.3% ±10%, own rule" },
+  { id: "px05_20h", type: "hedged", pool: "px05", pct: 20, name: "Project X 0.05% ±20% + $HYPE short on Hypercore, own rule" },
   { id: "hlp", type: "hlp", name: "HLP (Hypercore vault)" },
   { id: "felix", type: "lend", venue: "felix", name: "Felix USDC, hold" },
   { id: "hyperlend", type: "lend", venue: "hyperlend", name: "HyperLend USDC, hold" },
@@ -194,6 +195,73 @@ async function runRange(def) {
   return { name: def.name, equity, start: s.start, fees, hold, note: `${sn.tick >= s.pos.lower && sn.tick < s.pos.upper ? "in range" : "OUT"} ${s.pos.lower}..${s.pos.upper}, ${s.opens} range${s.opens === 1 ? "" : "s"}, HYPE ${p.toFixed(2)}` };
 }
 
+// Hedged range: same position and recentre rule as a range line, plus a short HYPE perp on Hypercore sized to the
+// HYPE the position holds, so what is left is fees and funding rather than the HYPE price. 1/6 of the stake sits as
+// perp margin and earns nothing; the rest is the LP. The short is resized hourly when it is more than 5% off the
+// position's HYPE (and at every recentre), paying the base-tier taker fee each time. Funding is Hypercore's own
+// hourly HYPE rate (positive = longs pay shorts). The perp is marked at the pool price, so the basis between
+// Hypercore and the pool is not seen; capital is re-split 5/6 LP, 1/6 margin at each recentre with no transfer cost.
+const TAKER = 0.00045, MARGIN = 1 / 6, REBAL = 0.05;
+const hlInfo = async (body) => (await fetch("https://api.hyperliquid.xyz/info", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) })).json();
+async function fundingSince(t) {
+  const out = new Map();
+  for (let from = t * 1000; ;) {
+    const d = await hlInfo({ type: "fundingHistory", coin: "HYPE", startTime: from });
+    for (const x of d) out.set(Math.round(x.time / 3600000) * 3600, Number(x.fundingRate));
+    if (d.length < 500) break;
+    from = d.at(-1).time + 1;
+  }
+  return out;
+}
+async function runHedged(def) {
+  const pool = POOLS[def.pool], ch = pool.chain, h = await head(ch);
+  const s = (state.s[def.id] ||= {});
+  const b0 = await blockAt(ch, T0);
+  const hypeOf = (sqrt) => amounts(s.pos.L, sqrt, sqrtOfTick(s.pos.lower), sqrtOfTick(s.pos.upper)).hype + s.pos.left.hype + s.pos.fee0;
+  const mark = (p) => { s.hg.m -= s.hg.q * (p - s.hg.p); s.hg.p = p; };
+  const resize = (target, p) => { const c = Math.abs(target - s.hg.q) * p * TAKER; s.hg.m -= c; s.hg.cost += c; s.hg.q = target; s.hg.trades++; };
+  const watch = (p) => { if (s.hg.q > 0) s.hg.minRatio = Math.min(s.hg.minRatio, s.hg.m / (s.hg.q * p)); };
+  if (!s.pos) {
+    const so = await slot0(pool, b0), p0 = priceOfSqrt(so.sqrt), lp = STAKE * (1 - MARGIN);
+    openRange(s, pool, def.pct, lp / 2 / p0, lp / 2, so.sqrt, b0, T0, p0);
+    s.hg = { q: 0, p: p0, m: STAKE * MARGIN, funding: 0, cost: 0, trades: 0, nextH: Math.ceil(T0 / 3600) * 3600, minRatio: 1e9 };
+    resize(hypeOf(so.sqrt), p0);
+    s.start = STAKE; s.feesUsd = 0; s.lastRecentre = T0; s.scanned = b0;
+  }
+  const rates = await fundingSince(s.hg.nextH - 3600);
+  const hourly = (t, sqrt) => {
+    while (s.hg.nextH <= t && rates.has(s.hg.nextH)) {
+      const p = priceOfSqrt(sqrt); mark(p);
+      const f = s.hg.q * p * rates.get(s.hg.nextH); s.hg.m += f; s.hg.funding += f; // short receives when the rate is positive
+      const target = hypeOf(sqrt); if (Math.abs(target - s.hg.q) > REBAL * s.hg.q) resize(target, p);
+      watch(p); s.hg.nextH += 3600;
+    }
+  };
+  let last = null;
+  for (const sw of await swaps(pool, s.scanned + 1, h.n)) {
+    const t = tsOf(ch, sw.block, b0);
+    hourly(t, last ? last.sqrt : sw.sqrt);
+    creditSwap(s, sw);
+    const p = priceOfSqrt(sw.sqrt), pl = priceOfSqrt(sqrtOfTick(s.pos.lower)), pu = priceOfSqrt(sqrtOfTick(s.pos.upper));
+    if ((p <= pl * (1 + EDGE) || p >= pu * (1 - EDGE)) && t - s.lastRecentre >= COOLDOWN) {
+      mark(p); watch(p);
+      const cv = closeValue(s, sw.sqrt), total = cv.value + s.hg.m; s.feesUsd += cv.feesUsd;
+      const lp = total * (1 - MARGIN); s.hg.m = total * MARGIN; // paper transfer between the LP and the margin account
+      openRange(s, pool, def.pct, lp / 2 / p, lp / 2, sw.sqrt, sw.block, t, p);
+      resize(hypeOf(sw.sqrt), p); s.lastRecentre = t;
+    }
+    last = sw;
+  }
+  s.scanned = h.n;
+  const sn = await slot0(pool, h.n), p = priceOfSqrt(sn.sqrt);
+  hourly(h.t, sn.sqrt); mark(p); watch(p);
+  const cv = closeValue(s, sn.sqrt), equity = cv.value + s.hg.m, lpFees = s.feesUsd + cv.feesUsd;
+  const maint = 1 / (2 * (await hlInfo({ type: "meta" })).universe.find((u) => u.name === "HYPE").maxLeverage);
+  const carry = lpFees + s.hg.funding - s.hg.cost; // what the line earned net of the hedge's running costs
+  return { name: def.name, equity, start: s.start, fees: carry, hold: STAKE,
+    note: `LP fees $${lpFees.toFixed(4)} + funding $${s.hg.funding.toFixed(4)} − hedge fees $${s.hg.cost.toFixed(4)} (${s.hg.trades} trades); short ${s.hg.q.toFixed(4)} vs LP ${hypeOf(sn.sqrt).toFixed(4)} HYPE; lowest margin ${(s.hg.minRatio * 100).toFixed(0)}% of short (maintenance ${(maint * 100).toFixed(1)}%)${s.hg.minRatio < maint ? " WOULD HAVE BEEN LIQUIDATED" : ""}; ${s.opens} range${s.opens === 1 ? "" : "s"}; hold = $45 USDC` };
+}
+
 async function runHlp(def) {
   const s = (state.s[def.id] ||= { r: 1 });
   const r = await fetch("https://api.hyperliquid.xyz/info", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ type: "vaultDetails", vaultAddress: HLP }) });
@@ -239,7 +307,7 @@ async function runRotate(def) {
 async function main() {
   const rows = [], errors = [];
   for (const def of STRATS) {
-    try { rows.push(def.type === "range" ? await runRange(def) : def.type === "hlp" ? await runHlp(def) : def.type === "lend" ? await runLend(def) : await runRotate(def)); }
+    try { rows.push(def.type === "range" ? await runRange(def) : def.type === "hedged" ? await runHedged(def) : def.type === "hlp" ? await runHlp(def) : def.type === "lend" ? await runLend(def) : await runRotate(def)); }
     catch (e) { errors.push(`${def.id}: ${(e.shortMessage || e.message).slice(0, 120)}`); rows.push({ name: def.name, error: true }); }
   }
   const now = Math.floor(Date.now() / 1000), days = (now - T0) / 86400, stamp = new Date(now * 1000).toISOString().replace(/\.\d{3}Z$/, "Z");
@@ -250,7 +318,7 @@ async function main() {
     `| Strategy | Equity | Fees or yield | Total return | Annualised | Hold same tokens | Note |`, `|---|---|---|---|---|---|---|`,
     ...rows.map((r) => r.error ? `| ${r.name} | mark failed | | | | | |` : `| ${r.name} | $${r.equity.toFixed(2)} | $${r.fees.toFixed(4)} (${pct(r.fees / r.start)}, ${ann(r.fees / r.start)}/yr) | ${pct(r.equity / r.start - 1)} | ${ann(r.equity / r.start - 1)} | $${r.hold.toFixed(2)} (${pct(r.hold / r.start - 1)}) | ${r.note} |`),
     ``,
-    `Range lines: fees credited per swap from pool Swap events at our share of pool liquidity while in range; recentres are paper swaps at the pool price with no fee, slippage or gas charged. Own rule: recentre when the price is within 2% of an edge, at most every 6h. The live line follows Circuit's own range opens from ops/ranger-paper.log. "Hold" is the same starting tokens held, so total return minus hold is what the strategy added or cost. HLP: chain-linked vault pnl over account value from Hypercore. Lending: Felix price per share, HyperLend liquidity index. Rotation moves when the other venue's rate is 0.5 pt higher at a 6h step, with no gas charged.`,
+    `Range lines: fees credited per swap from pool Swap events at our share of pool liquidity while in range; recentres are paper swaps at the pool price with no fee, slippage or gas charged. Own rule: recentre when the price is within 2% of an edge, at most every 6h. The live line follows Circuit's own range opens from ops/ranger-paper.log. "Hold" is the same starting tokens held, so total return minus hold is what the strategy added or cost. HLP: chain-linked vault pnl over account value from Hypercore. Lending: Felix price per share, HyperLend liquidity index. Rotation moves when the other venue's rate is 0.5 pt higher at a 6h step, with no gas charged. Hedged line: same range and rule as Project X 0.05% ±20%, with 5/6 of the stake in the LP and 1/6 as Hypercore margin for a HYPE short sized to the position's HYPE, resized hourly when more than 5% off and at each recentre at the 0.045% taker fee, earning or paying Hypercore's hourly funding; its fees column is LP fees plus funding minus hedge fees, and its hold is $45 USDC because it is meant to carry no HYPE price exposure. Not charged: basis between Hypercore and the pool, LP gas, and the paper swap and transfer at each recentre.`,
     ...(errors.length ? [``, `Errors this mark: ${errors.join("; ")}`] : []),
     ``, `Source: keeper/scripts/paperBook.mjs. Log: ops/paper-book.log.`, ``,
   ].join("\n");
