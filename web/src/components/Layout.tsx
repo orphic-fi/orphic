@@ -4,7 +4,6 @@ import { chainLabel, hyperEvm } from '../chains'
 import { DEMO, DEMO_ACCOUNT } from '../config/demo'
 import { useTheme } from '../hooks/useTheme'
 import { truncateAddress } from '../lib/format'
-import Readout from './Readout'
 import s from './Layout.module.css'
 
 export function Mark({ size = 18, className }: { size?: number; className?: string }) {
@@ -87,11 +86,16 @@ export default function Layout() {
             <nav className={s.nav} aria-label="Primary">
               <NavLink to="/vaults">Vaults</NavLink>
               <NavLink to="/portfolio">Portfolio</NavLink>
-              <NavLink to="/agents">Agents</NavLink>
+              <NavLink to="/builder">Builder</NavLink>
               <NavLink to="/docs">Docs</NavLink>
             </nav>
           </div>
           <div className={s.right}>
+            <a href="https://x.com/orphicfi" target="_blank" rel="noreferrer" className={s.x} aria-label="Orphic on X">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                <path d="M18.9 2H22l-7.1 8.1L23 22h-6.6l-5.1-6.7L5.4 22H2.3l7.6-8.7L2 2h6.7l4.6 6.1L18.9 2Zm-1.2 18h1.8L7.3 3.9H5.4L17.7 20Z" />
+              </svg>
+            </a>
             <NetworkPill />
             {home ? (
               <Link to="/vaults" className={`${s.wallet} ${s.walletCta}`}>
@@ -109,17 +113,8 @@ export default function Layout() {
       </main>
       <footer className={s.footer}>
         <div className={`wrap ${s.footerRow}`}>
-          <Readout />
-          <div className={s.footerLinks}>
-            <Link to="/ops">status</Link>
-            <a href="https://hyperevmscan.io" target="_blank" rel="noreferrer">
-              explorer
-            </a>
-            <a href="https://x.com/orphicfi" target="_blank" rel="noreferrer">
-              @orphicfi
-            </a>
-            <span className={s.footerNote}>Unaudited. Deposits capped. Rates are estimates, never promises.</span>
-          </div>
+          <Link to="/ops">status</Link>
+          <span className={s.footerNote}>Unaudited. Rates are estimates, never promises.</span>
         </div>
       </footer>
     </div>

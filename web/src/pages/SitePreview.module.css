@@ -1,0 +1,544 @@
+/* The preview is always the builder's dark page, whatever theme orphic.fi is in, like the example pages. */
+.overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  background: #08090c;
+  color: #ece9e1;
+  display: flex;
+  flex-direction: column;
+  overflow: auto;
+  --line: rgba(255, 255, 255, 0.1);
+  --mut: rgba(236, 233, 225, 0.62);
+  --panel: #0e1015;
+}
+
+.chrome {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 16px;
+  padding: 10px 16px;
+  background: #16181d;
+  border-bottom: 1px solid var(--line);
+}
+
+.dots {
+  display: flex;
+  gap: 6px;
+}
+
+.dots i {
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.18);
+}
+
+.url {
+  justify-self: center;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: #0b0c10;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 6px 14px;
+  min-width: 320px;
+  font-size: 13px;
+  color: var(--mut);
+}
+
+.lock {
+  width: 8px;
+  height: 10px;
+  border: 1.5px solid var(--mut);
+  border-radius: 2px;
+}
+
+.chromeRight {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.badge {
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #f3c66f;
+  border: 1px solid rgba(243, 198, 111, 0.4);
+  border-radius: 999px;
+  padding: 4px 10px;
+}
+
+.close {
+  font: inherit;
+  font-size: 13px;
+  padding: 7px 14px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  background: #ece9e1;
+  color: #08090c;
+  cursor: pointer;
+}
+
+.site {
+  flex: 1;
+}
+
+.nav {
+  display: flex;
+  align-items: center;
+  gap: 32px;
+  padding: 18px 56px;
+  border-bottom: 1px solid var(--line);
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 20px;
+  font-weight: 500;
+  color: var(--acc);
+}
+
+.logo {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: var(--acc);
+  color: #08090c;
+  font-size: 13px;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.links {
+  display: flex;
+  gap: 24px;
+  font-size: 15px;
+  color: var(--mut);
+}
+
+.links span:first-child {
+  color: #ece9e1;
+}
+
+.connect {
+  margin-left: auto;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  border-radius: 999px;
+  padding: 9px 18px;
+  font-size: 14px;
+}
+
+.main {
+  padding: 36px 56px 48px;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  max-width: 1280px;
+  margin: 0 auto;
+  box-sizing: border-box;
+}
+
+.hero {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 32px;
+}
+
+.tags {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.tagAcc {
+  color: var(--acc);
+}
+
+.tag {
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 3px 10px;
+  color: var(--mut);
+}
+
+.h1 {
+  font-family: var(--serif);
+  font-weight: 300;
+  font-size: 54px;
+  line-height: 1;
+  letter-spacing: -0.02em;
+  margin: 12px 0 0;
+}
+
+.lede {
+  margin: 14px 0 0;
+  font-size: 16px;
+  line-height: 1.5;
+  max-width: 62ch;
+  color: rgba(236, 233, 225, 0.86);
+}
+
+.stats {
+  display: flex;
+  gap: 28px;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.stats b {
+  display: block;
+  font-family: var(--serif);
+  font-weight: 300;
+  font-size: 34px;
+  line-height: 1;
+}
+
+.stats small {
+  color: var(--mut);
+  font-size: 12.5px;
+}
+
+.cards {
+  display: grid;
+  gap: 16px;
+}
+
+.cards3 {
+  grid-template-columns: 1.3fr 1.3fr 1fr;
+}
+
+.cards2 {
+  grid-template-columns: 2fr 1fr;
+}
+
+.card {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--panel);
+  padding: 22px 24px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-height: 340px;
+}
+
+.cardSen {
+  border-top: 2px solid var(--acc);
+}
+
+.cardJun {
+  border-top: 2px solid #f3c66f;
+}
+
+.cardHead {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+}
+
+.cardHead h2 {
+  font-family: var(--serif);
+  font-weight: 300;
+  font-size: 26px;
+  margin: 0;
+}
+
+.cardHead small {
+  font-size: 12px;
+  color: var(--mut);
+  text-align: right;
+}
+
+.big {
+  font-family: var(--serif);
+  font-weight: 300;
+  font-size: 40px;
+  line-height: 1;
+  color: var(--acc);
+}
+
+.cardJun .big {
+  color: #f3c66f;
+}
+
+.card p {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.5;
+  color: rgba(236, 233, 225, 0.86);
+}
+
+.card ul {
+  margin: 4px 0 0;
+  padding-left: 18px;
+  font-size: 13px;
+  line-height: 1.7;
+  color: var(--mut);
+  flex: 1;
+}
+
+.btnGhost {
+  align-self: flex-start;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  border-radius: 999px;
+  padding: 9px 18px;
+  font-size: 14px;
+}
+
+.btnAcc {
+  background: var(--acc);
+  color: #08090c;
+  border-radius: 999px;
+  padding: 11px 18px;
+  font-size: 15px;
+  font-weight: 500;
+  text-align: center;
+  margin-top: 6px;
+}
+
+.cardDep {
+  gap: 12px;
+}
+
+.k {
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--mut);
+}
+
+.seg {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 3px;
+  font-size: 14px;
+  text-align: center;
+}
+
+.seg span {
+  padding: 7px;
+  border-radius: 8px;
+  color: var(--mut);
+}
+
+.segOn {
+  background: var(--acc);
+  color: #08090c !important;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--mut);
+}
+
+.input {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 10px 14px;
+  color: #ece9e1;
+  font-size: 15px;
+}
+
+.input small {
+  color: var(--mut);
+  font-size: 13px;
+}
+
+.row {
+  display: flex;
+  justify-content: space-between;
+  border-top: 1px solid var(--line);
+  padding: 10px 0;
+  font-size: 14px;
+  color: var(--mut);
+}
+
+.row b {
+  color: #ece9e1;
+  font-weight: 500;
+}
+
+.fine {
+  font-size: 12px;
+  color: var(--mut);
+  line-height: 1.4;
+}
+
+.lower {
+  display: grid;
+  grid-template-columns: 1.3fr 1fr;
+  gap: 16px;
+}
+
+.panel {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--panel);
+  padding: 20px 24px;
+}
+
+.panelHead {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.panelHead h3 {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 500;
+}
+
+.panelHead small {
+  font-size: 12px;
+  color: var(--mut);
+  text-align: right;
+}
+
+.bar {
+  display: flex;
+  height: 6px;
+  border-radius: 3px;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.08);
+  margin-bottom: 8px;
+}
+
+.bar i {
+  display: block;
+  height: 100%;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+
+.table td {
+  padding: 14px 8px 14px 0;
+  border-top: 1px solid var(--line);
+  vertical-align: middle;
+  color: var(--mut);
+}
+
+.table td:first-child {
+  color: #ece9e1;
+}
+
+.table td b {
+  display: block;
+  font-weight: 500;
+}
+
+.table td small {
+  font-size: 12px;
+  color: var(--mut);
+}
+
+.table td:nth-child(n + 2) {
+  text-align: right;
+  white-space: nowrap;
+}
+
+.rules div {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 11px 0;
+  border-top: 1px solid var(--line);
+  font-size: 14px;
+  color: var(--mut);
+}
+
+.rules div:first-child {
+  border-top: 0;
+}
+
+.rules b {
+  color: #ece9e1;
+  font-weight: 500;
+  text-align: right;
+}
+
+.foot {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 32px;
+  border-top: 1px solid var(--line);
+  padding-top: 18px;
+  font-size: 13px;
+  color: var(--mut);
+}
+
+.foot p {
+  margin: 0;
+  max-width: 70ch;
+  line-height: 1.5;
+}
+
+@media (max-width: 900px) {
+  .url {
+    min-width: 0;
+  }
+  .badge {
+    display: none;
+  }
+  .nav,
+  .main {
+    padding-left: 20px;
+    padding-right: 20px;
+  }
+  .links {
+    display: none;
+  }
+  .hero {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  .stats {
+    text-align: left;
+  }
+  .h1 {
+    font-size: 40px;
+  }
+  .cards3,
+  .cards2,
+  .lower {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .card {
+    min-height: 0;
+  }
+  .foot {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+}

@@ -59,7 +59,9 @@ abstract contract Base is Test {
     MarketParams mpWhype;
 
     function setUp() public virtual {
-        vm.createSelectFork(vm.envOr("HYPEREVM_RPC", string("https://rpc.hyperliquid.xyz/evm")), vm.envOr("FORK_BLOCK", uint256(50666000)));
+        vm.createSelectFork(
+            vm.envOr("HYPEREVM_RPC", string("https://hyperliquid.drpc.org")), vm.envOr("FORK_BLOCK", uint256(50666000))
+        );
         mpKhype = MORPHO.idToMarketParams(MKT_KHYPE_625);
         mpWhype = MORPHO.idToMarketParams(MKT_WHYPE_77);
 

@@ -18,6 +18,7 @@
     "watchdog": "tsx src/watchdog.ts"
   },
   "dependencies": {
+    "@nktkas/hyperliquid": "^0.33.3",
     "viem": "2.21.55"
   },
   "devDependencies": {

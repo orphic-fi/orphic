@@ -50,17 +50,15 @@ export interface Fallback {
   reason: string;
 }
 
-const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000" as Address;
-
-/** `expectedGate` is the senior receive-shares gate the config expects; the zero address while none is wired. */
-export function evaluate(r: Reads, expectedAgent: Address, expectedGate: Address = ZERO_ADDRESS): { findings: Finding[]; fallbacks: Fallback[] } {
+/** `expectedGate` is the senior receive-shares gate the config expects; unset means the gate is not checked (the live senior has one, so "none expected" would alert every run). */
+export function evaluate(r: Reads, expectedAgent: Address, expectedGate?: Address): { findings: Finding[]; fallbacks: Fallback[] } {
   const findings: Finding[] = [];
   const fallbacks: Fallback[] = [];
   const f = (level: Finding["level"], code: string, message: string) => findings.push({ level, code, message });
 
   // Who runs the vaults.
   if (r.juniorAgent.toLowerCase() !== expectedAgent.toLowerCase()) f("alert", "JUNIOR_AGENT", `junior.agent is ${r.juniorAgent}, expected ${expectedAgent}`);
-  if (r.seniorReceiveSharesGate.toLowerCase() !== expectedGate.toLowerCase()) f("alert", "SENIOR_GATE", `senior.receiveSharesGate is ${r.seniorReceiveSharesGate}, expected ${expectedGate}`);
+  if (expectedGate && r.seniorReceiveSharesGate.toLowerCase() !== expectedGate.toLowerCase()) f("alert", "SENIOR_GATE", `senior.receiveSharesGate is ${r.seniorReceiveSharesGate}, expected ${expectedGate}`);
   r.juniorMarketAssets.forEach((a, i) => {
     if (a > 0n) f("alert", "JUNIOR_MORPHO_POSITION", `junior holds ${fmt(a)} in Morpho market ${i}; the keeper only uses Felix, so this is not ours`);
   });

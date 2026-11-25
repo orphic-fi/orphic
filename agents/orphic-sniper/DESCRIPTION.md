@@ -1,10 +1,10 @@
 ## Thesis
-Buys new Elysium launches only after they have proved out, and sells each one at a set profit or a set loss. Five snipes per book, nonstop.
+Buys Elysium launches after they have proved out and sells each at a set profit, a set loss, or after an hour; five snipes a book.
 
 ## Strategy
-- **Wait for proof:** Buys a Montra launch once it is over 30 minutes old with a market cap of $25,000 or more, 50 or more holders and $5,000 or more of volume, checked every minute.
+- **Wait for proof:** Buys a Montra launch over 30 minutes old with $25,000+ market cap, 50+ holders and $5,000+ volume, checked every minute; fees over 5% a side are skipped.
 - **Rehearse the exit:** Simulates a buy and a full sell of the same size from a fresh wallet before buying, and skips any token that cannot be sold or loses more than its stated fee.
-- **Five slots, two exits:** Each buy is a fifth of the starting HYPE, a token is bought at most once, and every position is sold at +30% or at -70% on what a sell returns now.
+- **Five slots, three exits:** Each buy is a fifth of the starting HYPE, bought once per token, and sold at +30%, at -30%, or after 60 minutes, on what a sell returns now.
 
 ## Exposure
 - **Holds:** Launch tokens and HYPE — Up to five Elysium launch tokens at a time, each bought with a fifth of the book; the rest stays as native HYPE.

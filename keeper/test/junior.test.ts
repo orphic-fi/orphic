@@ -80,6 +80,9 @@ function fakeClient(values: { cover?: bigint; pending?: bigint; pps?: bigint; id
         case "marketsLength": return 0n;
         case "maxWithdraw": return 0n;
         case "convertToAssets": return 0n;
+        // HyperLend reads used by the same recall (junior v1.2): nothing parked, zero rate, no allowance
+        case "getReserveData": return { currentLiquidityRate: 0n } as never;
+        case "allowance": return 0n;
         default: throw new Error(`unexpected ${args.functionName}`);
       }
     },

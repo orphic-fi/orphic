@@ -39,6 +39,13 @@ export interface Constraints {
 
 export interface Economics {
   marginFactor: number;
+  /** Spread rule: when more than this share of the book sits in one venue and the plan reduces it, move even if the
+   *  weekly gain does not clear the margin, as long as the one-off cost stays under spreadCostCapUsd. 0 disables. */
+  maxConcentration?: number;
+  spreadCostCapUsd?: number;
+  /** Hard ceiling on what the keeper may spend on gas plus slippage in any rolling 24 hours, across senior and
+   *  junior moves. The margin rule decides whether a move pays; this decides whether we can afford it today. */
+  dailyCostCapUsd?: number;
   slippagePenalty: number;
   gasPerAction: number;
   fallbackGasPriceGwei: number;
@@ -53,12 +60,14 @@ export interface SeniorConfig {
   morphoBlue: Address;
   morphoApi: string;
   hyperlendApi: string;
+  /** Junior's lender venue (v1.2+). Absent for junior v1 and v1.1, which have Felix only. */
+  juniorVenues?: { hyperlend?: { junior: Address; pool: Address; aToken: Address; maxFraction: number } };
   vault: Address | "0xTODO";
   /** JuniorVault. Skipped entirely while a placeholder. */
   junior: Address | "0xTODO";
-  /** FeeRouter. The keeper flushes it every tick; skipped while a placeholder. */
+  /** FeeRouter. The keeper splits any USDC sitting in it every tick (review M-5). Skipped while a placeholder. */
   feeRouter?: Address | "0xTODO";
-  /** Senior `receiveSharesGate` the watchdog expects; while a placeholder or unset the expected value is "no gate" (the zero address). */
+  /** Senior `receiveSharesGate` the watchdog expects; while unset or a placeholder the gate is not checked. */
   expectedReceiveSharesGate?: Address | "0xTODO";
   /** ORPH token. Price sampling is skipped while a placeholder. */
   orph: Address | "0xTODO";
@@ -144,6 +153,10 @@ export function validateConfig(cfg: SeniorConfig): void {
     throw new Error("maxClipFraction must be in (0, 1]");
   }
   if (cfg.economics.marginFactor < 1) throw new Error("marginFactor must be >= 1");
+  const mc = cfg.economics.maxConcentration ?? 0;
+  if (mc < 0 || mc > 1) throw new Error("maxConcentration must be between 0 and 1");
+  if ((cfg.economics.spreadCostCapUsd ?? 0) < 0) throw new Error("spreadCostCapUsd must be >= 0");
+  if ((cfg.economics.dailyCostCapUsd ?? 0) < 0) throw new Error("dailyCostCapUsd must be >= 0");
 }
 
 /** Tiny .env loader so the keeper has no dotenv dependency. Never logs values. */

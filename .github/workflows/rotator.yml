@@ -59,6 +59,15 @@ jobs:
           restore-keys: |
             orph-price-samples-
 
+      # Spend ledger: what the keeper paid in gas and slippage, for the rolling 24h cost cap. Same cache pattern.
+      - name: Restore spend ledger
+        uses: actions/cache/restore@v4
+        with:
+          path: keeper/ops/spend.jsonl
+          key: keeper-spend-${{ github.run_id }}
+          restore-keys: |
+            keeper-spend-
+
       - name: Test
         run: npm test
 
@@ -100,6 +109,13 @@ jobs:
         with:
           path: keeper/ops/price-samples.jsonl
           key: orph-price-samples-${{ github.run_id }}
+
+      - name: Save spend ledger
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: keeper/ops/spend.jsonl
+          key: keeper-spend-${{ github.run_id }}
 
       # Position index for the Portfolio tab: folds vault events into per-address totals and commits the result
       # (the public RPC caps eth_getLogs at 1000 blocks, so the site cannot rebuild history on the fly).

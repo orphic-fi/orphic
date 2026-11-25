@@ -56,8 +56,6 @@ cast call 0xD7217E5687FF1071356C780b5fe4803D9D967da7 "isVaultV2(address)(bool)" 
 ```
 
 ## 2. Sunday: deploy junior and router (step 2 of 3)
-(Live since 8 Nov. To move to the fixed junior, router and gate see `MIGRATION.md`; script `06a` deploys them beside the live senior.)
-
 
 What it does: deploys JuniorVault (owner DEPLOYER, cap $75k, senior = step 1 vault), seeds it with 1 USDC of dead shares, pauses deposits, sets the agent, registers the four Morpho markets plus Felix and the senior vault as its valuation universe and venue list, sets the agent allowlist (Morpho supply/withdraw, Felix deposit/redeem/withdraw, senior redeem/withdraw, USDC approvals to Morpho and Felix only). Deploys FeeRouter with recipients senior / junior / treasury and keeper = AGENT.
 
@@ -65,8 +63,6 @@ What it does: deploys JuniorVault (owner DEPLOYER, cap $75k, senior = step 1 vau
 export SENIOR=0x... TREASURY=0x...
 forge script script/02_DeployJuniorRouter.s.sol --rpc-url $HYPEREVM_RPC --broadcast --slow --sender $DEPLOYER --interactive -vvv
 ```
-**Library link (added 2/8).** JuniorVault delegatecalls the external library `VenueAdmin` (venue and rule admin; it holds 1,500+ B of what would not fit under EIP-170). `forge script` links it by itself: the broadcast has ONE EXTRA transaction before the junior CREATE, a CREATE2 through the deterministic deployer `0x4e59b44847b379578588920ca78fbf26c0b4956c` (salt 0, present on HyperEVM; checked with a read-only `eth_getCode`). The library address is therefore fixed by its bytecode: **`0x4Ec02Cfb29E387F6BbCBACF266C7213646DE94dC`** for the sources at orphic `fix/exits-deposits` head (any edit to `VenueAdmin.sol`, to a library it imports, or to the compiler settings changes it; recompute with `cast create2 --deployer 0x4e59b44847b379578588920ca78fbf26c0b4956c --salt 0x00..00 --init-code $(jq -r .bytecode.object out/VenueAdmin.sol/VenueAdmin.json)`). Expect 2 contract creations from the script (VenueAdmin, then JuniorVault) plus the FeeRouter; if the library already exists at that address the CREATE2 step is skipped by forge. Any other way of deploying JuniorVault (cast, a signer page, Circuit) must link the library first (`--libraries src/VenueAdmin.sol:VenueAdmin:0x4Ec0...`) and verification on an explorer needs the same `--libraries` flag; an unlinked creation code contains the placeholder and reverts. Check: `cast code 0x4Ec0...` is non-empty and the junior's runtime code contains the library address.
-
 Read-back: `seeded() true`, `depositsPaused() true`, `agent()`, `marketsLength() 4`, `vaultsLength() 2`, `rules(MORPHO, 0xa99aad89)` allowed with offset 224 (supply), router `senior()`/`junior()`/`treasury()`.
 
 ## 3. Sunday: wire senior (step 3 of 3)
@@ -81,20 +77,6 @@ Read-back: `managementFeeRecipient() == JUNIOR`, `managementFee() == 158548959`,
 
 After step 3, caps and adapters cannot change for 3 days. That is the point.
 
-## 3a. Senior receive-shares gate (curator; audit fixes 4/8, wired in 7/8)
-**The migration plan (`MIGRATION.md`, scripts `06a` to `06d`) deploys the gate and wires it together with the new fee recipient; follow that, not the steps below, for the live system.** The steps below are the manual equivalent and the gate owner rules.
-
-Not part of Sunday's launch script. Needs the senior curator key (hardware wallet) and a 3-day wait. Closes C7, C3b, C3 late buyer; see LIMITATIONS L15 and DECISIONS D43 for what it costs.
-
-1. Deploy `SeniorReceiveGate(senior, junior, owner)` where `owner` is the senior curator. The constructor reverts `WrongPair` unless `junior.senior() == senior`.
-2. Read back on the gate: `senior()`, `junior()`, `owner()`, `maxUnrecognised() == 10000000`, and `canReceiveShares(junior) == true`, `canReceiveShares(<a fresh address>) == true` in normal times.
-3. Curator: `senior.submit(abi.encodeCall(setReceiveSharesGate, (gate)))` (the timelock on that selector is 3 days). Do NOT execute early.
-4. After 3 days (and not while a cover or loss is in progress, so the first honest deposit is not refused): `senior.setReceiveSharesGate(gate)`. Read back `receiveSharesGate() == gate`, then run one small senior deposit and `accrueInterest()` and confirm junior's fee shares still mint.
-5. Watchdog: set `expectedReceiveSharesGate` in `keeper/config/senior.json` to the gate address in the same change. Until then the watchdog expects no gate and alerts `SENIOR_GATE` the moment one appears; it also alerts if the gate is later swapped or removed.
-6. Gate owner: `setAllowed(keeper, true)` ONLY if the keeper ever receives senior shares (it should not). Allowlist the Safe/treasury only if it must receive shares during a window. NEVER allowlist a pooled holder (a wrapper, a lending market, a router, a vault): it would let every depositor behind it buy during a loss or cover window and defeat the gate. Fee recipients and adapters are exempt automatically.
-7. Abort: the curator can `submit(setReceiveSharesGate(0))` (3 days) to remove it; `revoke` cancels a pending set.
-Expect: after any loss, depositors see `CannotReceiveShares` until junior settles and the cover is recognised (2 to 4 days). Redemptions are never affected.
-
 ## 4. Sunday: dry-run a settle on a fork
 I run `forge test --match-contract DeployTest` against the live addresses (env `SENIOR`, `JUNIOR` override) and the junior test suite pointed at the deployed junior: deposit, agent supply, warp 7 days, `settle()`, exit, claim. Results into the log.
 
@@ -103,7 +85,6 @@ I run `forge test --match-contract DeployTest` against the live addresses (env `
 - Front end: `web/src/config/addresses.ts` with the addresses, `DEPLOYED = true`, deploy to the orphic.fi host. Write buttons stay disabled by `OPENS_LABEL` until Monday.
 
 ## 5a. Monday: ORPH and the pool (step 4 and 5)
-(Phase G of `MIGRATION.md`: independent of the junior migration; `setStakeToken` then goes on junior v2.)
 
 Step 4, `04_DeployORPH.s.sol`: ORPH (1B, no owner), two OZ timelocks (treasury 15%, incentives 10%, 3-day delay, admin = TREASURY_ADMIN), TeamVesting (15%, 2 years, 6-month cliff, beneficiary TEAM), 60% to POOL_SEEDER (the Safe).
 ```
@@ -164,22 +145,11 @@ The gate is 20% of the deposit in ORPH. `stakePerAsset` is ORPH wei per 1 USDC a
 3. Wednesday: anyone (the keeper does it) calls `applyStakePerAsset()`. Read back `stakePerAsset()`; the app shows the pending change and date from `pendingStakePerAsset()` and `stakeEta()`.
 4. Emergency (price collapse or spike): `proposeStakePerAsset` still waits 3 days by design; use `setDepositsPaused(true)` if the gate becomes meaningless in the meantime.
 
-## 6a. Keeper schedule (audit fixes 5/8): one checklist
-Every tick (hourly; the GitHub keeper also fires at :37, which is harmless because every step is a no-op when there is nothing to do). The junior steps need the AGENT key; `distribute`, `observeSenior`, `syncSenior` and `settle` are permissionless, so the watchdog or anyone can run them if the keeper is down. Each step skips with a note on a junior build that predates the fixes.
-1. `senior.accrueInterest()` once a day (junior's fee shares).
-2. `feeRouter.distribute()` whenever the router holds unparked USDC (`balanceOf - totalParked`). `NothingToDo` is a skip. Flushing every tick keeps each push to senior small: with the senior gate wired (3a), a push above `maxUnrecognised` (10 USDC) closes senior deposits until the price is recognised, and it bounds a junior-deposit fee snipe (L14).
-3. `junior.observeSenior()` when senior's supply is below `seniorSupplyMin` (L10), then `junior.syncSenior()` when senior's supply moved.
-4. `junior.snapFelixExposure()` (agent), taken once senior is funded (the constructor's snapshot has fraction 0), then every tick, EXCEPT while a Felix loss is booked and unbilled: for any `felixExp(i)`, `(lostAssets(vault) - lostBase) * fraction / 1e24 * 1e6 > assetsRef` (junior's own 1 ppm guard). It resumes after the settle that bills the loss (L11 item 3).
-5. Liquidity: if junior idle USDC < `reservedAssets + carryOwed()`, recall EVERY position through `junior.execute`: Felix, every Morpho market, and junior's own senior fee shares (`senior.redeem(shares, junior, junior)`, the rule set in step 2). Only idle USDC above the reserve is redeployed to Felix, where the reserve is the MAX of (`reservedAssets + carryOwed()` + exits maturing before the next settle), the 1% cover buffer and a 5 USDC floor, so the carry is never redeployed (L9, L12). If `carryOwed()` cannot be read (an RPC error, as opposed to a pre-fix junior that has no such function), nothing is redeployed that tick.
-6. Settle tick, the first tick within 3,600 s of `lastSettle + SETTLE_INTERVAL` (6 d 23 h), and every tick after it until settled. In this order: touch Felix first (`execute(Felix.withdraw(0, junior, junior))`, which runs Felix's accrual so a pending bad debt is booked in `lostAssets`, L11 item 4), then recall EVERY Felix and market position to idle (markets by assets, capped by the market's live liquidity). `distribute` and `snapFelixExposure` are skipped until after `settle()`. If the due second is at most 15 minutes away (`SETTLE_MAX_WAIT` 900 s) the keeper waits for chain time to reach it and calls `settle()` at that second; otherwise the next tick settles (any tick after the due second settles first). Right before sending it re-reads `lastSettle`: a newer value, or a `TooSoon` refusal with `lastSettle` moved, means someone else settled, which counts as success.
-   A settle tick never redeploys. Whatever fails (the touch, a recall, the wait, the settle) the tick stays a settle tick: the idle redeploy is skipped, the settle is not sent if the touch or a recall failed, and the run goes RED (`error`, exit 1, and the failure is listed in the report's `alerts`, exit 2). The next tick retries from the touch.
-   Why the wait is bounded: the Action job has `timeout-minutes: 30` (the Tick step has none of its own) and also installs and runs the tests, so a 15-minute wait leaves margin; at :07 and :37 a tick can fall up to an hour before the due second and settles on the next one. The safety property is the recall BEFORE the due second: anyone who calls `settle()` at the due second finds idle funded. Raising `SETTLE_MAX_WAIT` would need a longer job timeout, which is an operator change to `.github/workflows/rotator.yml` for 7/8 (this fix does not touch `.github`).
-   The watchdog's permissionless `settle()` fallback fires 4 h after the due second (it counts lateness from `lastSettle + 7 d`, 1 h later than the due second, and allows 3 h), and only sends in `ROTATOR_MODE=watchdog` with `LIVE=1` and the key present; otherwise it only alerts. It does not recall first.
-7. Watchdog (every run): alerts on any junior Morpho-market position (the keeper only uses Felix), on an `agent()` that is not `EXPECTED_AGENT`, and on a senior `receiveSharesGate` that differs from `expectedReceiveSharesGate` in the config (zero address while none is wired).
-If the keeper is down, anyone can call `syncSenior()`, `observeSenior()`, `distribute()` and `settle()`; `snapFelixExposure()` and the recalls need the agent or owner.
+## 6a. Hourly (keeper)
+`junior.syncSenior()` every tick so new senior deposits are covered; report `coverInProgress()`. If the keeper is down, anyone can call it.
 
-## 7. Weekly settle (every 6 d 23 h from the last settle)
-Anyone can call `settle()`; the keeper runs the settle tick of 6a item 6 (touch Felix, recall every position, settle at the due second), not a Sunday-midnight-only window. Before it the recall makes junior idle USDC cover `pendingExitShares * pricePerShare` for exits maturing that day and the cover bill. After it: read `pricePerShare()`, `reservedAssets()`, `pricedExitShares()`, `Settled` event, and the `Cover` event if any. Post the numbers on the agents page.
+## 7. Weekly settle (Sundays, 00:00 UTC window)
+Anyone can call `settle()`; the keeper's `--weekly` run does it after `accrueInterest()` on senior. Before it: Rotator ensures junior idle USDC covers `pendingExitShares * pricePerShare` for exits maturing that day. After it: read `pricePerShare()`, `reservedAssets()`, `pricedExitShares()`, `Settled` event, and the `Cover` event if any. Post the numbers on the agents page.
 
 ## 7a. Router sweeps
 `sweep(token, router, swapData, amountIn)` is capped at `maxSweepUsdc` of USDC out per call (25,000 USDC at launch, owner-settable): the oracle value of `amountIn` and the measured USDC received. The cap bounds USDC out, not the value of the tokens sold. Positive slippage at the cap is refused (`SweepTooLarge`), so size sweeps below it. Floor = oracle value minus `maxSlippageBps` (set 100 to 300).
@@ -188,7 +158,7 @@ Anyone can call `settle()`; the keeper runs the settle tick of 6a item 6 (touch 
 
 **The band.** `sweep` reverts `PriceOutsideBand` when the oracle is more than `maxPriceMoveBps` (1,000 = 10%) from the last accepted price, or more than `maxCumulativeMoveBps` (3,000 = 30%) from the last seed (the error's second value says which anchor). The drift compounds up to the cumulative bound. A sweep moves the reference only when its oracle value is at least `maxSweepUsdc / 100` (250 USDC at launch): a dust sweep passes but changes nothing. After a real market move beyond the bound, the owner checks the market and calls `seedPrice` again; read `lastPrice(token)`, `seedRef(token)`, `maxPriceMoveBps()` and `maxCumulativeMoveBps()` first. A band refusal is the signal that the oracle is stale or the market moved, not a keeper bug. `setMaxPriceMoveBps` and `setMaxCumulativeMoveBps` (step <= cumulative <= 5,000) widen it. The keeper still sweeps only when the Morpho oracle for the token has been updated within the hour (keeper check).
 
-**Flushing.** `distribute()` is permissionless and the keeper calls it every tick (fixes 5/8): it is what bounds a junior-deposit fee snipe (LIMITATIONS L14). Anyone may call it; it only splits USDC already in the router, net of parked amounts, to the owner-set recipients.
+**Flushing.** `distribute()` is permissionless and the keeper calls it every tick: it is what bounds a junior-deposit fee snipe (LIMITATIONS L14). Anyone may call it; it only splits USDC already in the router, net of parked amounts, to the owner-set recipients.
 
 ## 8. Kill switch
 - Pause junior deposits: `cast send $JUNIOR "setDepositsPaused(bool)" true`. Exits, claims and settle keep working by construction.
@@ -199,12 +169,7 @@ Anyone can call `settle()`; the keeper runs the settle tick of 6a item 6 (touch 
 - If the agent key leaks: the above, then rotate the GitHub secret. The key could only have moved funds between allowlisted venues and the contract.
 
 ## 8a. Owner hardening (junior owner, hardware wallet, and senior curator)
-(Item 1 for the old junior is phase D of `MIGRATION.md`, behind a checklist that every market position is 0; v2 is deployed without those rules.)
-1. **Remove the two Morpho rules the shipped keeper never uses** (audit A9b/A9f). The keeper only deploys junior's USDC to Felix; Morpho supply and withdraw on junior's markets are unused attack surface for a leaked agent key. From the junior owner:
-   `cast send $JUNIOR "setRule(address,bytes4,bool,uint256)" $MORPHO 0xa99aad89 false 224` (supply)
-   `cast send $JUNIOR "setRule(address,bytes4,bool,uint256)" $MORPHO 0x5c2bea49 false 256` (withdraw)
-   Read back `rules($MORPHO, 0xa99aad89)` and `rules($MORPHO, 0x5c2bea49)` both not allowed. Do it only when `marketAssets(i)` is 0 for every market. **WARNING: a stranded market position blocks the settle tick EVERY WEEK.** The recall (6a items 5 and 6) withdraws a market position through the withdraw rule; with that rule removed, or when the market has no liquidity to pay it, the recall for that market fails, the settle is not sent by the keeper and the run goes red until the owner re-enables the withdraw rule (or the market regains liquidity), and the permissionless fallback settles without a recall. A market that is merely illiquid is reported and skipped, not an error; a revert (for example the rule is off) is an error. The watchdog alerts `JUNIOR_MORPHO_POSITION` on any such position.
-2. **Safe migration before raising caps.** The senior owner and curator are the deployer account until handed over (review M-5: a curator can route senior funds to a venue that loses, and junior pays). Before ANY `increaseAbsoluteCap` / `increaseRelativeCap` beyond the launch caps: (a) the Safe `0x9EDf...5F29` has code on HyperEVM and its owners are confirmed; (b) from the current owner, `senior.setCurator(Safe)` then `senior.setOwner(Safe)` (or step 3 with `OWNER_FINAL`); (c) read back `curator()` and `owner()`; (d) the junior owner stays the separate hardware wallet, so the curator and the junior owner are never the same key; (e) keep the 3-day timelocks on adapters and caps. Raise caps only from the Safe, through `submit` and the timelock.
+1. **Safe migration before raising caps.** The senior owner and curator are the deployer account until handed over (review M-5: a curator can route senior funds to a venue that loses, and junior pays). Before ANY `increaseAbsoluteCap` / `increaseRelativeCap` beyond the launch caps: (a) the Safe `0x9EDf...5F29` has code on HyperEVM and its owners are confirmed; (b) from the current owner, `senior.setCurator(Safe)` then `senior.setOwner(Safe)` (or step 3 with `OWNER_FINAL`); (c) read back `curator()` and `owner()`; (d) the junior owner stays the separate hardware wallet, so the curator and the junior owner are never the same key; (e) keep the 3-day timelocks on adapters and caps. Raise caps only from the Safe, through `submit` and the timelock.
 
 ## Signer page (how Cashout deploys without Foundry)
 

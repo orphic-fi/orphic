@@ -43,7 +43,7 @@ describe("watchdog", () => {
   });
   it("alerts when senior's receiveSharesGate is not the expected one, in both directions", () => {
     const gate = "0x5000000000000000000000000000000000000005" as const;
-    expect(codes({ ...healthy, seniorReceiveSharesGate: gate })).toEqual(["SENIOR_GATE"]); // none expected, one appeared
+    expect(codes({ ...healthy, seniorReceiveSharesGate: gate })).toEqual([]); // nothing configured: not checked
     expect(evaluate({ ...healthy, seniorReceiveSharesGate: gate }, AGENT, gate).findings).toEqual([]);
     expect(evaluate(healthy, AGENT, gate).findings.map((f) => f.code)).toEqual(["SENIOR_GATE"]); // expected, removed
     expect(evaluate({ ...healthy, seniorReceiveSharesGate: "0x6000000000000000000000000000000000000006" }, AGENT, gate).findings.map((f) => f.code)).toEqual(["SENIOR_GATE"]); // swapped

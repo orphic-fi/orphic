@@ -101,6 +101,8 @@ export interface Decision {
   threshold: number;
   actions: number;
   reason: string;
+  /** Set when the spread rule, not the margin, decided the move. */
+  spread?: { concentration: number; maxConcentration: number; costCapUsd: number };
 }
 
 export interface PlanStep {

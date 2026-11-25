@@ -163,18 +163,25 @@
   flex-wrap: wrap;
 }
 
-.footerLinks {
-  display: flex;
-  gap: 18px;
-  align-items: center;
-  flex-wrap: wrap;
-}
-
-.footerLinks a {
+.footerRow a {
   color: var(--muted);
 }
 
-.footerLinks a:hover {
+.footerRow a:hover {
+  color: var(--text);
+}
+
+.x {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  color: var(--muted);
+}
+
+.x:hover {
   color: var(--text);
 }
 

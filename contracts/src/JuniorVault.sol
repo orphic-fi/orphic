@@ -17,14 +17,11 @@ import {MarketParamsLib} from "morpho-blue/libraries/MarketParamsLib.sol";
 import {MorphoBalancesLib} from "morpho-blue/libraries/periphery/MorphoBalancesLib.sol";
 import {IVaultV2} from "vault-v2/interfaces/IVaultV2.sol";
 import {IAdapter} from "vault-v2/interfaces/IAdapter.sol";
-import {VenueAdmin} from "./VenueAdmin.sol";
 
-/// @dev Selectors probed on a MetaMorpho v1.1 vault behind a Vault V2 adapter; any other contract just fails the probe.
-interface IFelixProbes {
-    function morphoVaultV1() external view returns (address);
-    function lostAssets() external view returns (uint256);
-    function totalSupply() external view returns (uint256);
-    function balanceOf(address) external view returns (uint256);
+/// @dev The two views every Aave v3 aToken exposes; enough to bind an aToken to its pool and underlying.
+interface IAToken {
+    function UNDERLYING_ASSET_ADDRESS() external view returns (address);
+    function POOL() external view returns (address);
 }
 
 /// @title JuniorVault
@@ -47,8 +44,8 @@ contract JuniorVault is ERC20, Ownable2Step, ReentrancyGuard, Multicall {
     uint256 public constant WAD = 1e18;
     uint256 public constant NOTICE = 7 days;
     uint256 public constant SETTLE_INTERVAL = 7 days - 1 hours; // weekly, with an hour of slack for the keeper
+    uint256 public constant MAX_MARKETS = 16;
     uint256 public constant SEED_ASSETS = 1e6; // 1 USDC of dead shares against first-depositor price games
-    uint256 internal constant PROBE_GAS = 50_000; // gas cap per Felix probe (storage reads need about 3k)
     uint256 public constant PRICE_UNIT = 1e24; // senior shares used to quote its price with enough precision
 
     IERC20 public immutable asset; // USDC, 6 decimals
@@ -90,20 +87,6 @@ contract JuniorVault is ERC20, Ownable2Step, ReentrancyGuard, Multicall {
     uint256 public lastMaturedDay; // last day bucket folded into pricedExitShares by settle
     uint256 public seniorPriceBase; // senior real assets per PRICE_UNIT shares at the last settle, after any cover
     uint256 public seniorSupplyBase; // senior share supply at the last sync: only these shares were exposed to a loss
-    uint256 public seniorSupplyMin; // lowest senior share supply observed since the baseline: exits before a late buy still count
-    uint256 public carryPerShare; // unpaid cover per exposed senior share (PRICE_UNIT units), billed at the next settle
-    /// @dev A Felix (MetaMorpho v1.1) vault behind a senior adapter. `lostBase` (Felix's `lostAssets`, a scalar flows cannot
-    ///      move) is re-taken at every baseline reset. `fraction` (senior's share of the vault, PRICE_UNIT units, its shares
-    ///      over its supply) and `assetsRef` (the adapter's assets, for the 1 ppm dust guard) are the EXPOSURE part: they
-    ///      are re-taken only by `snapFelixExposure` (agent or owner), never by a permissionless call.
-    struct FelixExp {
-        address vault;
-        uint96 lostBase;
-        uint128 fraction;
-        uint128 assetsRef;
-    }
-    FelixExp[] public felixExp;
-    uint256 public felixExpSupply; // senior share supply when the exposure was taken
     uint256 public seniorBaseTime; // when the baseline was taken, for the management fee drift
     uint256 public pendingExitShares; // shares locked and not yet priced, still part of the live supply
     uint256 public pricedExitShares; // shares priced at a past settle, excluded from the live supply
@@ -114,10 +97,19 @@ contract JuniorVault is ERC20, Ownable2Step, ReentrancyGuard, Multicall {
     mapping(Id => bool) public isMarket;
     address[] public vaults; // ERC-4626 vaults the agent may deposit to (Felix v1.1, senior for fee shares)
     mapping(address => bool) public isVault;
+    // Aave-style lending pools (HyperLend). The pool is the venue the agent calls; the aToken is what we hold and
+    // value, 1:1 with USDC, growing in place. The aToken itself is never a venue: no rule can target it.
+    address[] public lenders;
+    mapping(address => bool) public isLender;
+    mapping(address => address) public lenderAToken; // pool => aToken
 
     // Agent allowlist. receiverOffset is the calldata byte offset (after the 4-byte selector) of the address that must
     // equal this contract, or type(uint256).max when the call has no receiver to check.
-    mapping(address => mapping(bytes4 => VenueAdmin.Rule)) public rules;
+    struct Rule {
+        bool allowed;
+        uint256 receiverOffset;
+    }
+    mapping(address => mapping(bytes4 => Rule)) public rules;
     mapping(address => mapping(address => bool)) public approvals; // token => spender the agent may approve
 
     /* EVENTS */
@@ -126,9 +118,7 @@ contract JuniorVault is ERC20, Ownable2Step, ReentrancyGuard, Multicall {
     event ExitRequested(address indexed owner, uint256 shares, uint256 readyAt);
     event ExitClaimed(address indexed owner, uint256 shares, uint256 assets, uint256 price);
     event Settled(uint256 indexed index, uint256 nav, uint256 supply, uint256 price, uint256 cover);
-    event Cover(uint256 owed, uint256 paid);
-    event FelixExposureSnapped(uint256 vaults, uint256 seniorSupply);
-    event CoverShortfallCarried(uint256 unpaid); // part of a shortfall idle USDC could not pay, billed at the next settle
+    event Cover(uint256 shortfall, uint256 paid);
     event AgentCall(address indexed target, bytes4 indexed selector, uint256 value);
     event RuleSet(address indexed target, bytes4 indexed selector, bool allowed, uint256 receiverOffset);
     event ApprovalRuleSet(address indexed token, address indexed spender, bool allowed);
@@ -136,6 +126,8 @@ contract JuniorVault is ERC20, Ownable2Step, ReentrancyGuard, Multicall {
     event VaultAdded(address indexed vault);
     event MarketRemoved(Id indexed id);
     event VaultRemoved(address indexed vault);
+    event LenderAdded(address indexed pool, address indexed aToken);
+    event LenderRemoved(address indexed pool);
     event StakeTokenSet(address token, uint256 stakePerAsset);
     event StakePerAssetSet(uint256 stakePerAsset);
     event StakePerAssetProposed(uint256 stakePerAsset, uint256 eta);
@@ -160,9 +152,7 @@ contract JuniorVault is ERC20, Ownable2Step, ReentrancyGuard, Multicall {
     error InsufficientLiquidity();
     error WrongAsset();
     error VenueBroken();
-    error ZeroPrice();
-    error Insolvent();
-    error StakeRateOutOfBounds();
+    error Underwater();
 
     constructor(IERC20 asset_, IVaultV2 senior_, IMorpho morpho_, address owner_, uint256 depositCap_)
         ERC20("Orphic Junior USDC", "ojUSDC")
@@ -179,8 +169,6 @@ contract JuniorVault is ERC20, Ownable2Step, ReentrancyGuard, Multicall {
         settles.push(Settle(uint64(block.timestamp), uint192(WAD)));
         seniorPriceBase = _seniorRealPrice();
         seniorSupplyBase = senior_.totalSupply();
-        seniorSupplyMin = seniorSupplyBase;
-        _snapFelixExposure();
         seniorBaseTime = block.timestamp;
     }
 
@@ -189,7 +177,7 @@ contract JuniorVault is ERC20, Ownable2Step, ReentrancyGuard, Multicall {
         if (seeded) revert AlreadySet();
         seeded = true;
         asset.safeTransferFrom(msg.sender, address(this), SEED_ASSETS);
-        _mint(address(0xdead), _toShares(SEED_ASSETS, 0)); // supply is 0 here: the price is WAD, nav unused
+        _mint(address(0xdead), _toShares(SEED_ASSETS));
     }
 
     /* DEPOSIT */
@@ -197,19 +185,19 @@ contract JuniorVault is ERC20, Ownable2Step, ReentrancyGuard, Multicall {
     function deposit(uint256 assets, address receiver) external nonReentrant returns (uint256 shares) {
         if (depositsPaused || !seeded) revert Paused();
         if (assets == 0) revert ZeroAmount();
-        _syncSenior(); // every junior deposit also refreshes what senior exposure we stand behind
-        (uint256 net, bool complete) = _netHoldings(); // one valuation prices the solvency check, the cap and the shares
+        (uint256 gross, bool complete) = _grossComplete();
         if (!complete) revert VenueBroken();
-        // priced exits are fixed claims: while holdings cannot cover them NAV is 0 and a newcomer would mint at the
-        // stale frozen price and fill the hole with their own USDC
-        if (net < reservedAssets || (net == reservedAssets && net != 0)) revert Insolvent(); // net == reserve: NAV 0, the frozen price is stale
-        uint256 nav = net - reservedAssets;
+        // A venue loss after exits were priced can leave less than those exits are owed. New money must not fill
+        // that gap (review M-4): deposits wait until the stayers are whole again or the owner resolves it.
+        if (gross < reservedAssets) revert Underwater();
+        uint256 nav = gross - reservedAssets;
         if (nav + assets > depositCap) revert CapExceeded();
         if (walletCap != 0) {
             uint256 held = balanceOf(receiver) + exitOf[receiver].shares;
             if (held * pricePerShare / WAD / assetScale + assets > walletCap) revert CapExceeded();
         }
-        shares = _toShares(assets, nav);
+        _syncSenior(); // every junior deposit also refreshes what senior exposure we stand behind
+        shares = _toShares(assets);
         uint256 stake;
         if (address(stakeToken) != address(0)) {
             stake = assets * stakePerAsset / 1e6;
@@ -251,25 +239,15 @@ contract JuniorVault is ERC20, Ownable2Step, ReentrancyGuard, Multicall {
         uint256 price = _priceAtOrAfter(r.readyAt, r.settleHint);
         uint256 owed = uint256(r.shares) * price / WAD / assetScale;
         uint256 assets = owed;
-        uint256 idle = asset.balanceOf(address(this));
-        if (owed != 0 && idle < reservedAssets + carryOwed()) { // a claim worth 0 never needs a valuation
-            // idle alone does not prove junior can honour every priced claim: value everything. Holdings short of the
-            // reserve (a venue loss after pricing) are shared pro rata, so the first claimant takes no more than the
-            // last. Each claim leaves the ratio unchanged (net and reserve both fall in proportion).
-            (uint256 net, bool complete) = _netHoldings();
-            if (net < reservedAssets) {
-                // a venue view that reverts counts as 0 above: a shortfall is only provable when every view answers
-                if (!complete) revert VenueBroken();
-                assets = owed * net / reservedAssets;
-                // exits drain the reserve: once it is 0 the guard above no longer fires and deposits would mint at the
-                // frozen pre-loss price. Deposits stay off until a settle re-freezes it and the owner unpauses.
-                _pauseDeposits();
-            }
-        }
-        if (idle < assets) revert InsufficientLiquidity();
+        // If the vault holds less than every priced exit is owed, each claim takes the same haircut instead of the
+        // last claimant taking the whole gap (review M-4). The reserve falls by what was owed, the vault by what
+        // was paid, so the ratio is the same for every later claimant.
+        (uint256 gross, bool complete) = _grossComplete();
+        if (complete && gross < reservedAssets && reservedAssets != 0) assets = owed * gross / reservedAssets;
+        if (asset.balanceOf(address(this)) < assets) revert InsufficientLiquidity();
         delete exitOf[msg.sender];
         pricedExitShares -= r.shares;
-        reservedAssets = reservedAssets >= owed ? reservedAssets - owed : 0; // the full claim leaves the reserve
+        reservedAssets = reservedAssets >= owed ? reservedAssets - owed : 0;
         _burn(address(this), r.shares);
         // Release stake pro rata to the staked shares leaving; a full exit releases everything.
         uint256 stake = stakeOf[msg.sender];
@@ -329,102 +307,41 @@ contract JuniorVault is ERC20, Ownable2Step, ReentrancyGuard, Multicall {
     ///      never paid twice. "Should be" is last settle's level less the management fee dilution since then (that
     ///      fee is ours, not a loss). Only shares that existed at the last settle are billed: senior deposits made
     ///      after the loss bought in at the depressed price and are not owed anything.
-    ///      Exposure is the smallest senior supply seen since the baseline (current supply, baseline supply, and the
-    ///      minimum recorded at every observation), so shares that left and were replaced by a buyer after the loss are
-    ///      not billed as if they still held it. Residual: an exit and a buy that both fall between two observations
-    ///      stay invisible (closed by the senior receive-shares gate, a later change).
-    ///      Partial cover: when idle cannot pay what is owed, the unpaid part becomes an explicit debt,
-    ///      `carryPerShare` (PRICE_UNIT units, per exposed senior share). The baseline is the plain post-payment price,
-    ///      so senior's yield cannot net the debt. At every settle the owed amount is the new shortfall plus
-    ///      `carryPerShare * exposed`, paid up to idle (no venue pull); what is still unpaid is carried again, and the
-    ///      baseline supply stays at `exposed`, so senior bought after the loss cannot enlarge the bill and exits shrink
-    ///      it. While a debt is outstanding `syncSenior` only observes: newcomers are covered again once it is cleared.
-    ///      Junior's NAV is net of the debt (`carryOwed`) wherever junior is priced, so an exit priced at a partial-cover
-    ///      settle bears its share. The `exposed != 0` guard is defensive (with nothing exposed nothing is owed). This
-    ///      path never reverts: idle 0 pays 0 and carries it all.
-    ///      Felix losses: Vault V2 never marks a Felix bad debt, so the gross price does not show it. The amount owed also
-    ///      includes senior's share of the Felix `lostAssets` booked since the baseline: (lost now - lostBase) times
-    ///      senior's share-of-Felix fraction from the exposure snapshot (`felixExp`, taken only by the agent or owner), scaled
-    ///      to the exposed senior shares. Nothing a permissionless caller or a flow can move feeds it. `coverInProgress`
-    ///      reads 0 for such a cover.
     function _coverSenior() internal returns (uint256 paid) {
-        (uint256 price, uint256 denominator) = _seniorPriceAndDenominator();
+        uint256 price = _seniorRealPrice();
         uint256 supply = senior.totalSupply();
         uint256 expected = _expectedSeniorPrice();
-        uint256 baseSupply = supply;
-        uint256 newCarry;
-        (uint256 felixOwed, bool felixLoss) = _felixOwed();
-        if ((price < expected || carryPerShare != 0 || felixLoss) && supply != 0) {
-            uint256 exposed = _exposed(supply);
-            uint256 owed = carryPerShare * exposed / PRICE_UNIT;
-            if (price < expected) owed += (expected - price) * exposed / PRICE_UNIT;
-            // exposed is capped at the exposure snapshot's supply: a flash-inflated baseline supply cannot scale the Felix term up
-            if (felixLoss && felixExpSupply != 0) owed += felixOwed * (exposed < felixExpSupply ? exposed : felixExpSupply) / felixExpSupply;
+        if (price < expected && supply != 0) {
+            uint256 exposed = supply < seniorSupplyBase ? supply : seniorSupplyBase;
+            uint256 shortfall = (expected - price) * exposed / PRICE_UNIT;
             uint256 idle = asset.balanceOf(address(this));
             idle = idle > reservedAssets ? idle - reservedAssets : 0; // priced exits are fixed claims, not first loss
-            paid = owed < idle ? owed : idle;
+            paid = shortfall < idle ? shortfall : idle;
             if (paid != 0) asset.safeTransfer(address(senior), paid);
-            if (owed != 0) emit Cover(owed, paid);
-            price += paid * PRICE_UNIT / denominator; // what we just paid is idle USDC in senior; nothing else moved
-            if (paid < owed) {
-                emit CoverShortfallCarried(owed - paid);
-                if (exposed != 0) {
-                    newCarry = (owed - paid) * PRICE_UNIT / exposed;
-                    baseSupply = exposed;
-                }
-            }
+            emit Cover(shortfall, paid);
+            price = _seniorRealPrice(); // includes what we just paid
+            // What idle could not pay stays owed: carry it in the baseline so the next settle bills it again
+            // (review H-1). Without this a partial cover would silently forgive the rest of the loss.
+            if (paid < shortfall) price += (shortfall - paid) * PRICE_UNIT / exposed;
         }
-        carryPerShare = newCarry;
         seniorPriceBase = price;
-        seniorSupplyBase = baseSupply;
-        seniorSupplyMin = baseSupply;
-        _rebaseFelixLost();
+        seniorSupplyBase = supply;
         seniorBaseTime = block.timestamp;
     }
 
-    /// @dev Senior shares that are still exposed to the loss: the smallest supply seen since the baseline.
-    function _exposed(uint256 supply) internal view returns (uint256 exposed) {
-        exposed = supply < seniorSupplyBase ? supply : seniorSupplyBase;
-        if (seniorSupplyMin < exposed) exposed = seniorSupplyMin;
-    }
-
-    /// @notice USDC junior still owes senior from a partial cover, billed at the next settle. Junior's NAV is net of it.
-    function carryOwed() public view returns (uint256) {
-        if (carryPerShare == 0) return 0;
-        return carryPerShare * _exposed(senior.totalSupply()) / PRICE_UNIT;
-    }
-
     /// @notice Refresh the senior baseline while no loss is outstanding, so shares deposited since the last settle
-    ///         become covered. Permissionless; the keeper calls it hourly. Below baseline, or while a partial-cover debt is
-    ///         outstanding, it only lowers the observed minimum supply, so it can never be used after a loss to enlarge the bill.
+    ///         become covered. Permissionless; the keeper calls it hourly. Does nothing if senior is below baseline,
+    ///         so it can never be used after a loss to enlarge the bill.
     function syncSenior() external {
         _syncSenior();
     }
 
     function _syncSenior() internal {
-        uint256 supply = _observeSenior();
-        if (carryPerShare != 0) return; // a debt is outstanding: observe only, the baseline waits for the settle that clears it
-        (, bool felixLoss) = _felixOwed();
-        if (felixLoss) return; // a Felix loss is booked and not yet covered: observe only
         uint256 price = _seniorRealPrice();
         if (price < _expectedSeniorPrice()) return;
         seniorPriceBase = price;
-        seniorSupplyBase = supply;
-        seniorSupplyMin = supply;
-        _rebaseFelixLost();
+        seniorSupplyBase = senior.totalSupply();
         seniorBaseTime = block.timestamp;
-    }
-
-    /// @notice Record senior's current share supply if it is the lowest since the baseline, so an exit followed by a
-    ///         buy cannot be billed as one exposure. Permissionless, only ever lowers `seniorSupplyMin`; the keeper
-    ///         calls it hourly. Every sync, deposit and settle observes as well.
-    function observeSenior() external {
-        _observeSenior();
-    }
-
-    function _observeSenior() internal returns (uint256 supply) {
-        supply = senior.totalSupply();
-        if (supply < seniorSupplyMin) seniorSupplyMin = supply;
     }
 
     /// @dev Baseline less the management fee drift, less 1 ppm so Vault V2 rounding never reads as a loss.
@@ -433,125 +350,48 @@ contract JuniorVault is ERC20, Ownable2Step, ReentrancyGuard, Multicall {
         return seniorPriceBase - seniorPriceBase * senior.managementFee() * elapsed / WAD - seniorPriceBase / 1e6;
     }
 
-    /// @dev Senior real assets per PRICE_UNIT shares, Vault V2 convention (virtual shares, +1 asset). GROSS: a Felix
-    ///      (MetaMorpho v1.1) bad debt stays inside Felix's `totalAssets`, so this price does not show it, exactly like
-    ///      Vault V2's own accounting. Used for the baselines and for `coverInProgress`; the Felix term is `_felixOwed`.
-    function _seniorRealPrice() internal view returns (uint256 price) {
-        (price,) = _seniorPriceAndDenominator();
+    /// @notice USDC a settle run now would bill as cover, before anything is paid. For the senior share gate and
+    ///         the front end: while this is non-zero, senior is carrying a loss junior has not yet covered.
+    function coverPending() external view returns (uint256) {
+        uint256 price = _seniorRealPrice();
+        uint256 supply = senior.totalSupply();
+        uint256 expected = _expectedSeniorPrice();
+        if (price >= expected || supply == 0) return 0;
+        uint256 exposed = supply < seniorSupplyBase ? supply : seniorSupplyBase;
+        return (expected - price) * exposed / PRICE_UNIT;
     }
 
-    function _seniorPriceAndDenominator() internal view returns (uint256 price, uint256 denominator) {
+    /// @dev Senior real assets per PRICE_UNIT shares, Vault V2 convention (virtual shares, +1 asset).
+    ///      A Morpho Vault V1 (MetaMorpho 1.1) behind an adapter books bad debt as `lostAssets` and keeps its share
+    ///      price flat, so its previewRedeem overstates what senior would get back. Each such adapter's pro-rata
+    ///      share of that vault's lostAssets is taken off here, so a Felix deficit does reach junior's cover
+    ///      (review H-3). Adapters that are not Vault V1 adapters are read as they are.
+    function _seniorRealPrice() internal view returns (uint256) {
         uint256 real = asset.balanceOf(address(senior));
         uint256 n = senior.adaptersLength();
         for (uint256 i = 0; i < n; i++) {
-            real += IAdapter(senior.adapters(i)).realAssets();
+            address adapter = senior.adapters(i);
+            real += IAdapter(adapter).realAssets();
+            real -= _vaultV1Lost(adapter);
         }
         (,, uint256 pendingFeeShares) = senior.accrueInterestView(); // fee shares owed to us but not yet minted
-        denominator = senior.totalSupply() + pendingFeeShares + senior.virtualShares();
-        price = PRICE_UNIT * (real + 1) / denominator;
+        return PRICE_UNIT * (real + 1) / (senior.totalSupply() + pendingFeeShares + senior.virtualShares());
     }
 
-    /// @dev USDC owed for the Felix losses booked since the baseline, in exposure-snapshot shares (multiply by exposed
-    ///      shares over `felixExpSupply`): sum over entries of (lost now - lostBase) * fraction. Only `lostAssets` is read
-    ///      live (one probe per entry; it only grows in v1.1 and moves on a real loss). `grew` is true when an entry's
-    ///      amount is above 1 ppm of its reference assets, the same guard as the price baseline: smaller bumps, which
-    ///      Felix books by rounding, never block a sync and are forgiven at the next reset. A failed probe counts as 0.
-    function _felixOwed() internal view returns (uint256 owed, bool grew) {
-        uint256 n = felixExp.length;
-        for (uint256 i = 0; i < n; i++) {
-            FelixExp storage f = felixExp[i];
-            (bool ok, uint256 lost) = _probe(f.vault, IFelixProbes.lostAssets.selector, 0, false);
-            if (!ok || lost <= f.lostBase) continue;
-            uint256 amount = (lost - f.lostBase) * f.fraction / PRICE_UNIT;
-            owed += amount;
-            if (amount * 1e6 > f.assetsRef) grew = true;
-        }
-    }
-
-    /// @dev At a baseline reset: Felix's `lostAssets` becomes the new base for every vault in the exposure snapshot.
-    function _rebaseFelixLost() internal {
-        uint256 n = felixExp.length;
-        for (uint256 i = 0; i < n; i++) {
-            FelixExp storage f = felixExp[i];
-            (bool ok, uint256 lost) = _probe(f.vault, IFelixProbes.lostAssets.selector, 0, false);
-            if (ok && lost <= type(uint96).max) f.lostBase = uint96(lost);
-        }
-    }
-
-    /// @notice Re-take the Felix exposure: for each senior adapter that fronts a Felix vault, senior's share of that vault
-    ///         (its shares over the vault's supply) and the adapter's assets, plus senior's supply now. Agent or owner only,
-    ///         never a permissionless call, because the exposure is the one part a flash deposit could steer. The keeper
-    ///         calls it hourly. A booked-but-unbilled loss is never forgiven here: a vault already in the snapshot keeps
-    ///         its `lostBase`; only a vault new to the snapshot starts at its current `lostAssets`. Adapters that are gone
-    ///         or fail a probe drop out.
-    function snapFelixExposure() external {
-        if (msg.sender != agent && msg.sender != owner()) revert NotAgent();
-        _snapFelixExposure();
-    }
-
-    function _snapFelixExposure() internal {
-        FelixExp[] memory old = felixExp;
-        uint256 n = senior.adaptersLength();
-        uint256 k;
-        for (uint256 i = 0; i < n; i++) {
-            (bool ok, FelixExp memory f) = _felixEntry(senior.adapters(i), old);
-            if (!ok) continue;
-            if (k < felixExp.length) felixExp[k] = f;
-            else felixExp.push(f);
-            k++;
-        }
-        while (felixExp.length > k) felixExp.pop();
-        felixExpSupply = senior.totalSupply();
-        emit FelixExposureSnapped(k, felixExpSupply);
-    }
-
-    /// @dev One adapter's exposure entry, or not ok when it is not a MetaMorpho wrapper or any probe fails.
-    function _felixEntry(address adapter, FelixExp[] memory old) private view returns (bool, FelixExp memory f) {
-        (bool ok, uint256 word) = _probe(adapter, IFelixProbes.morphoVaultV1.selector, 0, false);
-        if (!ok || word > type(uint160).max) return (false, f);
-        f.vault = address(uint160(word)); // a codeless or zero vault fails the probes below: they need a 32-byte answer
-        uint256 lost;
-        uint256 supply;
-        uint256 shares;
-        (ok, lost) = _probe(f.vault, IFelixProbes.lostAssets.selector, 0, false);
-        if (!ok || lost > type(uint96).max) return (false, f);
-        (ok, supply) = _probe(f.vault, IFelixProbes.totalSupply.selector, 0, false);
-        if (!ok || supply > type(uint128).max) return (false, f);
-        (ok, shares) = _probe(f.vault, IFelixProbes.balanceOf.selector, uint256(uint160(adapter)), true);
-        if (!ok) return (false, f);
-        for (uint256 j = 0; j < old.length; j++) {
-            if (old[j].vault == f.vault) lost = old[j].lostBase; // never forgive a loss already booked
-        }
-        f.lostBase = uint96(lost);
-        if (supply != 0) f.fraction = uint128(shares >= supply ? PRICE_UNIT : shares * PRICE_UNIT / supply);
-        uint256 assets = IAdapter(adapter).realAssets();
-        f.assetsRef = uint128(assets > type(uint128).max ? type(uint128).max : assets);
-        return (true, f);
-    }
-
-    /// @dev staticcall with a gas cap (low level, because try/catch does not catch a malformed return or a call to an
-    ///      address without code); the answer must be exactly 32 bytes and only those are copied, so a callee returning a
-    ///      huge buffer costs this contract nothing beyond the callee's own capped gas.
-    function _probe(address target, bytes4 selector, uint256 arg, bool hasArg) private view returns (bool ok, uint256 word) {
-        uint256 g = PROBE_GAS;
-        uint256 size = hasArg ? 36 : 4;
-        assembly {
-            let ptr := mload(0x40)
-            mstore(ptr, selector)
-            mstore(add(ptr, 4), arg)
-            ok := staticcall(g, target, ptr, size, 0, 0)
-            if ok {
-                ok := eq(returndatasize(), 32)
-                if ok {
-                    returndatacopy(ptr, 0, 32)
-                    word := mload(ptr)
-                }
-            }
-        }
+    /// @dev The adapter's share of its Vault V1's lostAssets; 0 for any adapter without a morphoVaultV1().
+    function _vaultV1Lost(address adapter) internal view returns (uint256) {
+        (bool ok, bytes memory ret) = adapter.staticcall(abi.encodeWithSignature("morphoVaultV1()"));
+        if (!ok || ret.length != 32) return 0;
+        address v1 = abi.decode(ret, (address));
+        (ok, ret) = v1.staticcall(abi.encodeWithSignature("lostAssets()"));
+        if (!ok || ret.length != 32) return 0;
+        uint256 lost = abi.decode(ret, (uint256));
+        if (lost == 0) return 0;
+        uint256 supply = IERC4626(v1).totalSupply();
+        return supply == 0 ? 0 : lost * IERC4626(v1).balanceOf(adapter) / supply;
     }
 
     /// @notice USDC that senior's share price still has to recognise from the last cover. For the front end.
-    ///         Reads 0 for a cover of a Felix bad debt: Vault V2 never marked that loss, so there is nothing to recognise.
     function coverInProgress() external view returns (uint256) {
         uint256 recognised = senior.convertToAssets(PRICE_UNIT);
         uint256 real = _seniorRealPrice();
@@ -568,9 +408,13 @@ contract JuniorVault is ERC20, Ownable2Step, ReentrancyGuard, Multicall {
         (total,) = _navComplete();
     }
 
-    /// @dev Idle USDC plus every allowlisted position, net of the cover junior still owes senior, BEFORE the reserve for
-    ///      priced exits is taken out. `complete` is false when a venue view reverted (it then counts as 0).
-    function _netHoldings() internal view returns (uint256 total, bool complete) {
+    function _navComplete() internal view returns (uint256 total, bool complete) {
+        (total, complete) = _grossComplete();
+        total = total > reservedAssets ? total - reservedAssets : 0;
+    }
+
+    /// @dev Idle USDC plus every position, before anything is reserved for priced exits.
+    function _grossComplete() internal view returns (uint256 total, bool complete) {
         complete = true;
         total = asset.balanceOf(address(this));
         for (uint256 i = 0; i < markets.length; i++) {
@@ -587,13 +431,13 @@ contract JuniorVault is ERC20, Ownable2Step, ReentrancyGuard, Multicall {
                 complete = false;
             }
         }
-        uint256 owedToSenior = carryOwed(); // cover junior still owes is not junior's money
-        total = total > owedToSenior ? total - owedToSenior : 0;
-    }
-
-    function _navComplete() internal view returns (uint256 total, bool complete) {
-        (total, complete) = _netHoldings();
-        total = total > reservedAssets ? total - reservedAssets : 0;
+        for (uint256 i = 0; i < lenders.length; i++) {
+            try this.lenderAssets(i) returns (uint256 a) {
+                total += a;
+            } catch {
+                complete = false;
+            }
+        }
     }
 
     function marketAssets(uint256 i) external view returns (uint256) {
@@ -603,21 +447,20 @@ contract JuniorVault is ERC20, Ownable2Step, ReentrancyGuard, Multicall {
     function vaultAssets(uint256 i) external view returns (uint256) {
         IERC4626 v = IERC4626(vaults[i]);
         uint256 bal = v.balanceOf(address(this));
-        if (address(v) == address(senior)) {
-            // management-fee shares senior owes us but has not minted yet: ours already, so a deposit before settle cannot take them
-            (,, uint256 pending) = senior.accrueInterestView();
-            bal += pending;
-        }
         return bal == 0 ? 0 : v.convertToAssets(bal);
+    }
+
+    /// @dev An Aave-style aToken balance is the underlying owed, in the underlying's decimals, interest included.
+    function lenderAssets(uint256 i) external view returns (uint256) {
+        return IERC20(lenderAToken[lenders[i]]).balanceOf(address(this));
     }
 
     /// @dev Mint at the worse of the frozen price and the live price, so a deposit just before settle cannot take
     ///      the epoch's accrued yield from earlier depositors.
-    function _toShares(uint256 assets, uint256 nav) internal view returns (uint256) {
+    function _toShares(uint256 assets) internal view returns (uint256) {
         uint256 supply = totalSupply() - pricedExitShares;
-        uint256 live = supply == 0 ? WAD : nav * assetScale * WAD / supply;
+        uint256 live = supply == 0 ? WAD : totalAssets() * assetScale * WAD / supply;
         uint256 p = live > pricePerShare ? live : pricePerShare;
-        if (p == 0) revert ZeroPrice(); // junior's NAV is wiped (net of any carried debt): nothing can be minted
         return assets * assetScale * WAD / p;
     }
 
@@ -633,6 +476,10 @@ contract JuniorVault is ERC20, Ownable2Step, ReentrancyGuard, Multicall {
         return vaults.length;
     }
 
+    function lendersLength() external view returns (uint256) {
+        return lenders.length;
+    }
+
     /* AGENT */
 
     /// @notice The only way the agent moves money. Target and selector must be allowlisted; the receiver word must be us.
@@ -642,25 +489,18 @@ contract JuniorVault is ERC20, Ownable2Step, ReentrancyGuard, Multicall {
         if (target == address(stakeToken) && target != address(0)) revert NotAllowed();
         bytes4 selector = bytes4(data[:4]);
         if (selector == IERC20.approve.selector) {
-            if (data.length != 68) revert NotAllowed(); // exactly approve(address,uint256): no trailing bytes
-            (address spender, uint256 amount) = abi.decode(data[4:], (address, uint256));
-            if (amount != 0) {
-                if (!approvals[target][spender]) revert NotAllowed();
-                if (spender != address(morpho) && !isVault[spender]) revert NotAllowed(); // removed venues die at once
-            } else if (target != address(asset) && !isVault[target] && !approvals[target][spender]) {
-                // revoking is always allowed (a removed venue's allowance must be clearable) but only on a token or vault
-                // junior deals with: USDC, a listed vault, or a token with an approval rule for that spender
-                revert NotAllowed();
-            }
+            (address spender,) = abi.decode(data[4:], (address, uint256));
+            if (!approvals[target][spender]) revert NotAllowed();
+            if (spender != address(morpho) && !isVault[spender] && !isLender[spender]) revert NotAllowed(); // removed venues die at once
         } else {
-            VenueAdmin.Rule memory rule = rules[target][selector];
+            Rule memory rule = rules[target][selector];
             if (!rule.allowed) revert NotAllowed();
             if (target == address(morpho)) {
                 // every Morpho call starts with MarketParams: only registered markets, ever
                 if (data.length < 4 + 160) revert NotAllowed();
                 MarketParams memory mp = abi.decode(data[4:164], (MarketParams));
                 if (!isMarket[mp.id()]) revert NotAllowed();
-            } else if (!isVault[target]) {
+            } else if (!isVault[target] && !isLender[target]) {
                 revert NotAllowed();
             }
             if (rule.receiverOffset != type(uint256).max) {
@@ -674,8 +514,8 @@ contract JuniorVault is ERC20, Ownable2Step, ReentrancyGuard, Multicall {
         uint256 idleBefore = asset.balanceOf(address(this));
         bytes memory ret = Address.functionCall(target, data);
         uint256 idleAfter = asset.balanceOf(address(this));
-        // the agent may never deploy USDC that priced exits are owed, nor what junior still owes senior from a partial cover
-        if (idleAfter < idleBefore && idleAfter < reservedAssets + carryOwed()) revert InsufficientLiquidity();
+        // the agent may never deploy USDC that priced exits are owed
+        if (idleAfter < idleBefore && idleAfter < reservedAssets) revert InsufficientLiquidity();
         return ret;
     }
 
@@ -687,62 +527,129 @@ contract JuniorVault is ERC20, Ownable2Step, ReentrancyGuard, Multicall {
     }
 
     function setRule(address target, bytes4 selector, bool allowed, uint256 receiverOffset) external onlyOwner {
-        VenueAdmin.setRule(rules, isVault, address(morpho), target, selector, allowed, receiverOffset);
+        // targets are the valuation universe and nothing else: never the asset, never the stake token, never arbitrary
+        if (allowed && target != address(morpho) && !isVault[target] && !isLender[target]) revert NotAllowed();
+        if (
+            selector == IERC20.transfer.selector || selector == IERC20.transferFrom.selector
+                || selector == IERC20.approve.selector
+        ) revert NotAllowed(); // share tokens are venues too; raw moves of them are never a rule
+        rules[target][selector] = Rule(allowed, receiverOffset);
+        emit RuleSet(target, selector, allowed, receiverOffset);
     }
 
     function setApprovalRule(address token, address spender, bool allowed) external onlyOwner {
-        VenueAdmin.setApprovalRule(approvals, isVault, address(morpho), address(stakeToken), token, spender, allowed);
+        if (allowed && spender != address(morpho) && !isVault[spender] && !isLender[spender]) revert NotAllowed(); // only trusted venues
+        if (token == address(stakeToken) && address(stakeToken) != address(0)) revert NotAllowed();
+        approvals[token][spender] = allowed;
+        emit ApprovalRuleSet(token, spender, allowed);
     }
 
     function addMarket(MarketParams calldata mp) external onlyOwner {
-        VenueAdmin.addMarket(markets, isMarket, mp, address(asset));
+        if (mp.loanToken != address(asset)) revert WrongAsset();
+        if (markets.length >= MAX_MARKETS) revert TooMany();
+        Id id = mp.id();
+        if (isMarket[id]) revert AlreadySet();
+        isMarket[id] = true;
+        markets.push(mp);
+        emit MarketAdded(id);
     }
 
     function removeMarket(uint256 i) external onlyOwner {
-        VenueAdmin.removeMarket(markets, isMarket, i, morpho, address(asset));
+        if (morpho.expectedSupplyAssets(markets[i], address(this)) != 0) revert NotAllowed(); // exit first
+        Id id = markets[i].id();
+        isMarket[id] = false;
+        markets[i] = markets[markets.length - 1];
+        markets.pop();
+        emit MarketRemoved(id);
     }
 
     function removeVault(uint256 i) external onlyOwner {
-        VenueAdmin.removeVault(vaults, isVault, i, address(asset));
+        address vault = vaults[i];
+        if (IERC4626(vault).balanceOf(address(this)) != 0) revert NotAllowed(); // exit first
+        isVault[vault] = false;
+        vaults[i] = vaults[vaults.length - 1];
+        vaults.pop();
+        emit VaultRemoved(vault);
     }
 
     /// @notice Drop a venue without calling it, for one whose view reverts. Any position there is abandoned
     ///         from the valuation on purpose; the agent can still not reach it afterwards.
     function forceRemoveMarket(uint256 i) external onlyOwner {
-        VenueAdmin.forceRemoveMarket(markets, isMarket, i, address(morpho), address(asset));
-        _pauseDeposits();
+        Id id = markets[i].id();
+        isMarket[id] = false;
+        markets[i] = markets[markets.length - 1];
+        markets.pop();
+        emit MarketRemoved(id);
     }
 
     function forceRemoveVault(uint256 i) external onlyOwner {
-        VenueAdmin.forceRemoveVault(vaults, isVault, i, address(asset));
-        _pauseDeposits();
+        address vault = vaults[i];
+        isVault[vault] = false;
+        vaults[i] = vaults[vaults.length - 1];
+        vaults.pop();
+        emit VaultRemoved(vault);
     }
 
     function addVault(address vault) external onlyOwner {
-        VenueAdmin.addVault(vaults, isVault, vault, address(asset), address(stakeToken));
+        if (vault == address(this) || vault == address(asset)) revert WrongAsset();
+        if (IERC4626(vault).asset() != address(asset)) revert WrongAsset();
+        if (vaults.length >= MAX_MARKETS) revert TooMany();
+        if (isVault[vault]) revert AlreadySet();
+        isVault[vault] = true;
+        vaults.push(vault);
+        emit VaultAdded(vault);
+    }
+
+    /// @notice Allow an Aave-style pool. The aToken must name this asset and this pool, so the pair cannot be mismatched.
+    function addLender(address pool, address aToken) external onlyOwner {
+        if (pool == address(this) || pool == address(asset) || aToken == address(asset)) revert WrongAsset();
+        if (IAToken(aToken).UNDERLYING_ASSET_ADDRESS() != address(asset)) revert WrongAsset();
+        if (IAToken(aToken).POOL() != pool) revert WrongAsset();
+        if (lenders.length >= MAX_MARKETS) revert TooMany();
+        if (isLender[pool] || isVault[pool]) revert AlreadySet();
+        isLender[pool] = true;
+        lenderAToken[pool] = aToken;
+        lenders.push(pool);
+        emit LenderAdded(pool, aToken);
+    }
+
+    function removeLender(uint256 i) external onlyOwner {
+        address pool = lenders[i];
+        if (IERC20(lenderAToken[pool]).balanceOf(address(this)) != 0) revert NotAllowed(); // exit first
+        _dropLender(i);
+    }
+
+    /// @notice Drop a lender without calling it, for one whose aToken view reverts. Any position is abandoned from the
+    ///         valuation on purpose; the agent can still not reach it afterwards.
+    function forceRemoveLender(uint256 i) external onlyOwner {
+        _dropLender(i);
+    }
+
+    function _dropLender(uint256 i) internal {
+        address pool = lenders[i];
+        isLender[pool] = false;
+        delete lenderAToken[pool];
+        lenders[i] = lenders[lenders.length - 1];
+        lenders.pop();
+        emit LenderRemoved(pool);
     }
 
     /// @notice One-way. Turns the stake gate on. Stakes are quoted in ORPH wei per 1 USDC (1e6).
     function setStakeToken(IERC20 token, uint256 stakePerAsset_) external onlyOwner {
         if (address(stakeToken) != address(0)) revert AlreadySet();
-        if (address(token) == address(asset) || isVault[address(token)] || address(token) == address(morpho)) {
+        if (
+            address(token) == address(asset) || isVault[address(token)] || isLender[address(token)]
+                || address(token) == address(morpho)
+        ) {
             revert WrongAsset();
         }
         stakeToken = token;
-        VenueAdmin.revokeAllowances(token, vaults, address(morpho));
         stakePerAsset = stakePerAsset_;
         emit StakeTokenSet(address(token), stakePerAsset_);
     }
 
     /// @notice Propose a new stake rate (weekly, from the pool's 7-day average price). Applies after 3 days.
     function proposeStakePerAsset(uint256 stakePerAsset_) external onlyOwner {
-        // one proposal moves the rate at most 2x either way (from a non-zero rate) and never to 0, so a mistyped or hostile
-        // value cannot turn the stake into nothing or into a wall in one step; larger moves compound, one step per
-        // timelock (3 days) at best
-        uint256 cur = stakePerAsset;
-        if (cur != 0 && (stakePerAsset_ == 0 || stakePerAsset_ < cur / 2 || stakePerAsset_ > cur * 2)) {
-            revert StakeRateOutOfBounds();
-        }
         pendingStakePerAsset = stakePerAsset_;
         stakeEta = block.timestamp + STAKE_TIMELOCK;
         emit StakePerAssetProposed(stakePerAsset_, stakeEta);
@@ -775,12 +682,5 @@ contract JuniorVault is ERC20, Ownable2Step, ReentrancyGuard, Multicall {
     function setDepositsPaused(bool paused) external onlyOwner {
         depositsPaused = paused;
         emit DepositsPaused(paused);
-    }
-
-    /// @dev A forced removal abandons a position from the valuation: deposits stop until the owner re-lists and unpauses,
-    ///      so nobody buys in at a NAV that no longer counts it.
-    function _pauseDeposits() internal {
-        depositsPaused = true;
-        emit DepositsPaused(true);
     }
 }

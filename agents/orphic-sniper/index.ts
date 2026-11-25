@@ -21,10 +21,21 @@ const POOL_FEE = 0x800000;
 const TICK_SPACING = 200;
 const PROBE_ADDR = "0x000000000000000000000000000000000000c0de";
 
-const SLOTS = 5; // 20% of the allocation each
-const MIN_HOLDERS = 50;
-const MIN_VOLUME_USD = 5000; // 24h
-const MIN_AGE_MS = 30 * 60_000; // anti-snipe window
+/**
+ * The rules that are not per-session settings (Circuit allows three settings per agent, used for cap, take profit
+ * and stop). Each Orphic preset is an upload of this same file with a different PRESET. v2 of Proven: a 60 minute
+ * time stop and a -30% default stop, from the first 15 live snipes (6 won fast, 9 bled slowly).
+ */
+const PRESET = {
+  name: "Proven",
+  slots: 5, // equal shares of the allocation
+  minHolders: 50,
+  minVolumeUsd: 5000, // 24h
+  minAgeMs: 30 * 60_000, // Montra's anti-snipe window: up to 99% fee inside it
+  maxFeePips: 50_000, // skip launches charging over 5% a side
+  timeStopMs: 60 * 60_000, // sell whatever it is after this long
+  trailPct: 0, // 0 = plain take profit; >0 = sell this far below the peak once the take profit has been seen
+};
 const GAS_RESERVE_WEI = 20_000_000_000_000_000n; // 0.02 HYPE kept for fees
 const MAX_SLIPPAGE = 0.1;
 const TICK_MS = 60_000;
@@ -54,6 +65,7 @@ type Position = {
   openedAt: number;
   mcapAtEntryUsd: number;
   feePips: number;
+  peakWei?: string; // best sell quote seen, for the trailing presets
 };
 
 type Closed = Position & { token: string; closedAt: number; gotWei: string; pnlPct: number; reason: string };
@@ -125,7 +137,7 @@ export const run: RunFunction = async (agent) => {
 export async function tick(agent: Parameters<RunFunction>[0]) {
   const wallet = agent.walletAddress;
   const minMcap = agent.settings.minMcapUsd;
-  const minHolders = MIN_HOLDERS;
+  const minHolders = PRESET.minHolders;
   const tp = agent.settings.takeProfitPct / 100;
   const sl = agent.settings.stopLossPct / 100;
 
@@ -142,9 +154,9 @@ export async function tick(agent: Parameters<RunFunction>[0]) {
   let slotWei: bigint;
   if (slotMem) slotWei = BigInt(slotMem.value);
   else {
-    slotWei = (hypeWei - GAS_RESERVE_WEI) / BigInt(SLOTS);
+    slotWei = (hypeWei - GAS_RESERVE_WEI) / BigInt(PRESET.slots);
     await agent.memory.set({ key: "slotWei", value: slotWei.toString() });
-    await agent.log(`Sniper live on Elysium with ${fromWei(hypeWei)} HYPE: ${SLOTS} slots of ${fromWei(slotWei)} HYPE. Buys launches at $${minMcap.toLocaleString()}+ market cap, ${minHolders}+ holders, $${MIN_VOLUME_USD.toLocaleString()}+ volume that pass the sell rehearsal; take profit +${agent.settings.takeProfitPct}%, stop -${agent.settings.stopLossPct}%.`);
+    await agent.log(`Sniper (${PRESET.name}) live on Elysium with ${fromWei(hypeWei)} HYPE: ${PRESET.slots} slots of ${fromWei(slotWei)} HYPE. Buys launches at $${minMcap.toLocaleString()}+ market cap, ${minHolders}+ holders, $${PRESET.minVolumeUsd.toLocaleString()}+ volume that pass the sell rehearsal; take profit +${agent.settings.takeProfitPct}%${PRESET.trailPct ? ` then trail ${PRESET.trailPct}% below the peak` : ""}, stop -${agent.settings.stopLossPct}%, time stop ${Math.round(PRESET.timeStopMs / 60_000)} min.`);
   }
 
   // 1. Open positions: mark each one by what a sell returns now; exit at the take profit or the stop.
@@ -167,9 +179,26 @@ export async function tick(agent: Parameters<RunFunction>[0]) {
     }
     const spent = BigInt(pos.spentWei);
     const pnl = Number(quote - spent) / Number(spent);
-    const reason = pnl >= tp ? `take profit at +${(pnl * 100).toFixed(1)}%` : pnl <= -sl ? `stop at ${(pnl * 100).toFixed(1)}%` : null;
-    if (!reason) {
-      await agent.log(`${pos.symbol}: ${(pnl * 100).toFixed(1)}% (${fromWei(quote)} HYPE if sold now vs ${fromWei(spent)} in). Holding.`);
+    const heldMs = Date.now() - pos.openedAt;
+    // Trailing: once the take profit has been seen, follow the peak and sell when it gives back trailPct.
+    let peak = pos.peakWei ? BigInt(pos.peakWei) : spent;
+    if (quote > peak) {
+      peak = quote;
+      await agent.memory.set({ key: `pos/${token}`, value: JSON.stringify({ ...pos, peakWei: peak.toString() }) });
+    }
+    const peakPnl = Number(peak - spent) / Number(spent);
+    const trailing = PRESET.trailPct > 0 && peakPnl >= tp;
+    const reason = trailing
+      ? Number(peak - quote) / Number(peak) >= PRESET.trailPct / 100
+        ? `trail: ${(pnl * 100).toFixed(1)}% after a peak of +${(peakPnl * 100).toFixed(1)}%`
+        : null
+      : pnl >= tp
+        ? `take profit at +${(pnl * 100).toFixed(1)}%`
+        : null;
+    const stopReason = pnl <= -sl ? `stop at ${(pnl * 100).toFixed(1)}%` : heldMs >= PRESET.timeStopMs ? `time stop at ${(pnl * 100).toFixed(1)}% after ${Math.round(heldMs / 60_000)} min` : null;
+    const why = reason ?? stopReason;
+    if (!why) {
+      await agent.log(`${pos.symbol}: ${(pnl * 100).toFixed(1)}% (${fromWei(quote)} HYPE if sold now vs ${fromWei(spent)} in, ${Math.round(heldMs / 60_000)} min). Holding.`);
       continue;
     }
     const minOut = (quote * BigInt(Math.round((1 - MAX_SLIPPAGE) * 1000))) / 1000n;
@@ -183,26 +212,27 @@ export async function tick(agent: Parameters<RunFunction>[0]) {
       { network: NETWORK, request: { toAddress: LAUNCH_ROUTER, valueWei: "0", data: swapData(token, false, qty, minOut, wallet) } },
       { once: `sell/${token}/${pos.openedAt}` },
     );
-    const closed: Closed = { ...pos, token, closedAt: Date.now(), gotWei: quote.toString(), pnlPct: Math.round(pnl * 1000) / 10, reason };
+    const closed: Closed = { ...pos, token, closedAt: Date.now(), gotWei: quote.toString(), pnlPct: Math.round(pnl * 1000) / 10, reason: why };
     await agent.memory.set({ key: `done/${token}`, value: JSON.stringify(closed) });
     await agent.memory.delete({ key: `pos/${token}` });
-    await agent.log(`Sold ${pos.symbol}: ${reason}. ${fromWei(spent)} HYPE in, about ${fromWei(quote)} HYPE out (op ${op.operationId}).`);
+    await agent.log(`Sold ${pos.symbol}: ${why}. ${fromWei(spent)} HYPE in, about ${fromWei(quote)} HYPE out (op ${op.operationId}).`);
   }
 
   // 2. A free slot and the HYPE to fill it: find the next launch that passes every gate.
   const openNow = (await agent.memory.list({ prefix: "pos/" })).length;
   const spendable = hypeWei - GAS_RESERVE_WEI;
-  if (openNow >= SLOTS) return agent.log(`All ${SLOTS} slots are in use; watching exits.`);
+  if (openNow >= PRESET.slots) return agent.log(`All ${PRESET.slots} slots are in use; watching exits.`);
   if (spendable < slotWei) return agent.log(`Waiting for funds: ${fromWei(spendable)} HYPE spendable, a slot needs ${fromWei(slotWei)}.`);
 
   const feed = [...(await launches("new")), ...(await launches("graduating"))];
   const now = Date.now();
   const candidates = feed
-    .filter((t) => (t.marketCapUsd ?? 0) >= minMcap && (t.holders ?? 0) >= minHolders && (t.volume24hUsd ?? 0) >= MIN_VOLUME_USD)
-    .filter((t) => t.launchedAt !== null && now - t.launchedAt >= MIN_AGE_MS)
+    .filter((t) => (t.marketCapUsd ?? 0) >= minMcap && (t.holders ?? 0) >= minHolders && (t.volume24hUsd ?? 0) >= PRESET.minVolumeUsd)
+    .filter((t) => (t.totalFeePips ?? 0) <= PRESET.maxFeePips)
+    .filter((t) => t.launchedAt !== null && now - t.launchedAt >= PRESET.minAgeMs)
     .sort((a, b) => (a.marketCapUsd ?? 0) - (b.marketCapUsd ?? 0));
   if (candidates.length === 0) {
-    const closest = feed.filter((t) => t.launchedAt !== null && now - t.launchedAt >= MIN_AGE_MS).sort((a, b) => (b.marketCapUsd ?? 0) - (a.marketCapUsd ?? 0))[0];
+    const closest = feed.filter((t) => t.launchedAt !== null && now - t.launchedAt >= PRESET.minAgeMs).sort((a, b) => (b.marketCapUsd ?? 0) - (a.marketCapUsd ?? 0))[0];
     return agent.log(`No launch passes yet (${feed.length} in the feed).${closest ? ` Closest: ${closest.symbol} at $${Math.round(closest.marketCapUsd ?? 0).toLocaleString()} cap, ${closest.holders ?? 0} holders, $${Math.round(closest.volume24hUsd ?? 0).toLocaleString()} volume.` : ""}`);
   }
 

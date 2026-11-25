@@ -268,6 +268,8 @@ export interface DecideInput {
   plan: PlanStep[];
   hypePriceUsd: number;
   gasPriceGwei: number;
+  /** What the keeper has already spent in the rolling 24 hours (from the spend ledger). */
+  spentTodayUsd?: number;
 }
 
 export function decide(input: DecideInput): Decision {
@@ -297,10 +299,31 @@ export function decide(input: DecideInput): Decision {
   const totalCostUsd = gasCostUsd + slippageCostUsd;
   const threshold = e.marginFactor * totalCostUsd;
 
+  // Spread rule: a book that is almost all in one venue is a concentration risk that no weekly-gain arithmetic
+  // captures. If the plan reduces the biggest line and the one-off cost is small, move once regardless of gain.
+  // After the spread the margin rule governs again, because the book is no longer concentrated.
+  const maxConc = e.maxConcentration ?? 0;
+  const costCap = e.spreadCostCapUsd ?? 0;
+  const total = proposal.lines.reduce((s, l) => s + l.currentAmount, 0);
+  const biggest = proposal.lines.reduce<ProposalLine | null>((b, l) => (b === null || l.currentAmount > b.currentAmount ? l : b), null);
+  const concentration = total > 0 && biggest ? biggest.currentAmount / total : 0;
+  const biggestReduced = !!biggest && movedKeys.has(biggest.key as Hex | "felix") && biggest.amount < biggest.currentAmount;
+  const spreadApplies = actions > 0 && maxConc > 0 && concentration > maxConc && biggestReduced && totalCostUsd <= costCap && weeklyGainUsd > -costCap;
+
+  const dailyCap = e.dailyCostCapUsd ?? 0;
+  const spent = input.spentTodayUsd ?? 0;
+  const overDailyCap = dailyCap > 0 && spent + totalCostUsd > dailyCap;
+
   let move = false;
   let reason: string;
+  let spread: Decision["spread"];
   if (actions === 0) reason = "no deltas above the dust threshold";
-  else if (weeklyGainUsd <= 0) reason = `projected weekly gain ${fmt(weeklyGainUsd)} is not positive`;
+  else if (overDailyCap) reason = `daily cost cap: ${fmt(spent)} spent in 24h, this move costs ${fmt(totalCostUsd)}, cap ${fmt(dailyCap)}`;
+  else if (spreadApplies) {
+    move = true;
+    spread = { concentration, maxConcentration: maxConc, costCapUsd: costCap };
+    reason = `spread rule: ${(concentration * 100).toFixed(0)}% of the book sits in ${biggest!.label}, above ${(maxConc * 100).toFixed(0)}%; moving once for ${fmt(totalCostUsd)} (cap ${fmt(costCap)}), weekly gain ${fmt(weeklyGainUsd)}`;
+  } else if (weeklyGainUsd <= 0) reason = `projected weekly gain ${fmt(weeklyGainUsd)} is not positive`;
   else if (weeklyGainUsd <= threshold) reason = `projected weekly gain ${fmt(weeklyGainUsd)} below ${e.marginFactor}x cost ${fmt(totalCostUsd)} = ${fmt(threshold)}`;
   else {
     move = true;
@@ -308,6 +331,7 @@ export function decide(input: DecideInput): Decision {
   }
 
   return {
+    spread,
     move,
     movedAmount: r6(movedAmount),
     weeklyGainUsd,

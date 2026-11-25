@@ -7,9 +7,9 @@ import { decide, proposeAllocation } from "./engine/allocate.js";
 import { buildPlan, validatePlan } from "./exec/plan.js";
 import { executePlan, weeklyClose, type ExecContext } from "./exec/send.js";
 import type { TxSigner } from "./exec/signer.js";
-import { accrueSenior, juniorWeeklyFinish, juniorWeeklyPrepare, readJuniorStatus, observeSenior, snapFelix, syncSenior, type JuniorCtx } from "./exec/junior.js";
-import { ensureLiquidity, manageJuniorIdle } from "./exec/juniorDeploy.js";
-import { distributeFees } from "./exec/router.js";
+import { accrueSenior, distributeRouter, juniorWeekly, readJuniorStatus, syncSenior, type JuniorCtx } from "./exec/junior.js";
+import { rotateJunior } from "./exec/juniorRotate.js";
+import { readSpend, recordSpend, spentSince } from "./exec/spend.js";
 import { sampleOrphPrice } from "./data/orph.js";
 import { checkSeniorDrift } from "./exec/drift.js";
 import { bookApy, humanSummary, writeReport, type RunReport } from "./report.js";
@@ -22,8 +22,6 @@ export interface RunDeps {
   signer?: TxSigner;
   /** Where log lines go. console.log by default; the Circuit agent routes them to agent.log. */
   log?: (line: string) => void;
-  /** Test hook for the wait before the due second. Real timers by default. */
-  sleep?: (ms: number) => Promise<void>;
 }
 
 export async function run(opts: RunOptions, cfg: SeniorConfig = loadConfig(opts.configPath), deps: RunDeps = {}): Promise<RunReport> {
@@ -99,7 +97,9 @@ export async function run(opts: RunOptions, cfg: SeniorConfig = loadConfig(opts.
   const proposal = proposeAllocation({ cfg, markets: morpho.markets, felix: morpho.felix, state });
   const { plan, notes: planNotes } = buildPlan(cfg, state, proposal);
   validatePlan(cfg, state, plan);
-  const decision = decide({ cfg, proposal, plan, hypePriceUsd: morpho.hypePriceUsd, gasPriceGwei });
+  const nowTs = Math.floor(opts.now.getTime() / 1000);
+  const spentTodayUsd = spentSince(opts.opsDir ? readSpend(opts.opsDir) : [], nowTs - 24 * 3600);
+  const decision = decide({ cfg, proposal, plan, hypePriceUsd: morpho.hypePriceUsd, gasPriceGwei, spentTodayUsd });
 
   const ctx: ExecContext = { cfg, dryRun: opts.dryRun, opsDir: opts.opsDir, state, markets: morpho.markets, client, signer: deps.signer, agentPrivateKey: opts.agentPrivateKey, log };
 
@@ -107,7 +107,10 @@ export async function run(opts: RunOptions, cfg: SeniorConfig = loadConfig(opts.
   let execution: ExecutionResult[] = [];
   let error: string | undefined;
   try {
-    if (decision.move) execution = await executePlan(ctx, plan);
+    if (decision.move) {
+      execution = await executePlan(ctx, plan);
+      if (!opts.dryRun && opts.opsDir) recordSpend(opts.opsDir, { ts: nowTs, what: "senior", costUsd: decision.totalCostUsd, note: decision.reason });
+    }
     else {
       log(`HOLD: ${decision.reason}`);
       if (plan.length) await executePlan({ ...ctx, dryRun: true }, plan).then(() => undefined);
@@ -127,60 +130,22 @@ export async function run(opts: RunOptions, cfg: SeniorConfig = loadConfig(opts.
     seniorTotalAssetsFallback: state.totalAssets,
     nowTs: BigInt(Math.floor(opts.now.getTime() / 1000)),
     log,
-    sleep: deps.sleep,
   };
   let juniorSync: RunReport["juniorSync"];
   let juniorAccrue: RunReport["juniorAccrue"];
   let juniorStatus: RunReport["juniorStatus"];
-  // Settle tick first (the touch runs before anything else junior-side; a settle tick that fails stays a settle tick):
-  // the first tick within an hour of the due second touches Felix and recalls every position. Part 2 below waits for
-  // the due second and settles. Snapshot and distribute wait until after the settle, so the state the settle reads is
-  // not moved by them.
-  let juniorWeeklyResult: RunReport["juniorWeekly"];
-  try {
-    juniorWeeklyResult = await juniorWeeklyPrepare(jctx);
-  } catch (err) {
-    // The state could not be read, so we cannot tell whether this is a settle tick: assume it is and redeploy nothing.
-    juniorWeeklyResult = { checked: false, settleDue: true, note: `junior weekly failed: ${(err as Error).message}` };
-    log(juniorWeeklyResult.note);
-    warnings.push(juniorWeeklyResult.note);
-  }
-  const settleTick = !!juniorWeeklyResult?.settleDue;
-  // Daily nudge, so a sync in the same tick sees the freshly minted fee shares.
+  // Daily nudge first, so a sync in the same tick sees the freshly minted fee shares.
   try {
     juniorAccrue = await accrueSenior(jctx);
   } catch (err) {
     juniorAccrue = { called: false, note: `accrue failed: ${(err as Error).message}` };
     log(juniorAccrue.note);
   }
-  // K4: flush the FeeRouter (small pushes) and K3: Felix exposure snapshot, unless a Felix loss is booked and unbilled.
-  let feeDistribute: RunReport["feeDistribute"];
-  let juniorSnap: RunReport["juniorSnap"];
-  const flushAndSnap = async () => {
-    try {
-      feeDistribute = await distributeFees(jctx);
-    } catch (err) {
-      feeDistribute = { called: false, note: `distribute failed: ${(err as Error).message}` };
-      log(feeDistribute.note);
-    }
-    try {
-      juniorSnap = await snapFelix(jctx);
-    } catch (err) {
-      juniorSnap = { called: false, note: `snapFelixExposure failed: ${(err as Error).message}` };
-      log(juniorSnap.note);
-    }
-  };
-  if (!settleTick) await flushAndSnap();
-  else {
-    feeDistribute = { called: false, note: "settle tick: distribute waits until after settle()" };
-    juniorSnap = { called: false, note: "settle tick: snapshot waits until after settle()" };
-  }
-  let juniorObserve: RunReport["juniorObserve"];
   try {
-    juniorObserve = await observeSenior(jctx);
+    const d = await distributeRouter(jctx);
+    if (d.called) log(`router: ${d.note}`);
   } catch (err) {
-    juniorObserve = { called: false, note: `observeSenior failed: ${(err as Error).message}` };
-    log(juniorObserve.note);
+    log(`distribute failed: ${(err as Error).message}`);
   }
   try {
     juniorSync = await syncSenior(jctx);
@@ -194,39 +159,33 @@ export async function run(opts: RunOptions, cfg: SeniorConfig = loadConfig(opts.
     juniorStatus = { enabled: true, note: `junior status read failed: ${(err as Error).message}` };
     warnings.push(juniorStatus.note);
   }
-  // K2, every tick: idle must cover reservedAssets + carryOwed(), else every position is recalled. A failed check
-  // (e.g. an RPC error reading carryOwed) is UNKNOWN: nothing is redeployed this tick.
-  let juniorLiquidity: RunReport["juniorLiquidity"];
+  // Junior settle runs on the first tick after the contract allows it (lastSettle + 7d - 1h), whatever the hour: the
+  // seed settle happened on a Sunday evening, so a Sunday-midnight-only window would skip a week. juniorWeekly is a
+  // read until settle is due; when due it recalls junior's Felix position and settles.
+  let juniorWeeklyResult: RunReport["juniorWeekly"];
   try {
-    juniorLiquidity = await ensureLiquidity({ ...jctx, log });
-    for (const e of juniorLiquidity.recall?.errors ?? []) warnings.push(e);
+    juniorWeeklyResult = await juniorWeekly(jctx);
   } catch (err) {
-    juniorLiquidity = { checked: false, failed: true, note: `liquidity check failed: ${(err as Error).message}` };
-    warnings.push(juniorLiquidity.note);
+    juniorWeeklyResult = { checked: false, note: `junior weekly failed: ${(err as Error).message}` };
+    log(juniorWeeklyResult.note);
   }
-  // Part 2 of the settle tick: wait for the due second and settle (when it is at most 15 min away). Never throws.
-  if (settleTick) {
-    juniorWeeklyResult = await juniorWeeklyFinish(jctx, juniorWeeklyResult!);
-    if (juniorWeeklyResult.settleTx || juniorWeeklyResult.alreadySettled) await flushAndSnap();
-  }
-  // A failed settle tick is not a green run: error (exit 1) and the alert path (exit 2).
-  const settleAlerts: string[] = [];
-  if (juniorWeeklyResult?.error) {
-    settleAlerts.push(juniorWeeklyResult.error);
-    error = error ?? juniorWeeklyResult.error;
-  }
-  // Junior idle: deploy excess to Felix or pull back to the reserve. Skipped on a settle tick, where the recall
-  // before settle takes precedence (the next hourly tick redeploys the excess).
+  // Junior rotation: Felix vs HyperLend by rate net of gas, reserve kept idle. Skipped on a settle tick, where the
+  // recall before settle takes precedence (the next hourly tick redeploys).
   let juniorIdle: RunReport["juniorIdle"];
-  if (opts.weekly || settleTick) {
-    juniorIdle = { checked: false, action: "skipped", note: "settle tick: idle management deferred to the next hour" };
-  } else if (juniorLiquidity?.short || juniorLiquidity?.failed) {
-    juniorIdle = { checked: false, action: "skipped", note: "liquidity recall or unknown liquidity state this tick: idle management deferred to the next hour" };
+  if (opts.weekly || juniorWeeklyResult?.settleDue) {
+    juniorIdle = { checked: false, action: "skipped", note: "settle tick: rotation deferred to the next hour" };
   } else {
     try {
-      juniorIdle = await manageJuniorIdle({ ...jctx, log });
+      const gasCostUsdPerAction = 300_000 * gasPriceGwei * 1e-9 * morpho.hypePriceUsd;
+      // The lender venue exists on junior v1.2 only; never offer it to an older junior, whose allowlist would refuse it.
+      const hlCfg = cfg.juniorVenues?.hyperlend;
+      const hl = hlCfg && hlCfg.junior.toLowerCase() === cfg.junior.toLowerCase() ? hlCfg : undefined;
+      const dailyCap = cfg.economics.dailyCostCapUsd ?? 0;
+      const spentNow = spentSince(opts.opsDir ? readSpend(opts.opsDir) : [], nowTs - 24 * 3600);
+      juniorIdle = await rotateJunior({ ...jctx, log, felixRate: morpho.felix.netApy, gasCostUsdPerAction, hyperlend: hl, marginFactor: cfg.economics.marginFactor, dailyCostLeftUsd: dailyCap > 0 ? Math.max(0, dailyCap - spentNow) : undefined });
+      if (juniorIdle.action === "move" && juniorIdle.txHashes?.length && juniorIdle.plan && opts.opsDir) recordSpend(opts.opsDir, { ts: nowTs, what: "junior", costUsd: juniorIdle.plan.costUsd, note: juniorIdle.plan.reason });
     } catch (err) {
-      juniorIdle = { checked: false, action: "skipped", note: `junior idle management failed: ${(err as Error).message}` };
+      juniorIdle = { checked: false, action: "skipped", note: `junior rotation failed: ${(err as Error).message}` };
       warnings.push(juniorIdle.note);
     }
   }
@@ -280,16 +239,12 @@ export async function run(opts: RunOptions, cfg: SeniorConfig = loadConfig(opts.
     weeklyClose: weekly,
     juniorSync,
     juniorAccrue,
-    juniorSnap,
-    juniorObserve,
-    feeDistribute,
     juniorStatus,
     juniorIdle,
-    juniorLiquidity,
     juniorWeekly: juniorWeeklyResult,
     orphPrice,
     drift,
-    alerts: [...(drift?.alerts ?? []), ...settleAlerts],
+    alerts: drift?.alerts ?? [],
     bookApy: bookApy(proposal),
     error,
   };

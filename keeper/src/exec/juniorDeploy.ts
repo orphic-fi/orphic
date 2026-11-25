@@ -18,10 +18,6 @@ import { isPlaceholder, type SeniorConfig } from "../config.js";
 import { juniorAbi } from "../abi/junior.js";
 import { vaultV2Abi } from "../abi/vaultV2.js";
 import { sendCall, type SignerCtx } from "./send.js";
-import { encodeMarketParams } from "../data/state.js";
-import { morphoBlueAbi } from "../abi/morphoBlue.js";
-import { keccak256 } from "viem";
-import { isMissingFunction } from "./errors.js";
 
 export const COVER_BUFFER_BPS = 100n; // 1% of senior assets kept idle for a settle-day cover bill
 export const MIN_RESERVE = 5_000_000n; // 5 USDC
@@ -41,32 +37,9 @@ const erc4626 = parseAbi([
   "function convertToAssets(uint256 shares) view returns (uint256)",
 ]);
 
-const morphoWithdrawAbi = parseAbi([
-  "function withdraw((address loanToken, address collateralToken, address oracle, address irm, uint256 lltv) marketParams, uint256 assets, uint256 shares, address onBehalf, address receiver) returns (uint256, uint256)",
-]);
-
-const seniorRedeemAbi = parseAbi([
-  "function balanceOf(address) view returns (uint256)",
-  "function redeem(uint256 shares, address receiver, address owner) returns (uint256)",
-]);
-
-/**
- * junior.carryOwed(), 0 on a pre-fix junior that has no such function. Any other read error (an RPC failure) is UNKNOWN
- * and is rethrown: the caller then redeploys nothing that tick instead of guessing there is no debt.
- */
-export async function readCarryOwed(c: PublicClient, junior: Address): Promise<bigint> {
-  try {
-    return await c.readContract({ address: junior, abi: juniorAbi, functionName: "carryOwed" });
-  } catch (err) {
-    if (isMissingFunction(err)) return 0n;
-    throw err;
-  }
-}
-
 export interface IdleInputs {
   idle: bigint; // junior USDC balance
   reserved: bigint; // junior.reservedAssets (owed to priced exits)
-  carryOwed: bigint; // junior.carryOwed(): cover still owed to senior; execute() refuses to dip idle below reserved + this
   owedToMaturing: bigint; // USDC owed to exits maturing before the next settle, at today's price
   seniorAssets: bigint; // senior totalAssets
   felixAssets: bigint; // junior's Felix position in USDC
@@ -81,7 +54,7 @@ export type IdleAction =
 
 export function reserveFor(i: IdleInputs): bigint {
   const coverBuffer = (i.seniorAssets * COVER_BUFFER_BPS) / 10_000n;
-  let r = i.reserved + i.carryOwed + i.owedToMaturing;
+  let r = i.reserved + i.owedToMaturing;
   if (coverBuffer > r) r = coverBuffer;
   if (MIN_RESERVE > r) r = MIN_RESERVE;
   return r;
@@ -125,9 +98,7 @@ export async function readIdleInputs(ctx: IdleCtx): Promise<IdleInputs> {
   const c = ctx.client!;
   const junior = ctx.cfg.junior as Address;
   const felix = ctx.cfg.felix.address;
-  const carry = readCarryOwed(c, junior);
-  const [carryOwed, idle, reserved, pending, pps, seniorAssets, felixShares, felixWithdrawable, allowance] = await Promise.all([
-    carry,
+  const [idle, reserved, pending, pps, seniorAssets, felixShares, felixWithdrawable, allowance] = await Promise.all([
     c.readContract({ address: ctx.cfg.usdc, abi: erc20Full, functionName: "balanceOf", args: [junior] }),
     c.readContract({ address: junior, abi: juniorAbi, functionName: "reservedAssets" }),
     c.readContract({ address: junior, abi: juniorAbi, functionName: "pendingExitShares" }),
@@ -141,7 +112,7 @@ export async function readIdleInputs(ctx: IdleCtx): Promise<IdleInputs> {
   // All pending exit shares are treated as maturing before the next settle: the queue is 7 days and settles are
   // weekly, so anything requested by now is owed at the next settle or the one after. Conservative on purpose.
   const owedToMaturing = (pending * pps) / 10n ** 18n / 10n ** 12n;
-  return { idle, reserved, carryOwed, owedToMaturing, seniorAssets, felixAssets, felixWithdrawable, allowance };
+  return { idle, reserved, owedToMaturing, seniorAssets, felixAssets, felixWithdrawable, allowance };
 }
 
 async function execute(ctx: IdleCtx, target: Address, data: Hex): Promise<Hex> {
@@ -223,134 +194,4 @@ export async function recallFromFelix(ctx: IdleCtx): Promise<{ txHash?: Hex; not
   const hash = await execute(ctx, felix, encodeFunctionData({ abi: erc4626, functionName: "withdraw", args: [amount, junior, junior] }));
   log(`junior recall: ${verb}; sent ${hash}`);
   return { txHash: hash, note: verb };
-}
-
-/**
- * Touch Felix so a bad debt it has not booked yet lands in `lostAssets` before junior is valued at the settle (L11
- * item 4). Felix (MetaMorpho v1.1) runs its accrual, which writes `lostAssets`, on every deposit/withdraw/redeem.
- * `withdraw(0, junior, junior)` through junior.execute is the cheapest safe touch: it needs no USDC and no approval,
- * cannot lower idle, and the Felix withdraw rule with junior pinned as receiver already allows it.
- */
-export async function touchFelix(ctx: IdleCtx): Promise<{ txHash?: Hex; note: string }> {
-  const log = ctx.log ?? (() => undefined);
-  const junior = ctx.cfg.junior as Address;
-  const felix = ctx.cfg.felix.address;
-  if (ctx.dryRun) {
-    log("junior touch: would call Felix.withdraw(0, junior, junior) through junior.execute so a pending bad debt is booked (dry-run)");
-    return { note: "dry-run: would touch Felix (withdraw 0)" };
-  }
-  const hash = await execute(ctx, felix, encodeFunctionData({ abi: erc4626, functionName: "withdraw", args: [0n, junior, junior] }));
-  log(`junior touch: Felix accrual run; sent ${hash}`);
-  return { txHash: hash, note: "Felix touched (withdraw 0)" };
-}
-
-export interface RecallResult {
-  txHashes: Hex[];
-  /** One line per venue, in the order they were recalled. */
-  steps: string[];
-  /** Venues whose recall failed (a revert, not an illiquid venue). */
-  errors: string[];
-  note: string;
-}
-
-/**
- * Bring every junior position back to idle: Felix, every `junior.markets()` Morpho market and (only when asked) the
- * senior fee shares junior holds. Each venue is tried independently so one failure never blocks the others.
- */
-export async function recallAll(ctx: IdleCtx, opts: { seniorShares: boolean }): Promise<RecallResult> {
-  const log = ctx.log ?? (() => undefined);
-  const out: RecallResult = { txHashes: [], steps: [], errors: [], note: "" };
-  if (!ctx.client) return { ...out, note: "no RPC client; recall skipped" };
-  const c = ctx.client;
-  const junior = ctx.cfg.junior as Address;
-  const step = async (venue: string, fn: () => Promise<{ txHash?: Hex; note: string }>) => {
-    try {
-      const r = await fn();
-      if (r.txHash) out.txHashes.push(r.txHash);
-      out.steps.push(`${venue}: ${r.note}`);
-    } catch (err) {
-      const m = `${venue}: recall failed: ${(err as Error).message.split("\n")[0]}`;
-      out.errors.push(m);
-      out.steps.push(m);
-      log(`junior recall: ${m}`);
-    }
-  };
-
-  await step("Felix", () => recallFromFelix(ctx));
-
-  // Every read sits inside a step, so a failed read is a recorded error and never an exception that skips the rest.
-  let n = 0;
-  await step("markets", async () => {
-    n = Number(await c.readContract({ address: junior, abi: juniorAbi, functionName: "marketsLength" }));
-    return { note: `${n} registered` };
-  });
-  for (let i = 0; i < n; i++) {
-    await step(`market ${i}`, async () => {
-      const assets = await c.readContract({ address: junior, abi: juniorAbi, functionName: "marketAssets", args: [BigInt(i)] });
-      if (assets === 0n) return { note: "no position" };
-      const [loanToken, collateralToken, oracle, irm, lltv] = await c.readContract({ address: junior, abi: juniorAbi, functionName: "markets", args: [BigInt(i)] });
-      const mp = { loanToken, collateralToken, oracle, irm, lltv };
-      const id = keccak256(encodeMarketParams(mp));
-      const m = await c.readContract({ address: ctx.cfg.morphoBlue, abi: morphoBlueAbi, functionName: "market", args: [id] });
-      // Always by ASSETS, capped by the market's live liquidity: a by-shares withdraw of the whole position can ask for
-      // a hair more than the liquidity read a moment ago (interest accrues between the read and the transaction).
-      // expectedSupplyAssets rounds down, so withdrawing that many assets never needs more shares than junior holds.
-      const liquidity = m[0] - m[2];
-      const amount = assets < liquidity ? assets : liquidity;
-      const verb = `recall ${(Number(amount) / 1e6).toFixed(2)} of ${(Number(assets) / 1e6).toFixed(2)} USDC from market ${i}`;
-      if (amount === 0n) return { note: "market illiquid; nothing recalled" };
-      if (ctx.dryRun) return { note: `dry-run: would ${verb}` };
-      const data = encodeFunctionData({ abi: morphoWithdrawAbi, functionName: "withdraw", args: [mp, amount, 0n, junior, junior] });
-      const hash = await sendCall(ctx, junior, encodeFunctionData({ abi: juniorAbi, functionName: "execute", args: [ctx.cfg.morphoBlue, data] }), `junior.execute -> morpho withdraw ${i}`);
-      return { txHash: hash, note: verb };
-    });
-  }
-
-  if (opts.seniorShares && !isPlaceholder(ctx.cfg.vault)) {
-    const senior = ctx.cfg.vault as Address;
-    await step("senior fee shares", async () => {
-      const shares = await c.readContract({ address: senior, abi: seniorRedeemAbi, functionName: "balanceOf", args: [junior] });
-      if (shares === 0n) return { note: "no senior shares held" };
-      if (ctx.dryRun) return { note: `dry-run: would redeem ${shares.toString()} senior shares` };
-      const hash = await execute(ctx, senior, encodeFunctionData({ abi: seniorRedeemAbi, functionName: "redeem", args: [shares, junior, junior] }));
-      return { txHash: hash, note: `redeemed ${shares.toString()} senior shares` };
-    });
-  }
-  out.note = out.steps.join("; ");
-  return out;
-}
-
-export interface LiquidityResult {
-  checked: boolean;
-  /** The check itself failed (unknown state): the caller redeploys nothing this tick. */
-  failed?: boolean;
-  idleUsdc?: number;
-  owedUsdc?: number;
-  short?: boolean;
-  recall?: RecallResult;
-  note: string;
-}
-
-/**
- * K2, every tick: junior's idle USDC must cover what it has priced and promised, `reservedAssets + carryOwed()`
- * (the same bound execute() enforces). When it does not, recall EVERY position (Felix, every market, junior's own
- * senior fee shares) so the priced claims and the carried cover are payable.
- */
-export async function ensureLiquidity(ctx: IdleCtx): Promise<LiquidityResult> {
-  const log = ctx.log ?? (() => undefined);
-  if (isPlaceholder(ctx.cfg.junior) || isPlaceholder(ctx.cfg.vault)) return { checked: false, note: "junior or senior is a placeholder; liquidity check skipped" };
-  if (!ctx.client) return { checked: false, note: "no RPC client; liquidity check skipped" };
-  const junior = ctx.cfg.junior as Address;
-  const c = ctx.client;
-  const [idle, reserved, carry] = await Promise.all([
-    c.readContract({ address: ctx.cfg.usdc, abi: erc20Full, functionName: "balanceOf", args: [junior] }),
-    c.readContract({ address: junior, abi: juniorAbi, functionName: "reservedAssets" }),
-    readCarryOwed(c, junior),
-  ]);
-  const owed = reserved + carry;
-  const base = { checked: true, idleUsdc: Number(idle) / 1e6, owedUsdc: Number(owed) / 1e6 };
-  if (idle >= owed) return { ...base, short: false, note: `idle ${fmt(idle)} covers reserved + carry ${fmt(owed)}` };
-  log(`junior liquidity: idle ${fmt(idle)} is below reserved + carry ${fmt(owed)}; recalling every position`);
-  const recall = await recallAll(ctx, { seniorShares: true });
-  return { ...base, short: true, recall, note: `idle ${fmt(idle)} below ${fmt(owed)}: ${recall.note}` };
 }

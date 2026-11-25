@@ -24,11 +24,11 @@ describe("rule 5: plan sequencing", () => {
     expect(plan.filter((x) => x.action === "deallocate" && x.marketId === "felix").length).toBeGreaterThanOrEqual(3);
   });
 
-  it("keeps idle at or above 2% after every step", () => {
+  it("keeps idle at or above minIdle after every step", () => {
     let idle = s.idle;
     for (const step of plan) {
       idle += step.action === "deallocate" ? step.amount : -step.amount;
-      expect(idle).toBeGreaterThanOrEqual(0.02 * s.totalAssets - 1e-6);
+      expect(idle).toBeGreaterThanOrEqual(c.constraints.minIdle * s.totalAssets - 1e-6);
       expect(step.idleAfter).toBeCloseTo(idle, 3);
     }
   });

@@ -3298,12 +3298,12 @@ var init_transaction = __esm({
       }
     };
     TransactionExecutionError = class extends BaseError2 {
-      constructor(cause, { account, docsPath: docsPath6, chain: chain2, data, gas, gasPrice, maxFeePerGas, maxPriorityFeePerGas, nonce, to, value }) {
+      constructor(cause, { account, docsPath: docsPath6, chain, data, gas, gasPrice, maxFeePerGas, maxPriorityFeePerGas, nonce, to, value }) {
         const prettyArgs = prettyPrint({
-          chain: chain2 && `${chain2?.name} (id: ${chain2?.id})`,
+          chain: chain && `${chain?.name} (id: ${chain?.id})`,
           from: account?.address,
           to,
-          value: typeof value !== "undefined" && `${formatEther(value)} ${chain2?.nativeCurrency?.symbol || "ETH"}`,
+          value: typeof value !== "undefined" && `${formatEther(value)} ${chain?.nativeCurrency?.symbol || "ETH"}`,
           data,
           gas,
           gasPrice: typeof gasPrice !== "undefined" && `${formatGwei(gasPrice)} gwei`,
@@ -3388,12 +3388,12 @@ var init_contract = __esm({
     init_transaction();
     init_utils3();
     CallExecutionError = class extends BaseError2 {
-      constructor(cause, { account: account_, docsPath: docsPath6, chain: chain2, data, gas, gasPrice, maxFeePerGas, maxPriorityFeePerGas, nonce, to, value, stateOverride }) {
+      constructor(cause, { account: account_, docsPath: docsPath6, chain, data, gas, gasPrice, maxFeePerGas, maxPriorityFeePerGas, nonce, to, value, stateOverride }) {
         const account = account_ ? parseAccount(account_) : void 0;
         let prettyArgs = prettyPrint({
           from: account?.address,
           to,
-          value: typeof value !== "undefined" && `${formatEther(value)} ${chain2?.nativeCurrency?.symbol || "ETH"}`,
+          value: typeof value !== "undefined" && `${formatEther(value)} ${chain?.nativeCurrency?.symbol || "ETH"}`,
           data,
           gas,
           gasPrice: typeof gasPrice !== "undefined" && `${formatGwei(gasPrice)} gwei`,
@@ -5964,16 +5964,16 @@ function weierstrass(curveDef) {
       throw new Error("options.strict was renamed to lowS");
     if (format !== void 0 && format !== "compact" && format !== "der")
       throw new Error("format must be compact or der");
-    const isHex3 = typeof sg === "string" || isBytes3(sg);
-    const isObj = !isHex3 && !format && typeof sg === "object" && sg !== null && typeof sg.r === "bigint" && typeof sg.s === "bigint";
-    if (!isHex3 && !isObj)
+    const isHex2 = typeof sg === "string" || isBytes3(sg);
+    const isObj = !isHex2 && !format && typeof sg === "object" && sg !== null && typeof sg.r === "bigint" && typeof sg.s === "bigint";
+    if (!isHex2 && !isObj)
       throw new Error("invalid signature, expected Uint8Array, hex string or Signature instance");
     let _sig = void 0;
     let P;
     try {
       if (isObj)
         _sig = new Signature(sg.r, sg.s);
-      if (isHex3) {
+      if (isHex2) {
         try {
           if (format !== "compact")
             _sig = Signature.fromDER(sg);
@@ -7467,8 +7467,8 @@ var init_chain = __esm({
   "node_modules/viem/_esm/errors/chain.js"() {
     init_base();
     ChainDoesNotSupportContract = class extends BaseError2 {
-      constructor({ blockNumber, chain: chain2, contract }) {
-        super(`Chain "${chain2.name}" does not support contract "${contract.name}".`, {
+      constructor({ blockNumber, chain, contract }) {
+        super(`Chain "${chain.name}" does not support contract "${contract.name}".`, {
           metaMessages: [
             "This could be due to any of the following:",
             ...blockNumber && contract.blockCreated && contract.blockCreated > blockNumber ? [
@@ -7482,11 +7482,11 @@ var init_chain = __esm({
       }
     };
     ChainMismatchError = class extends BaseError2 {
-      constructor({ chain: chain2, currentChainId }) {
-        super(`The current chain of the wallet (id: ${currentChainId}) does not match the target chain for the transaction (id: ${chain2.id} \u2013 ${chain2.name}).`, {
+      constructor({ chain, currentChainId }) {
+        super(`The current chain of the wallet (id: ${currentChainId}) does not match the target chain for the transaction (id: ${chain.id} \u2013 ${chain.name}).`, {
           metaMessages: [
             `Current Chain ID:  ${currentChainId}`,
-            `Expected Chain ID: ${chain2.id} \u2013 ${chain2.name}`
+            `Expected Chain ID: ${chain.id} \u2013 ${chain.name}`
           ],
           name: "ChainMismatchError"
         });
@@ -7543,17 +7543,17 @@ var init_encodeDeployData = __esm({
 });
 
 // node_modules/viem/_esm/utils/chain/getChainContractAddress.js
-function getChainContractAddress({ blockNumber, chain: chain2, contract: name }) {
-  const contract = chain2?.contracts?.[name];
+function getChainContractAddress({ blockNumber, chain, contract: name }) {
+  const contract = chain?.contracts?.[name];
   if (!contract)
     throw new ChainDoesNotSupportContract({
-      chain: chain2,
+      chain,
       contract: { name }
     });
   if (blockNumber && contract.blockCreated && contract.blockCreated > blockNumber)
     throw new ChainDoesNotSupportContract({
       blockNumber,
-      chain: chain2,
+      chain,
       contract: {
         name,
         blockCreated: contract.blockCreated
@@ -7590,13 +7590,13 @@ var init_getCallError = __esm({
 
 // node_modules/viem/_esm/utils/promise/withResolvers.js
 function withResolvers() {
-  let resolve5 = () => void 0;
+  let resolve6 = () => void 0;
   let reject = () => void 0;
   const promise = new Promise((resolve_, reject_) => {
-    resolve5 = resolve_;
+    resolve6 = resolve_;
     reject = reject_;
   });
-  return { promise, resolve: resolve5, reject };
+  return { promise, resolve: resolve6, reject };
 }
 var init_withResolvers = __esm({
   "node_modules/viem/_esm/utils/promise/withResolvers.js"() {
@@ -7615,8 +7615,8 @@ function createBatchScheduler({ fn, id, shouldSplitBatch, wait: wait2 = 0, sort 
       if (sort && Array.isArray(data))
         data.sort(sort);
       for (let i = 0; i < scheduler.length; i++) {
-        const { resolve: resolve5 } = scheduler[i];
-        resolve5?.([data[i], data]);
+        const { resolve: resolve6 } = scheduler[i];
+        resolve6?.([data[i], data]);
       }
     }).catch((err) => {
       for (let i = 0; i < scheduler.length; i++) {
@@ -7632,16 +7632,16 @@ function createBatchScheduler({ fn, id, shouldSplitBatch, wait: wait2 = 0, sort 
   return {
     flush,
     async schedule(args) {
-      const { promise, resolve: resolve5, reject } = withResolvers();
+      const { promise, resolve: resolve6, reject } = withResolvers();
       const split2 = shouldSplitBatch?.([...getBatchedArgs(), args]);
       if (split2)
         exec();
       const hasActiveScheduler = getScheduler().length > 0;
       if (hasActiveScheduler) {
-        setScheduler({ args, resolve: resolve5, reject });
+        setScheduler({ args, resolve: resolve6, reject });
         return promise;
       }
-      setScheduler({ args, resolve: resolve5, reject });
+      setScheduler({ args, resolve: resolve6, reject });
       setTimeout(exec, wait2);
       return promise;
     }
@@ -8288,8 +8288,8 @@ function getEncodableList(list) {
         else
           cursor.pushUint32(bodyLength);
       }
-      for (const { encode } of list) {
-        encode(cursor);
+      for (const { encode: encode2 } of list) {
+        encode2(cursor);
       }
     }
   };
@@ -8374,11 +8374,11 @@ init_formatGwei();
 init_base();
 init_transaction();
 var EstimateGasExecutionError = class extends BaseError2 {
-  constructor(cause, { account, docsPath: docsPath6, chain: chain2, data, gas, gasPrice, maxFeePerGas, maxPriorityFeePerGas, nonce, to, value }) {
+  constructor(cause, { account, docsPath: docsPath6, chain, data, gas, gasPrice, maxFeePerGas, maxPriorityFeePerGas, nonce, to, value }) {
     const prettyArgs = prettyPrint({
       from: account?.address,
       to,
-      value: typeof value !== "undefined" && `${formatEther(value)} ${chain2?.nativeCurrency?.symbol || "ETH"}`,
+      value: typeof value !== "undefined" && `${formatEther(value)} ${chain?.nativeCurrency?.symbol || "ETH"}`,
       data,
       gas,
       gasPrice: typeof gasPrice !== "undefined" && `${formatGwei(gasPrice)} gwei`,
@@ -8606,9 +8606,9 @@ async function estimateMaxPriorityFeePerGas(client, args) {
   return internal_estimateMaxPriorityFeePerGas(client, args);
 }
 async function internal_estimateMaxPriorityFeePerGas(client, args) {
-  const { block: block_, chain: chain2 = client.chain, request } = args || {};
+  const { block: block_, chain = client.chain, request } = args || {};
   try {
-    const maxPriorityFeePerGas = chain2?.fees?.maxPriorityFeePerGas ?? chain2?.fees?.defaultPriorityFee;
+    const maxPriorityFeePerGas = chain?.fees?.maxPriorityFeePerGas ?? chain?.fees?.defaultPriorityFee;
     if (typeof maxPriorityFeePerGas === "function") {
       const block = block_ || await getAction(client, getBlock, "getBlock")({});
       const maxPriorityFeePerGas_ = await maxPriorityFeePerGas({
@@ -8645,15 +8645,15 @@ async function estimateFeesPerGas(client, args) {
   return internal_estimateFeesPerGas(client, args);
 }
 async function internal_estimateFeesPerGas(client, args) {
-  const { block: block_, chain: chain2 = client.chain, request, type = "eip1559" } = args || {};
+  const { block: block_, chain = client.chain, request, type = "eip1559" } = args || {};
   const baseFeeMultiplier = await (async () => {
-    if (typeof chain2?.fees?.baseFeeMultiplier === "function")
-      return chain2.fees.baseFeeMultiplier({
+    if (typeof chain?.fees?.baseFeeMultiplier === "function")
+      return chain.fees.baseFeeMultiplier({
         block: block_,
         client,
         request
       });
-    return chain2?.fees?.baseFeeMultiplier ?? 1.2;
+    return chain?.fees?.baseFeeMultiplier ?? 1.2;
   })();
   if (baseFeeMultiplier < 1)
     throw new BaseFeeScalarError();
@@ -8661,8 +8661,8 @@ async function internal_estimateFeesPerGas(client, args) {
   const denominator = 10 ** decimals;
   const multiply = (base) => base * BigInt(Math.ceil(baseFeeMultiplier * denominator)) / BigInt(denominator);
   const block = block_ ? block_ : await getAction(client, getBlock, "getBlock")({});
-  if (typeof chain2?.fees?.estimateFeesPerGas === "function") {
-    const fees = await chain2.fees.estimateFeesPerGas({
+  if (typeof chain?.fees?.estimateFeesPerGas === "function") {
+    const fees = await chain.fees.estimateFeesPerGas({
       block: block_,
       client,
       multiply,
@@ -8677,7 +8677,7 @@ async function internal_estimateFeesPerGas(client, args) {
       throw new Eip1559FeesNotSupportedError();
     const maxPriorityFeePerGas = typeof request?.maxPriorityFeePerGas === "bigint" ? request.maxPriorityFeePerGas : await internal_estimateMaxPriorityFeePerGas(client, {
       block,
-      chain: chain2,
+      chain,
       request
     });
     const baseFeePerGas = multiply(block.baseFeePerGas);
@@ -9172,7 +9172,7 @@ var defaultParameters = [
   "type"
 ];
 async function prepareTransactionRequest(client, args) {
-  const { account: account_ = client.account, blobs, chain: chain2, gas, kzg, nonce, nonceManager, parameters = defaultParameters, type } = args;
+  const { account: account_ = client.account, blobs, chain, gas, kzg, nonce, nonceManager, parameters = defaultParameters, type } = args;
   const account = account_ ? parseAccount(account_) : account_;
   const request = { ...args, ...account ? { from: account?.address } : {} };
   let block;
@@ -9186,8 +9186,8 @@ async function prepareTransactionRequest(client, args) {
   async function getChainId2() {
     if (chainId)
       return chainId;
-    if (chain2)
-      return chain2.id;
+    if (chain)
+      return chain.id;
     if (typeof args.chainId !== "undefined")
       return args.chainId;
     const chainId_ = await getAction(client, getChainId, "getChainId")({});
@@ -9245,7 +9245,7 @@ async function prepareTransactionRequest(client, args) {
         const block2 = await getBlock2();
         const { maxFeePerGas, maxPriorityFeePerGas } = await internal_estimateFeesPerGas(client, {
           block: block2,
-          chain: chain2,
+          chain,
           request
         });
         if (typeof args.maxPriorityFeePerGas === "undefined" && args.maxFeePerGas && args.maxFeePerGas < maxPriorityFeePerGas)
@@ -9261,7 +9261,7 @@ async function prepareTransactionRequest(client, args) {
       const block2 = await getBlock2();
       const { gasPrice: gasPrice_ } = await internal_estimateFeesPerGas(client, {
         block: block2,
-        chain: chain2,
+        chain,
         request,
         type: "legacy"
       });
@@ -10107,11 +10107,11 @@ init_base();
 
 // node_modules/viem/_esm/utils/chain/assertCurrentChain.js
 init_chain();
-function assertCurrentChain({ chain: chain2, currentChainId }) {
-  if (!chain2)
+function assertCurrentChain({ chain, currentChainId }) {
+  if (!chain)
     throw new ChainNotFoundError();
-  if (currentChainId !== chain2.id)
-    throw new ChainMismatchError({ chain: chain2, currentChainId });
+  if (currentChainId !== chain.id)
+    throw new ChainMismatchError({ chain, currentChainId });
 }
 
 // node_modules/viem/_esm/utils/errors/getTransactionError.js
@@ -10148,7 +10148,7 @@ async function sendRawTransaction(client, { serializedTransaction }) {
 // node_modules/viem/_esm/actions/wallet/sendTransaction.js
 var supportsWalletNamespace = new LruMap(128);
 async function sendTransaction(client, parameters) {
-  const { account: account_ = client.account, chain: chain2 = client.chain, accessList, authorizationList, blobs, data, gas, gasPrice, maxFeePerBlobGas, maxFeePerGas, maxPriorityFeePerGas, nonce, value, ...rest } = parameters;
+  const { account: account_ = client.account, chain = client.chain, accessList, authorizationList, blobs, data, gas, gasPrice, maxFeePerBlobGas, maxFeePerGas, maxPriorityFeePerGas, nonce, value, ...rest } = parameters;
   if (typeof account_ === "undefined")
     throw new AccountNotFoundError({
       docsPath: "/docs/actions/wallet/sendTransaction"
@@ -10169,11 +10169,11 @@ async function sendTransaction(client, parameters) {
     })();
     if (account?.type === "json-rpc" || account === null) {
       let chainId;
-      if (chain2 !== null) {
+      if (chain !== null) {
         chainId = await getAction(client, getChainId, "getChainId")({});
         assertCurrentChain({
           currentChainId: chainId,
-          chain: chain2
+          chain
         });
       }
       const chainFormat = client.chain?.formatters?.transactionRequest?.format;
@@ -10232,7 +10232,7 @@ async function sendTransaction(client, parameters) {
         accessList,
         authorizationList,
         blobs,
-        chain: chain2,
+        chain,
         data,
         gas,
         gasPrice,
@@ -10246,7 +10246,7 @@ async function sendTransaction(client, parameters) {
         ...rest,
         to
       });
-      const serializer = chain2?.serializers?.transaction;
+      const serializer = chain?.serializers?.transaction;
       const serializedTransaction = await account.signTransaction(request, {
         serializer
       });
@@ -10375,8 +10375,8 @@ var abi = [
 
 // node_modules/viem/_esm/actions/wallet/addChain.js
 init_toHex();
-async function addChain(client, { chain: chain2 }) {
-  const { id, name, nativeCurrency, rpcUrls, blockExplorers } = chain2;
+async function addChain(client, { chain }) {
+  const { id, name, nativeCurrency, rpcUrls, blockExplorers } = chain;
   await client.request({
     method: "wallet_addEthereumChain",
     params: [
@@ -10412,10 +10412,10 @@ function uid(length = 11) {
 // node_modules/viem/_esm/clients/createClient.js
 function createClient(parameters) {
   const { batch, cacheTime = parameters.pollingInterval ?? 4e3, ccipRead, key = "base", name = "Base Client", pollingInterval = 4e3, type = "base" } = parameters;
-  const chain2 = parameters.chain;
+  const chain = parameters.chain;
   const account = parameters.account ? parseAccount(parameters.account) : void 0;
   const { config, request, value } = parameters.transport({
-    chain: chain2,
+    chain,
     pollingInterval
   });
   const transport = { ...config, ...value };
@@ -10424,7 +10424,7 @@ function createClient(parameters) {
     batch,
     cacheTime,
     ccipRead,
-    chain: chain2,
+    chain,
     key,
     name,
     pollingInterval,
@@ -10467,7 +10467,7 @@ function withDedupe(fn, { enabled = true, id }) {
 
 // node_modules/viem/_esm/utils/promise/withRetry.js
 function withRetry(fn, { delay: delay_ = 100, retryCount = 2, shouldRetry: shouldRetry2 = () => true } = {}) {
-  return new Promise((resolve5, reject) => {
+  return new Promise((resolve6, reject) => {
     const attemptRetry = async ({ count = 0 } = {}) => {
       const retry = async ({ error }) => {
         const delay = typeof delay_ === "function" ? delay_({ count, error }) : delay_;
@@ -10477,7 +10477,7 @@ function withRetry(fn, { delay: delay_ = 100, retryCount = 2, shouldRetry: shoul
       };
       try {
         const data = await fn();
-        resolve5(data);
+        resolve6(data);
       } catch (err) {
         if (count < retryCount && await shouldRetry2({ count, error: err }))
           return retry({ error: err });
@@ -10655,7 +10655,7 @@ init_request();
 
 // node_modules/viem/_esm/utils/promise/withTimeout.js
 function withTimeout(fn, { errorInstance = new Error("timed out"), timeout, signal }) {
-  return new Promise((resolve5, reject) => {
+  return new Promise((resolve6, reject) => {
     ;
     (async () => {
       let timeoutId;
@@ -10670,7 +10670,7 @@ function withTimeout(fn, { errorInstance = new Error("timed out"), timeout, sign
             }
           }, timeout);
         }
-        resolve5(await fn({ signal: controller?.signal || null }));
+        resolve6(await fn({ signal: controller?.signal || null }));
       } catch (err) {
         if (err?.name === "AbortError")
           reject(errorInstance);
@@ -10781,11 +10781,11 @@ function getHttpRpcClient(url, options = {}) {
 // node_modules/viem/_esm/clients/transports/http.js
 function http(url, config = {}) {
   const { batch, fetchOptions, key = "http", name = "HTTP JSON-RPC", onFetchRequest, onFetchResponse, retryDelay } = config;
-  return ({ chain: chain2, retryCount: retryCount_, timeout: timeout_ }) => {
+  return ({ chain, retryCount: retryCount_, timeout: timeout_ }) => {
     const { batchSize = 1e3, wait: wait2 = 0 } = typeof batch === "object" ? batch : {};
     const retryCount = config.retryCount ?? retryCount_;
     const timeout = timeout_ ?? config.timeout ?? 1e4;
-    const url_ = url || chain2?.rpcUrls.default.http[0];
+    const url_ = url || chain?.rpcUrls.default.http[0];
     if (!url_)
       throw new UrlRequiredError();
     const rpcClient = getHttpRpcClient(url_, {
@@ -11049,13 +11049,13 @@ async function isImageUri(uri) {
     }
     if (!globalThis.hasOwnProperty("Image"))
       return false;
-    return new Promise((resolve5) => {
+    return new Promise((resolve6) => {
       const img = new Image();
       img.onload = () => {
-        resolve5(true);
+        resolve6(true);
       };
       img.onerror = () => {
-        resolve5(false);
+        resolve6(false);
       };
       img.src = uri;
     });
@@ -12687,9 +12687,9 @@ async function waitForTransactionReceipt(client, {
   let replacedTransaction;
   let receipt;
   let retrying = false;
-  const { promise, resolve: resolve5, reject } = withResolvers();
+  const { promise, resolve: resolve6, reject } = withResolvers();
   const timer = timeout ? setTimeout(() => reject(new WaitForTransactionReceiptTimeoutError({ hash: hash2 })), timeout) : void 0;
-  const _unobserve = observe(observerId, { onReplaced, resolve: resolve5, reject }, (emit) => {
+  const _unobserve = observe(observerId, { onReplaced, resolve: resolve6, reject }, (emit) => {
     const _unwatch = getAction(client, watchBlockNumber, "watchBlockNumber")({
       emitMissed: true,
       emitOnBegin: true,
@@ -13355,7 +13355,7 @@ init_toHex();
 init_transactionRequest();
 init_assertRequest();
 async function signTransaction(client, parameters) {
-  const { account: account_ = client.account, chain: chain2 = client.chain, ...transaction } = parameters;
+  const { account: account_ = client.account, chain = client.chain, ...transaction } = parameters;
   if (!account_)
     throw new AccountNotFoundError({
       docsPath: "/docs/actions/wallet/signTransaction"
@@ -13366,12 +13366,12 @@ async function signTransaction(client, parameters) {
     ...parameters
   });
   const chainId = await getAction(client, getChainId, "getChainId")({});
-  if (chain2 !== null)
+  if (chain !== null)
     assertCurrentChain({
       currentChainId: chainId,
-      chain: chain2
+      chain
     });
-  const formatters = chain2?.formatters || client.chain?.formatters;
+  const formatters = chain?.formatters || client.chain?.formatters;
   const format = formatters?.transactionRequest?.format || formatTransactionRequest;
   if (account.signTransaction)
     return account.signTransaction({
@@ -13476,7 +13476,6 @@ var zeroAddress = "0x0000000000000000000000000000000000000000";
 // node_modules/viem/_esm/index.js
 init_encodeAbiParameters();
 init_encodeFunctionData();
-init_toFunctionSelector();
 init_keccak256();
 
 // src/config.ts
@@ -13522,6 +13521,10 @@ function validateConfig(cfg) {
     throw new Error("maxClipFraction must be in (0, 1]");
   }
   if (cfg.economics.marginFactor < 1) throw new Error("marginFactor must be >= 1");
+  const mc = cfg.economics.maxConcentration ?? 0;
+  if (mc < 0 || mc > 1) throw new Error("maxConcentration must be between 0 and 1");
+  if ((cfg.economics.spreadCostCapUsd ?? 0) < 0) throw new Error("spreadCostCapUsd must be >= 0");
+  if ((cfg.economics.dailyCostCapUsd ?? 0) < 0) throw new Error("dailyCostCapUsd must be >= 0");
 }
 function loadDotEnv(path = resolve(keeperRoot, ".env")) {
   if (!existsSync(path)) return;
@@ -14385,16 +14388,33 @@ function decide(input) {
   const slippageCostUsd = movedAmount * e.slippagePenalty;
   const totalCostUsd = gasCostUsd + slippageCostUsd;
   const threshold = e.marginFactor * totalCostUsd;
+  const maxConc = e.maxConcentration ?? 0;
+  const costCap = e.spreadCostCapUsd ?? 0;
+  const total = proposal.lines.reduce((s, l) => s + l.currentAmount, 0);
+  const biggest = proposal.lines.reduce((b, l) => b === null || l.currentAmount > b.currentAmount ? l : b, null);
+  const concentration = total > 0 && biggest ? biggest.currentAmount / total : 0;
+  const biggestReduced = !!biggest && movedKeys.has(biggest.key) && biggest.amount < biggest.currentAmount;
+  const spreadApplies = actions > 0 && maxConc > 0 && concentration > maxConc && biggestReduced && totalCostUsd <= costCap && weeklyGainUsd > -costCap;
+  const dailyCap = e.dailyCostCapUsd ?? 0;
+  const spent = input.spentTodayUsd ?? 0;
+  const overDailyCap = dailyCap > 0 && spent + totalCostUsd > dailyCap;
   let move = false;
   let reason;
+  let spread;
   if (actions === 0) reason = "no deltas above the dust threshold";
-  else if (weeklyGainUsd <= 0) reason = `projected weekly gain ${fmt(weeklyGainUsd)} is not positive`;
+  else if (overDailyCap) reason = `daily cost cap: ${fmt(spent)} spent in 24h, this move costs ${fmt(totalCostUsd)}, cap ${fmt(dailyCap)}`;
+  else if (spreadApplies) {
+    move = true;
+    spread = { concentration, maxConcentration: maxConc, costCapUsd: costCap };
+    reason = `spread rule: ${(concentration * 100).toFixed(0)}% of the book sits in ${biggest.label}, above ${(maxConc * 100).toFixed(0)}%; moving once for ${fmt(totalCostUsd)} (cap ${fmt(costCap)}), weekly gain ${fmt(weeklyGainUsd)}`;
+  } else if (weeklyGainUsd <= 0) reason = `projected weekly gain ${fmt(weeklyGainUsd)} is not positive`;
   else if (weeklyGainUsd <= threshold) reason = `projected weekly gain ${fmt(weeklyGainUsd)} below ${e.marginFactor}x cost ${fmt(totalCostUsd)} = ${fmt(threshold)}`;
   else {
     move = true;
     reason = `projected weekly gain ${fmt(weeklyGainUsd)} exceeds ${e.marginFactor}x cost ${fmt(totalCostUsd)} = ${fmt(threshold)}`;
   }
   return {
+    spread,
     move,
     movedAmount: r6(movedAmount),
     weeklyGainUsd,
@@ -14782,83 +14802,94 @@ var juniorAbi = [
   { type: "function", name: "pricePerShare", stateMutability: "view", inputs: [], outputs: [{ name: "", type: "uint256" }] },
   { type: "function", name: "lastSettle", stateMutability: "view", inputs: [], outputs: [{ name: "", type: "uint256" }] },
   { type: "function", name: "marketsLength", stateMutability: "view", inputs: [], outputs: [{ name: "", type: "uint256" }] },
-  { type: "function", name: "marketAssets", stateMutability: "view", inputs: [{ name: "i", type: "uint256" }], outputs: [{ name: "", type: "uint256" }] },
-  {
-    type: "function",
-    name: "markets",
-    stateMutability: "view",
-    inputs: [{ name: "", type: "uint256" }],
-    outputs: [
-      { name: "loanToken", type: "address" },
-      { name: "collateralToken", type: "address" },
-      { name: "oracle", type: "address" },
-      { name: "irm", type: "address" },
-      { name: "lltv", type: "uint256" }
-    ]
-  },
-  { type: "function", name: "carryOwed", stateMutability: "view", inputs: [], outputs: [{ name: "", type: "uint256" }] },
-  { type: "function", name: "snapFelixExposure", stateMutability: "nonpayable", inputs: [], outputs: [] },
-  { type: "function", name: "felixExpSupply", stateMutability: "view", inputs: [], outputs: [{ name: "", type: "uint256" }] },
-  {
-    type: "function",
-    name: "felixExp",
-    stateMutability: "view",
-    inputs: [{ name: "", type: "uint256" }],
-    outputs: [
-      { name: "vault", type: "address" },
-      { name: "lostBase", type: "uint96" },
-      { name: "fraction", type: "uint128" },
-      { name: "assetsRef", type: "uint128" }
-    ]
-  },
-  { type: "function", name: "observeSenior", stateMutability: "nonpayable", inputs: [], outputs: [] },
-  { type: "function", name: "seniorSupplyMin", stateMutability: "view", inputs: [], outputs: [{ name: "", type: "uint256" }] }
+  { type: "function", name: "marketAssets", stateMutability: "view", inputs: [{ name: "i", type: "uint256" }], outputs: [{ name: "", type: "uint256" }] }
 ];
 
-// src/exec/errors.ts
-function chain(err) {
-  const out = [];
-  let e = err;
-  for (let i = 0; e && typeof e === "object" && i < 10; i++) {
-    out.push(e);
-    e = e.cause;
+// src/engine/juniorAllocate.ts
+var fmt2 = (v) => `${(Number(v) / 1e6).toFixed(2)} USDC`;
+var pct2 = (r) => `${(r * 100).toFixed(2)}%`;
+function planJunior(i, p) {
+  const book = i.idle + i.felixAssets + i.hlAssets;
+  const hold = (reason2) => ({ actions: [], reason: reason2, weeklyGainUsd: 0, costUsd: 0, target: { felix: i.felixAssets, hyperlend: i.hlAssets, idle: i.idle } });
+  if (i.idle < i.reserve) {
+    let need = i.reserve - i.idle;
+    const actions2 = [];
+    const fromFelix = need < i.felixWithdrawable ? need : i.felixWithdrawable;
+    if (fromFelix > 0n) {
+      actions2.push({ kind: "withdraw", venue: "felix", amount: fromFelix });
+      need -= fromFelix;
+    }
+    const fromHl = need < i.hlWithdrawable ? need : i.hlWithdrawable;
+    if (need > 0n && fromHl > 0n) {
+      actions2.push({ kind: "withdraw", venue: "hyperlend", amount: fromHl });
+      need -= fromHl;
+    }
+    if (actions2.length === 0) return hold(`idle ${fmt2(i.idle)} below reserve ${fmt2(i.reserve)} and nothing withdrawable to pull back`);
+    const pulled = actions2.reduce((s, a) => s + a.amount, 0n);
+    return {
+      actions: actions2,
+      reason: `reserve: idle ${fmt2(i.idle)} below ${fmt2(i.reserve)}; pulling ${fmt2(pulled)} back${need > 0n ? `, still short ${fmt2(need)}` : ""}`,
+      weeklyGainUsd: 0,
+      costUsd: actions2.length * p.gasCostUsdPerAction,
+      target: { felix: i.felixAssets - (actions2.find((a) => a.venue === "felix")?.amount ?? 0n), hyperlend: i.hlAssets - (actions2.find((a) => a.venue === "hyperlend")?.amount ?? 0n), idle: i.idle + pulled }
+    };
   }
-  return out;
-}
-var isHex2 = (v) => typeof v === "string" && /^0x([0-9a-fA-F]{2})*$/.test(v);
-function revertData(err) {
-  for (const e of chain(err)) {
-    for (const v of [e.raw, e.data, e.data?.data]) if (isHex2(v) && v.length >= 10) return v;
+  const deployable = book - i.reserve;
+  const better = i.hlRate > i.felixRate ? "hyperlend" : "felix";
+  const hlCap = BigInt(Math.floor(Number(deployable) * p.hlMaxFraction));
+  const hlTarget = better === "hyperlend" ? deployable < hlCap ? deployable : hlCap : 0n;
+  const felixTarget = deployable - hlTarget;
+  const target = { felix: felixTarget, hyperlend: hlTarget, idle: i.reserve };
+  const dFelix = felixTarget - i.felixAssets;
+  const dHl = hlTarget - i.hlAssets;
+  const excessIdle = i.idle - i.reserve;
+  const outflow = (dFelix < 0n ? -dFelix : 0n) + (dHl < 0n ? -dHl : 0n);
+  const rateGap = Math.abs(i.hlRate - i.felixRate);
+  const weeklyGainUsd = Number(outflow) / 1e6 * (rateGap / 52);
+  const movesNeeded = (dFelix !== 0n ? 1 : 0) + (dHl !== 0n ? 1 : 0);
+  const costUsd = movesNeeded * p.gasCostUsdPerAction;
+  let planFelix = dFelix;
+  let planHl = dHl;
+  if (outflow > 0n && weeklyGainUsd <= p.marginFactor * costUsd) {
+    const room = better === "hyperlend" ? hlCap > i.hlAssets ? hlCap - i.hlAssets : 0n : excessIdle;
+    const toBetter = excessIdle < room ? excessIdle : room;
+    planHl = better === "hyperlend" ? toBetter : 0n;
+    planFelix = excessIdle - planHl;
   }
-  return void 0;
-}
-function revertSelector(err) {
-  return revertData(err)?.slice(0, 10).toLowerCase();
-}
-var selectorOf = (signature) => toFunctionSelector(signature).toLowerCase();
-var NOTHING_TO_DO = selectorOf("NothingToDo()");
-var TOO_SOON = selectorOf("TooSoon()");
-function isPanic(err, code) {
-  for (const e of chain(err)) {
-    const d2 = e.data;
-    if (d2 && typeof d2 === "object" && d2.errorName === "Panic" && d2.args?.[0] === code) return true;
+  const actions = [];
+  const push = (venue, delta, withdrawable, allowance) => {
+    if (delta < 0n) {
+      const amt = -delta < withdrawable ? -delta : withdrawable;
+      if (amt >= p.minMove) actions.push({ kind: "withdraw", venue, amount: amt });
+    }
+  };
+  push("felix", planFelix, i.felixWithdrawable, i.felixAllowance);
+  push("hyperlend", planHl, i.hlWithdrawable, i.hlAllowance);
+  const deposits = [];
+  const dep = (venue, delta, allowance) => {
+    if (delta >= p.minMove) {
+      if (allowance < delta) deposits.push({ kind: "approve", venue, amount: delta });
+      deposits.push({ kind: "deposit", venue, amount: delta });
+    }
+  };
+  dep("felix", planFelix, i.felixAllowance);
+  dep("hyperlend", planHl, i.hlAllowance);
+  actions.push(...deposits);
+  if (actions.length === 0) {
+    if (excessIdle >= p.minMove && outflow === 0n) return hold(`idle ${fmt2(i.idle)} above reserve but no venue can take ${fmt2(excessIdle)}`);
+    if (outflow > 0n && weeklyGainUsd <= p.marginFactor * costUsd) {
+      return hold(`hold: moving ${fmt2(outflow)} to ${better} (${pct2(i.hlRate)} vs ${pct2(i.felixRate)}) earns ${weeklyGainUsd.toFixed(3)}/week, below ${p.marginFactor}x cost ${costUsd.toFixed(3)}`);
+    }
+    return hold(`at target: Felix ${fmt2(i.felixAssets)} (${pct2(i.felixRate)}), HyperLend ${fmt2(i.hlAssets)} (${pct2(i.hlRate)}), idle ${fmt2(i.idle)} for a reserve of ${fmt2(i.reserve)}`);
   }
-  const d = revertData(err);
-  return !!d && d.slice(0, 10).toLowerCase() === "0x4e487b71" && d.length >= 74 && BigInt(`0x${d.slice(10, 74)}`) === code;
-}
-var TRANSPORT = /* @__PURE__ */ new Set(["HttpRequestError", "TimeoutError", "WebSocketRequestError", "RpcRequestError", "InvalidParamsRpcError", "InternalRpcError"]);
-function isMissingFunction(err) {
-  if (revertData(err)) return false;
-  if (chain(err).some((e) => typeof e.data === "object" && e.data !== null && "errorName" in e.data)) return false;
-  const names = chain(err).map((e) => String(e.name));
-  if (names.some((n) => TRANSPORT.has(n))) return false;
-  return names.includes("ContractFunctionZeroDataError") || names.includes("ContractFunctionRevertedError");
+  const moved = actions.filter((a) => a.kind !== "approve").reduce((s, a) => s + a.amount, 0n);
+  const reason = outflow > 0n && weeklyGainUsd > p.marginFactor * costUsd ? `rebalance toward ${better}: ${pct2(i.hlRate)} HyperLend vs ${pct2(i.felixRate)} Felix, ${weeklyGainUsd.toFixed(3)}/week gain beats ${p.marginFactor}x cost ${costUsd.toFixed(3)}` : `put ${fmt2(moved)} of idle to work in ${better === "hyperlend" && planHl > 0n ? "HyperLend" : "Felix"} (${pct2(better === "hyperlend" ? i.hlRate : i.felixRate)}), reserve ${fmt2(i.reserve)} stays idle`;
+  return { actions, reason, weeklyGainUsd, costUsd: actions.filter((a) => a.kind !== "approve").length * p.gasCostUsdPerAction, target };
 }
 
 // src/exec/juniorDeploy.ts
 var COVER_BUFFER_BPS = 100n;
 var MIN_RESERVE = 5000000n;
-var MIN_MOVE = 20000000n;
 var erc20Full = parseAbi([
   "function balanceOf(address) view returns (uint256)",
   "function allowance(address owner, address spender) view returns (uint256)",
@@ -14871,51 +14902,18 @@ var erc4626 = parseAbi([
   "function balanceOf(address) view returns (uint256)",
   "function convertToAssets(uint256 shares) view returns (uint256)"
 ]);
-var morphoWithdrawAbi = parseAbi([
-  "function withdraw((address loanToken, address collateralToken, address oracle, address irm, uint256 lltv) marketParams, uint256 assets, uint256 shares, address onBehalf, address receiver) returns (uint256, uint256)"
-]);
-var seniorRedeemAbi = parseAbi([
-  "function balanceOf(address) view returns (uint256)",
-  "function redeem(uint256 shares, address receiver, address owner) returns (uint256)"
-]);
-async function readCarryOwed(c, junior) {
-  try {
-    return await c.readContract({ address: junior, abi: juniorAbi, functionName: "carryOwed" });
-  } catch (err) {
-    if (isMissingFunction(err)) return 0n;
-    throw err;
-  }
-}
 function reserveFor(i) {
   const coverBuffer = i.seniorAssets * COVER_BUFFER_BPS / 10000n;
-  let r = i.reserved + i.carryOwed + i.owedToMaturing;
+  let r = i.reserved + i.owedToMaturing;
   if (coverBuffer > r) r = coverBuffer;
   if (MIN_RESERVE > r) r = MIN_RESERVE;
   return r;
-}
-function planIdle(i) {
-  const reserve = reserveFor(i);
-  if (i.idle >= reserve) {
-    const excess = i.idle - reserve;
-    if (excess < MIN_MOVE) return { kind: "hold", reason: `idle ${fmt2(i.idle)} within ${fmt2(MIN_MOVE)} of reserve ${fmt2(reserve)}` };
-    return { kind: "deploy", amount: excess, approve: i.allowance < excess };
-  }
-  const need = reserve - i.idle;
-  if (i.felixAssets === 0n) return { kind: "hold", reason: `idle ${fmt2(i.idle)} below reserve ${fmt2(reserve)} but nothing deployed to pull back` };
-  const amount = need < i.felixWithdrawable ? need : i.felixWithdrawable;
-  if (amount === 0n) return { kind: "hold", reason: "Felix has no withdrawable liquidity right now" };
-  return { kind: "withdraw", amount };
-}
-function fmt2(v) {
-  return `${(Number(v) / 1e6).toFixed(2)} USDC`;
 }
 async function readIdleInputs(ctx) {
   const c = ctx.client;
   const junior = ctx.cfg.junior;
   const felix = ctx.cfg.felix.address;
-  const carry = readCarryOwed(c, junior);
-  const [carryOwed, idle, reserved, pending, pps, seniorAssets, felixShares, felixWithdrawable, allowance] = await Promise.all([
-    carry,
+  const [idle, reserved, pending, pps, seniorAssets, felixShares, felixWithdrawable, allowance] = await Promise.all([
     c.readContract({ address: ctx.cfg.usdc, abi: erc20Full, functionName: "balanceOf", args: [junior] }),
     c.readContract({ address: junior, abi: juniorAbi, functionName: "reservedAssets" }),
     c.readContract({ address: junior, abi: juniorAbi, functionName: "pendingExitShares" }),
@@ -14927,177 +14925,141 @@ async function readIdleInputs(ctx) {
   ]);
   const felixAssets = felixShares > 0n ? await c.readContract({ address: felix, abi: erc4626, functionName: "convertToAssets", args: [felixShares] }) : 0n;
   const owedToMaturing = pending * pps / 10n ** 18n / 10n ** 12n;
-  return { idle, reserved, carryOwed, owedToMaturing, seniorAssets, felixAssets, felixWithdrawable, allowance };
+  return { idle, reserved, owedToMaturing, seniorAssets, felixAssets, felixWithdrawable, allowance };
 }
-async function execute(ctx, target, data) {
-  const calldata = encodeFunctionData({ abi: juniorAbi, functionName: "execute", args: [target, data] });
-  return sendCall(ctx, ctx.cfg.junior, calldata, `junior.execute -> ${target}`);
-}
-async function manageJuniorIdle(ctx) {
-  const log = ctx.log ?? (() => void 0);
-  if (isPlaceholder(ctx.cfg.junior) || isPlaceholder(ctx.cfg.vault)) {
-    return { checked: false, action: "skipped", note: "junior or senior is a placeholder; idle management skipped" };
-  }
-  if (!ctx.client) return { checked: false, action: "skipped", note: "no RPC client; idle management skipped" };
-  const i = await readIdleInputs(ctx);
-  const reserve = reserveFor(i);
-  const action = planIdle(i);
-  const base = {
-    checked: true,
-    idleUsdc: Number(i.idle) / 1e6,
-    reserveUsdc: Number(reserve) / 1e6,
-    felixUsdc: Number(i.felixAssets) / 1e6,
-    action: action.kind,
-    note: ""
-  };
-  const junior = ctx.cfg.junior;
-  const felix = ctx.cfg.felix.address;
-  if (action.kind === "hold") {
-    log(`junior idle: hold (${action.reason})`);
-    return { ...base, note: action.reason };
-  }
-  const amountUsdc = Number(action.amount) / 1e6;
-  if (action.kind === "deploy") {
-    const verb2 = `deploy ${amountUsdc.toFixed(2)} USDC idle to Felix (reserve ${base.reserveUsdc.toFixed(2)})${action.approve ? ", approving first" : ""}`;
-    if (ctx.dryRun) {
-      log(`junior idle: would ${verb2} (dry-run)`);
-      return { ...base, amountUsdc, note: `dry-run: would ${verb2}` };
-    }
-    const hashes = [];
-    if (action.approve) {
-      hashes.push(await execute(ctx, ctx.cfg.usdc, encodeFunctionData({ abi: erc20Full, functionName: "approve", args: [felix, action.amount] })));
-    }
-    hashes.push(await execute(ctx, felix, encodeFunctionData({ abi: erc4626, functionName: "deposit", args: [action.amount, junior] })));
-    log(`junior idle: ${verb2}; sent ${hashes.join(", ")}`);
-    return { ...base, amountUsdc, txHashes: hashes, note: verb2 };
-  }
-  const verb = `withdraw ${amountUsdc.toFixed(2)} USDC from Felix back to idle (reserve ${base.reserveUsdc.toFixed(2)})`;
-  if (ctx.dryRun) {
-    log(`junior idle: would ${verb} (dry-run)`);
-    return { ...base, amountUsdc, note: `dry-run: would ${verb}` };
-  }
-  const hash2 = await execute(ctx, felix, encodeFunctionData({ abi: erc4626, functionName: "withdraw", args: [action.amount, junior, junior] }));
-  log(`junior idle: ${verb}; sent ${hash2}`);
-  return { ...base, amountUsdc, txHashes: [hash2], note: verb };
-}
-async function recallFromFelix(ctx) {
-  const log = ctx.log ?? (() => void 0);
-  if (!ctx.client) return { note: "no RPC client; recall skipped" };
-  const junior = ctx.cfg.junior;
-  const felix = ctx.cfg.felix.address;
-  const [shares, withdrawable] = await Promise.all([
-    ctx.client.readContract({ address: felix, abi: erc4626, functionName: "balanceOf", args: [junior] }),
-    ctx.client.readContract({ address: felix, abi: erc4626, functionName: "maxWithdraw", args: [junior] })
+
+// src/exec/juniorRotate.ts
+var erc20 = parseAbi([
+  "function balanceOf(address) view returns (uint256)",
+  "function allowance(address owner, address spender) view returns (uint256)",
+  "function approve(address spender, uint256 amount) returns (bool)"
+]);
+var erc46262 = parseAbi([
+  "function deposit(uint256 assets, address receiver) returns (uint256)",
+  "function withdraw(uint256 assets, address receiver, address owner) returns (uint256)"
+]);
+var aavePool = parseAbi([
+  "function supply(address asset, uint256 amount, address onBehalfOf, uint16 referralCode)",
+  "function withdraw(address asset, uint256 amount, address to) returns (uint256)",
+  "function getReserveData(address asset) view returns ((uint256 configuration, uint128 liquidityIndex, uint128 currentLiquidityRate, uint128 variableBorrowIndex, uint128 currentVariableBorrowRate, uint128 currentStableBorrowRate, uint40 lastUpdateTimestamp, uint16 id, address aTokenAddress, address stableDebtTokenAddress, address variableDebtTokenAddress, address interestRateStrategyAddress, uint128 accruedToTreasury, uint128 unbacked, uint128 isolationModeTotalDebt))"
+]);
+async function readHyperlend(ctx, junior) {
+  const hl = ctx.hyperlend;
+  if (!hl) return { hlAssets: 0n, hlWithdrawable: 0n, hlRate: 0, hlAllowance: 0n };
+  const c = ctx.client;
+  const usdc = ctx.cfg.usdc;
+  const [bal, poolCash, rd, allowance] = await Promise.all([
+    c.readContract({ address: hl.aToken, abi: erc20, functionName: "balanceOf", args: [junior] }),
+    c.readContract({ address: usdc, abi: erc20, functionName: "balanceOf", args: [hl.aToken] }),
+    // reserve cash sits on the aToken
+    c.readContract({ address: hl.pool, abi: aavePool, functionName: "getReserveData", args: [usdc] }),
+    c.readContract({ address: usdc, abi: erc20, functionName: "allowance", args: [junior, hl.pool] })
   ]);
-  if (shares === 0n) return { note: "nothing in Felix to recall" };
-  const assets = await ctx.client.readContract({ address: felix, abi: erc4626, functionName: "convertToAssets", args: [shares] });
-  const amount = assets < withdrawable ? assets : withdrawable;
-  const verb = `recall ${(Number(amount) / 1e6).toFixed(2)} of ${(Number(assets) / 1e6).toFixed(2)} USDC from Felix before settle`;
-  if (amount === 0n) {
-    log("junior recall: Felix has no withdrawable liquidity; settle proceeds with idle only");
-    return { note: "Felix illiquid; nothing recalled" };
+  const rate = Number(rd.currentLiquidityRate) / 1e27;
+  return { hlAssets: bal, hlWithdrawable: bal < poolCash ? bal : poolCash, hlRate: Math.expm1(rate), hlAllowance: allowance };
+}
+async function readJuniorInputs(ctx) {
+  const junior = ctx.cfg.junior;
+  const [idle, hl] = await Promise.all([readIdleInputs(ctx), readHyperlend(ctx, junior)]);
+  return {
+    idle: idle.idle,
+    reserve: reserveFor(idle),
+    felixAssets: idle.felixAssets,
+    felixWithdrawable: idle.felixWithdrawable,
+    felixRate: ctx.felixRate,
+    felixAllowance: idle.allowance,
+    ...hl
+  };
+}
+function encode(ctx, junior, a) {
+  const usdc = ctx.cfg.usdc;
+  const felix = ctx.cfg.felix.address;
+  const hl = ctx.hyperlend;
+  const amt = (Number(a.amount) / 1e6).toFixed(2);
+  if (a.kind === "approve") {
+    const spender = a.venue === "felix" ? felix : hl.pool;
+    return { target: usdc, data: encodeFunctionData({ abi: erc20, functionName: "approve", args: [spender, a.amount] }), label: `approve ${amt} USDC to ${a.venue}` };
   }
+  if (a.venue === "felix") {
+    return a.kind === "deposit" ? { target: felix, data: encodeFunctionData({ abi: erc46262, functionName: "deposit", args: [a.amount, junior] }), label: `deposit ${amt} USDC to Felix` } : { target: felix, data: encodeFunctionData({ abi: erc46262, functionName: "withdraw", args: [a.amount, junior, junior] }), label: `withdraw ${amt} USDC from Felix` };
+  }
+  return a.kind === "deposit" ? { target: hl.pool, data: encodeFunctionData({ abi: aavePool, functionName: "supply", args: [usdc, a.amount, junior, 0] }), label: `supply ${amt} USDC to HyperLend` } : { target: hl.pool, data: encodeFunctionData({ abi: aavePool, functionName: "withdraw", args: [usdc, a.amount, junior] }), label: `withdraw ${amt} USDC from HyperLend` };
+}
+async function rotateJunior(ctx) {
+  const log = ctx.log ?? (() => void 0);
+  if (isPlaceholder(ctx.cfg.junior) || isPlaceholder(ctx.cfg.vault)) return { checked: false, action: "skipped", note: "junior or senior is a placeholder; rotation skipped" };
+  if (!ctx.client) return { checked: false, action: "skipped", note: "no RPC client; rotation skipped" };
+  const junior = ctx.cfg.junior;
+  const i = await readJuniorInputs(ctx);
+  const plan = planJunior(i, {
+    hlMaxFraction: ctx.hyperlend?.maxFraction ?? 0,
+    minMove: BigInt(Math.round((ctx.minMoveUsdc ?? 20) * 1e6)),
+    marginFactor: ctx.marginFactor ?? 3,
+    gasCostUsdPerAction: ctx.gasCostUsdPerAction
+  });
+  const inputs = { idleUsdc: Number(i.idle) / 1e6, reserveUsdc: Number(i.reserve) / 1e6, felixUsdc: Number(i.felixAssets) / 1e6, hyperlendUsdc: Number(i.hlAssets) / 1e6, felixRate: i.felixRate, hlRate: i.hlRate };
+  if (plan.actions.length === 0) {
+    log(`junior: hold (${plan.reason})`);
+    return { checked: true, action: "hold", plan, inputs, note: plan.reason };
+  }
+  if (ctx.dailyCostLeftUsd !== void 0 && !plan.reason.startsWith("reserve") && plan.costUsd > ctx.dailyCostLeftUsd) {
+    const note = `daily cost cap: this move costs $${plan.costUsd.toFixed(2)}, $${ctx.dailyCostLeftUsd.toFixed(2)} left today`;
+    log(`junior: hold (${note})`);
+    return { checked: true, action: "hold", plan, inputs, note };
+  }
+  const steps = plan.actions.map((a) => encode(ctx, junior, a));
+  const verb = `${plan.reason}: ${steps.map((s) => s.label).join("; ")}`;
+  if (ctx.dryRun) {
+    log(`junior: would ${verb} (dry-run)`);
+    return { checked: true, action: "move", plan, inputs, note: `dry-run: would ${verb}` };
+  }
+  const hashes = [];
+  for (const s of steps) {
+    const calldata = encodeFunctionData({ abi: juniorAbi, functionName: "execute", args: [s.target, s.data] });
+    hashes.push(await sendCall(ctx, junior, calldata, `junior.execute: ${s.label}`));
+  }
+  log(`junior: ${verb}; sent ${hashes.join(", ")}`);
+  return { checked: true, action: "move", plan, inputs, txHashes: hashes, note: verb };
+}
+async function recallAll(ctx) {
+  const log = ctx.log ?? (() => void 0);
+  if (!ctx.client) return { txHashes: [], note: "no RPC client; recall skipped" };
+  const junior = ctx.cfg.junior;
+  const c = ctx.client;
+  const felix = ctx.cfg.felix.address;
+  const erc4626View = parseAbi(["function balanceOf(address) view returns (uint256)", "function maxWithdraw(address owner) view returns (uint256)", "function convertToAssets(uint256 shares) view returns (uint256)"]);
+  const [shares, withdrawable] = await Promise.all([
+    c.readContract({ address: felix, abi: erc4626View, functionName: "balanceOf", args: [junior] }),
+    c.readContract({ address: felix, abi: erc4626View, functionName: "maxWithdraw", args: [junior] })
+  ]);
+  const felixAssets = shares > 0n ? await c.readContract({ address: felix, abi: erc4626View, functionName: "convertToAssets", args: [shares] }) : 0n;
+  const actions = [];
+  const fx = felixAssets < withdrawable ? felixAssets : withdrawable;
+  if (fx > 0n) actions.push({ kind: "withdraw", venue: "felix", amount: fx });
+  if (ctx.hyperlend) {
+    const hl = await readHyperlend(ctx, junior);
+    if (hl.hlWithdrawable > 0n) actions.push({ kind: "withdraw", venue: "hyperlend", amount: hl.hlWithdrawable });
+  }
+  if (actions.length === 0) return { txHashes: [], note: "nothing deployed to recall" };
+  const steps = actions.map((a) => encode(ctx, junior, a));
+  const verb = `recall before settle: ${steps.map((s) => s.label).join("; ")}`;
   if (ctx.dryRun) {
     log(`junior recall: would ${verb} (dry-run)`);
-    return { note: `dry-run: would ${verb}` };
+    return { txHashes: [], note: `dry-run: would ${verb}` };
   }
-  const hash2 = await execute(ctx, felix, encodeFunctionData({ abi: erc4626, functionName: "withdraw", args: [amount, junior, junior] }));
-  log(`junior recall: ${verb}; sent ${hash2}`);
-  return { txHash: hash2, note: verb };
-}
-async function touchFelix(ctx) {
-  const log = ctx.log ?? (() => void 0);
-  const junior = ctx.cfg.junior;
-  const felix = ctx.cfg.felix.address;
-  if (ctx.dryRun) {
-    log("junior touch: would call Felix.withdraw(0, junior, junior) through junior.execute so a pending bad debt is booked (dry-run)");
-    return { note: "dry-run: would touch Felix (withdraw 0)" };
+  const hashes = [];
+  for (const s of steps) {
+    const calldata = encodeFunctionData({ abi: juniorAbi, functionName: "execute", args: [s.target, s.data] });
+    hashes.push(await sendCall(ctx, junior, calldata, `junior.execute: ${s.label}`));
   }
-  const hash2 = await execute(ctx, felix, encodeFunctionData({ abi: erc4626, functionName: "withdraw", args: [0n, junior, junior] }));
-  log(`junior touch: Felix accrual run; sent ${hash2}`);
-  return { txHash: hash2, note: "Felix touched (withdraw 0)" };
-}
-async function recallAll(ctx, opts) {
-  const log = ctx.log ?? (() => void 0);
-  const out = { txHashes: [], steps: [], errors: [], note: "" };
-  if (!ctx.client) return { ...out, note: "no RPC client; recall skipped" };
-  const c = ctx.client;
-  const junior = ctx.cfg.junior;
-  const step = async (venue, fn) => {
-    try {
-      const r = await fn();
-      if (r.txHash) out.txHashes.push(r.txHash);
-      out.steps.push(`${venue}: ${r.note}`);
-    } catch (err) {
-      const m = `${venue}: recall failed: ${err.message.split("\n")[0]}`;
-      out.errors.push(m);
-      out.steps.push(m);
-      log(`junior recall: ${m}`);
-    }
-  };
-  await step("Felix", () => recallFromFelix(ctx));
-  let n = 0;
-  await step("markets", async () => {
-    n = Number(await c.readContract({ address: junior, abi: juniorAbi, functionName: "marketsLength" }));
-    return { note: `${n} registered` };
-  });
-  for (let i = 0; i < n; i++) {
-    await step(`market ${i}`, async () => {
-      const assets = await c.readContract({ address: junior, abi: juniorAbi, functionName: "marketAssets", args: [BigInt(i)] });
-      if (assets === 0n) return { note: "no position" };
-      const [loanToken, collateralToken, oracle, irm, lltv] = await c.readContract({ address: junior, abi: juniorAbi, functionName: "markets", args: [BigInt(i)] });
-      const mp = { loanToken, collateralToken, oracle, irm, lltv };
-      const id = keccak256(encodeMarketParams(mp));
-      const m = await c.readContract({ address: ctx.cfg.morphoBlue, abi: morphoBlueAbi, functionName: "market", args: [id] });
-      const liquidity = m[0] - m[2];
-      const amount = assets < liquidity ? assets : liquidity;
-      const verb = `recall ${(Number(amount) / 1e6).toFixed(2)} of ${(Number(assets) / 1e6).toFixed(2)} USDC from market ${i}`;
-      if (amount === 0n) return { note: "market illiquid; nothing recalled" };
-      if (ctx.dryRun) return { note: `dry-run: would ${verb}` };
-      const data = encodeFunctionData({ abi: morphoWithdrawAbi, functionName: "withdraw", args: [mp, amount, 0n, junior, junior] });
-      const hash2 = await sendCall(ctx, junior, encodeFunctionData({ abi: juniorAbi, functionName: "execute", args: [ctx.cfg.morphoBlue, data] }), `junior.execute -> morpho withdraw ${i}`);
-      return { txHash: hash2, note: verb };
-    });
-  }
-  if (opts.seniorShares && !isPlaceholder(ctx.cfg.vault)) {
-    const senior = ctx.cfg.vault;
-    await step("senior fee shares", async () => {
-      const shares = await c.readContract({ address: senior, abi: seniorRedeemAbi, functionName: "balanceOf", args: [junior] });
-      if (shares === 0n) return { note: "no senior shares held" };
-      if (ctx.dryRun) return { note: `dry-run: would redeem ${shares.toString()} senior shares` };
-      const hash2 = await execute(ctx, senior, encodeFunctionData({ abi: seniorRedeemAbi, functionName: "redeem", args: [shares, junior, junior] }));
-      return { txHash: hash2, note: `redeemed ${shares.toString()} senior shares` };
-    });
-  }
-  out.note = out.steps.join("; ");
-  return out;
-}
-async function ensureLiquidity(ctx) {
-  const log = ctx.log ?? (() => void 0);
-  if (isPlaceholder(ctx.cfg.junior) || isPlaceholder(ctx.cfg.vault)) return { checked: false, note: "junior or senior is a placeholder; liquidity check skipped" };
-  if (!ctx.client) return { checked: false, note: "no RPC client; liquidity check skipped" };
-  const junior = ctx.cfg.junior;
-  const c = ctx.client;
-  const [idle, reserved, carry] = await Promise.all([
-    c.readContract({ address: ctx.cfg.usdc, abi: erc20Full, functionName: "balanceOf", args: [junior] }),
-    c.readContract({ address: junior, abi: juniorAbi, functionName: "reservedAssets" }),
-    readCarryOwed(c, junior)
-  ]);
-  const owed = reserved + carry;
-  const base = { checked: true, idleUsdc: Number(idle) / 1e6, owedUsdc: Number(owed) / 1e6 };
-  if (idle >= owed) return { ...base, short: false, note: `idle ${fmt2(idle)} covers reserved + carry ${fmt2(owed)}` };
-  log(`junior liquidity: idle ${fmt2(idle)} is below reserved + carry ${fmt2(owed)}; recalling every position`);
-  const recall = await recallAll(ctx, { seniorShares: true });
-  return { ...base, short: true, recall, note: `idle ${fmt2(idle)} below ${fmt2(owed)}: ${recall.note}` };
+  log(`junior recall: ${verb}; sent ${hashes.join(", ")}`);
+  return { txHashes: hashes, note: verb };
 }
 
 // src/exec/junior.ts
 var WAD3 = 10n ** 18n;
 var SETTLE_PERIOD = 7n * 24n * 3600n;
 var SETTLE_GRACE = 3600n;
-var SETTLE_INTERVAL = SETTLE_PERIOD - SETTLE_GRACE;
-var SETTLE_LEAD = 3600n;
-var SETTLE_MAX_WAIT = 900n;
 function hoursToRecognition(coverInProgress, totalAssets, maxRate) {
   if (coverInProgress <= 0n) return 0;
   const perHour = totalAssets * maxRate * 3600n / WAD3;
@@ -15110,8 +15072,8 @@ function owedToExits(pendingExitShares, pricePerShare) {
 function exitShortfall(juniorIdle, owed) {
   return owed > juniorIdle ? owed - juniorIdle : 0n;
 }
-function settleTickDue(nowTs, lastSettle) {
-  return nowTs + SETTLE_LEAD >= lastSettle + SETTLE_INTERVAL;
+function settleDue(nowTs, lastSettle) {
+  return nowTs >= lastSettle + SETTLE_PERIOD - SETTLE_GRACE;
 }
 function juniorEnabled(cfg) {
   return !isPlaceholder(cfg.junior);
@@ -15150,29 +15112,6 @@ function coverLine(coverUsdc, hours) {
 }
 async function send(ctx, functionName) {
   return sendCall(ctx, ctx.cfg.junior, encodeFunctionData({ abi: juniorAbi, functionName }), functionName);
-}
-async function observeSenior(ctx) {
-  const log = ctx.log ?? ((l) => console.log(l));
-  if (!juniorEnabled(ctx.cfg) || isPlaceholder(ctx.cfg.vault) || !ctx.client) return { called: false, note: "placeholder or no client; observeSenior skipped" };
-  let min;
-  try {
-    min = await ctx.client.readContract({ address: ctx.cfg.junior, abi: juniorAbi, functionName: "seniorSupplyMin" });
-  } catch (err) {
-    if (!isMissingFunction(err)) throw err;
-    return { called: false, note: "junior has no seniorSupplyMin (pre-fix build); observeSenior skipped" };
-  }
-  const supply = await ctx.client.readContract({ address: ctx.cfg.vault, abi: vaultV2Abi, functionName: "totalSupply" });
-  if (supply >= min) {
-    log(`observeSenior: senior supply ${supply} not below the recorded minimum ${min}, nothing to record`);
-    return { called: false, note: "supply not below the recorded minimum; nothing to observe" };
-  }
-  if (ctx.dryRun) {
-    log("observeSenior: would call junior.observeSenior() (dry-run)");
-    return { called: false, note: "dry-run: observeSenior not sent" };
-  }
-  const hash2 = await sendCall(ctx, ctx.cfg.junior, encodeFunctionData({ abi: juniorAbi, functionName: "observeSenior" }), "observeSenior");
-  log(`observeSenior sent ${hash2}`);
-  return { called: true, txHash: hash2, note: "observeSenior sent" };
 }
 async function syncSenior(ctx) {
   const log = ctx.log ?? ((l) => console.log(l));
@@ -15227,51 +15166,33 @@ async function accrueSenior(ctx) {
   log(`accrue: senior.accrueInterest() sent ${hash2} (${d.reason})`);
   return { called: true, txHash: hash2, note: `accrueInterest sent: ${d.reason}` };
 }
-var PRICE_UNIT = 10n ** 24n;
-var MAX_FELIX_ENTRIES = 256;
-var lostAssetsAbi = parseAbi(["function lostAssets() view returns (uint256)"]);
-function felixLossUnbilled(entries) {
-  return entries.some((e) => e.lost > e.lostBase && (e.lost - e.lostBase) * e.fraction / PRICE_UNIT * 1000000n > e.assetsRef);
-}
-async function snapFelix(ctx) {
+var feeRouterAbi = [
+  { type: "function", name: "distribute", inputs: [], outputs: [], stateMutability: "nonpayable" },
+  { type: "function", name: "totalParked", inputs: [{ name: "token", type: "address" }], outputs: [{ type: "uint256" }], stateMutability: "view" }
+];
+async function distributeRouter(ctx) {
   const log = ctx.log ?? ((l) => console.log(l));
-  if (!juniorEnabled(ctx.cfg) || isPlaceholder(ctx.cfg.vault) || !ctx.client) return { called: false, note: "placeholder or no client; Felix snapshot skipped" };
-  const c = ctx.client;
-  const junior = ctx.cfg.junior;
-  const skip = (note) => {
-    log(`snapFelixExposure: skip (${note})`);
-    return { called: false, note };
-  };
-  try {
-    await c.readContract({ address: junior, abi: juniorAbi, functionName: "felixExpSupply" });
-  } catch (err) {
-    if (isMissingFunction(err)) return skip("junior has no snapFelixExposure (pre-fix build)");
-    return skip(`felixExpSupply read failed (${err.message.split("\n")[0]}); not snapshotting on unknown state`);
+  const router = ctx.cfg.feeRouter;
+  if (!router || isPlaceholder(router) || !ctx.client) return { called: false, note: "no fee router; distribute skipped" };
+  const [bal, parked] = await Promise.all([
+    ctx.client.readContract({ address: ctx.cfg.usdc, abi: erc20Abi, functionName: "balanceOf", args: [router] }),
+    ctx.client.readContract({ address: router, abi: feeRouterAbi, functionName: "totalParked", args: [ctx.cfg.usdc] })
+  ]);
+  const free = bal > parked ? bal - parked : 0n;
+  const minimum = 10n ** BigInt(ctx.cfg.usdcDecimals);
+  if (free < minimum) {
+    log(`distribute: skip (router holds ${(Number(free) / 10 ** ctx.cfg.usdcDecimals).toFixed(2)} USDC free)`);
+    return { called: false, note: "nothing to split" };
   }
-  if (await c.readContract({ address: ctx.cfg.vault, abi: vaultV2Abi, functionName: "totalSupply" }) === 0n) return skip("senior is not funded yet");
-  const entries = [];
-  for (let i = 0; ; i++) {
-    if (i >= MAX_FELIX_ENTRIES) return skip(`felixExp has no end within ${MAX_FELIX_ENTRIES} entries; not snapshotting`);
-    let e;
-    try {
-      e = await c.readContract({ address: junior, abi: juniorAbi, functionName: "felixExp", args: [BigInt(i)] });
-    } catch (err) {
-      if (isPanic(err, 0x32n) || isMissingFunction(err)) break;
-      return skip(`felixExp(${i}) read failed (${err.message.split("\n")[0]}); not snapshotting on unknown state`);
-    }
-    const lost = await c.readContract({ address: e[0], abi: lostAssetsAbi, functionName: "lostAssets" });
-    entries.push({ lostBase: e[1], fraction: e[2], assetsRef: e[3], lost });
-  }
-  if (felixLossUnbilled(entries)) return skip("a Felix loss is booked and unbilled; waiting for the settle that bills it");
   if (ctx.dryRun) {
-    log("snapFelixExposure: would call junior.snapFelixExposure() (dry-run)");
-    return { called: false, note: "dry-run: snapFelixExposure not sent" };
+    log(`distribute: would split ${(Number(free) / 10 ** ctx.cfg.usdcDecimals).toFixed(2)} USDC (dry-run)`);
+    return { called: false, note: "dry-run: would distribute" };
   }
-  const hash2 = await sendCall(ctx, junior, encodeFunctionData({ abi: juniorAbi, functionName: "snapFelixExposure" }), "snapFelixExposure");
-  log(`snapFelixExposure sent ${hash2}`);
-  return { called: true, txHash: hash2, note: "snapFelixExposure sent" };
+  const hash2 = await sendCall(ctx, router, encodeFunctionData({ abi: feeRouterAbi, functionName: "distribute" }), "distribute");
+  log(`distribute: FeeRouter.distribute() sent ${hash2}`);
+  return { called: true, txHash: hash2, note: "distribute sent" };
 }
-async function juniorWeeklyPrepare(ctx) {
+async function juniorWeekly(ctx) {
   const log = ctx.log ?? ((l) => console.log(l));
   if (!juniorEnabled(ctx.cfg)) {
     log("junior weekly: junior is a placeholder; skipped");
@@ -15305,137 +15226,50 @@ async function juniorWeeklyPrepare(ctx) {
     log(`junior exits covered: owed ${result.owedUsdc} USDC, idle ${result.juniorIdleUsdc} USDC`);
   }
   const nowTs = ctx.nowTs ?? BigInt(Math.floor(Date.now() / 1e3));
-  result.settleDue = settleTickDue(nowTs, lastSettle);
+  result.settleDue = settleDue(nowTs, lastSettle);
   if (!result.settleDue) {
     result.note = `settle not due (lastSettle ${lastSettle})`;
     log(`junior weekly: ${result.note}`);
     return result;
   }
-  result.dueTs = (lastSettle + SETTLE_INTERVAL).toString();
-  const steps = [];
-  result.steps = steps;
-  const sctx = { cfg: ctx.cfg, dryRun: ctx.dryRun, client: ctx.client, signer: ctx.signer, agentPrivateKey: ctx.agentPrivateKey, log };
   if (!isPlaceholder(ctx.cfg.vault)) {
-    const errors = [];
-    try {
-      const touch = await touchFelix(sctx);
-      steps.push(`1 touch: ${touch.note}`);
-    } catch (err) {
-      errors.push(`touch failed: ${err.message.split("\n")[0]}`);
-      steps.push(`1 touch: ${errors[errors.length - 1]}`);
-    }
-    try {
-      const recall = await recallAll(sctx, { seniorShares: false });
-      steps.push(`2 recall: ${recall.note}`);
-      result.recall = recall.note;
-      if (recall.txHashes.length) result.recallTx = recall.txHashes[recall.txHashes.length - 1];
-      errors.push(...recall.errors);
-    } catch (err) {
-      errors.push(`recall failed: ${err.message.split("\n")[0]}`);
-      steps.push(`2 recall: ${errors[errors.length - 1]}`);
-    }
-    if (errors.length) {
-      result.error = `settle tick failed before settle: ${errors.join("; ")}`;
-      result.note = result.error;
-      log(`junior weekly: ${result.error}`);
-    }
-  }
-  return result;
-}
-async function juniorWeeklyFinish(ctx, result) {
-  const log = ctx.log ?? ((l) => console.log(l));
-  if (!result.settleDue || result.error || !result.dueTs || !ctx.client) return result;
-  const steps = result.steps ??= [];
-  const dueTs = BigInt(result.dueTs);
-  const startSettle = BigInt(result.lastSettle);
-  const nowTs = ctx.nowTs ?? BigInt(Math.floor(Date.now() / 1e3));
-  const wait2 = dueTs - nowTs;
-  if (wait2 > SETTLE_MAX_WAIT) {
-    steps.push(`3 settle: due in ${wait2}s, more than ${SETTLE_MAX_WAIT}s away; the next tick settles`);
-    result.note = `recalled; settle due in ${wait2}s, next tick settles`;
-    log(`junior weekly: ${result.note}`);
-    return result;
+    const recall = await recallAll({ cfg: ctx.cfg, dryRun: ctx.dryRun, client: ctx.client, signer: ctx.signer, agentPrivateKey: ctx.agentPrivateKey, log, felixRate: 0, gasCostUsdPerAction: 0, hyperlend: ctx.cfg.juniorVenues?.hyperlend && ctx.cfg.juniorVenues.hyperlend.junior.toLowerCase() === ctx.cfg.junior.toLowerCase() ? ctx.cfg.juniorVenues.hyperlend : void 0 });
+    result.recall = recall.note;
+    if (recall.txHashes.length) result.recallTx = recall.txHashes[recall.txHashes.length - 1];
   }
   if (ctx.dryRun) {
-    steps.push(`3 settle: would wait ${wait2 > 0n ? wait2 : 0n}s for the due second, then call junior.settle() (dry-run)`);
     result.note = "dry-run: settle not sent";
-    log("junior weekly: would call junior.settle() at the due second (dry-run)");
+    log("junior weekly: would call junior.settle() (dry-run)");
     return result;
   }
-  const c = ctx.client;
-  const junior = ctx.cfg.junior;
-  const settledMeanwhile = async () => await c.readContract({ address: junior, abi: juniorAbi, functionName: "lastSettle" }) > startSettle;
-  try {
-    const sleep = ctx.sleep ?? ((ms) => new Promise((r) => setTimeout(r, ms)));
-    const giveUp = Date.now() + Number(SETTLE_MAX_WAIT + 60n) * 1e3;
-    for (; ; ) {
-      const chainTs = (await c.getBlock()).timestamp;
-      if (chainTs >= dueTs) break;
-      if (!ctx.sleep && Date.now() > giveUp) throw new Error("chain time did not reach the settle due second");
-      await sleep(Math.min(Number(dueTs - chainTs), 5) * 1e3);
-    }
-    if (await settledMeanwhile()) {
-      result.alreadySettled = true;
-    } else {
-      try {
-        result.settleTx = await send(ctx, "settle");
-      } catch (err) {
-        if (await settledMeanwhile()) result.alreadySettled = true;
-        else throw revertSelector(err) === TOO_SOON ? new Error("settle refused with TooSoon but lastSettle did not move") : err;
-      }
-    }
-    steps.push(result.alreadySettled ? "3 settle: already settled by someone else" : "3 settle: sent at the due second");
-    result.note = result.alreadySettled ? "settle already done by someone else" : "settle sent";
-    log(`junior weekly: ${result.note}${result.settleTx ? ` ${result.settleTx}` : ""}`);
-  } catch (err) {
-    result.error = `settle failed: ${err.message.split("\n")[0]}`;
-    result.note = result.error;
-    steps.push(`3 settle: ${result.error}`);
-    log(`junior weekly: ${result.error}`);
-  }
+  result.settleTx = await send(ctx, "settle");
+  result.note = "settle sent";
+  log(`junior settle sent ${result.settleTx}`);
   return result;
 }
 
-// src/abi/feeRouter.ts
-var feeRouterAbi = [
-  { type: "function", name: "distribute", stateMutability: "nonpayable", inputs: [], outputs: [] },
-  { type: "function", name: "totalParked", stateMutability: "view", inputs: [{ name: "token", type: "address" }], outputs: [{ name: "", type: "uint256" }] }
-];
-
-// src/exec/router.ts
-async function distributeFees(ctx) {
-  const log = ctx.log ?? (() => void 0);
-  const router = ctx.cfg.feeRouter;
-  if (isPlaceholder(router)) return { called: false, note: "feeRouter is not configured; skipped" };
-  if (!ctx.client) return { called: false, note: "no RPC client; distribute skipped" };
-  const to = router;
-  const [bal, parked] = await Promise.all([
-    ctx.client.readContract({ address: ctx.cfg.usdc, abi: erc20Abi, functionName: "balanceOf", args: [to] }),
-    ctx.client.readContract({ address: to, abi: feeRouterAbi, functionName: "totalParked", args: [ctx.cfg.usdc] })
-  ]);
-  const unparked = bal > parked ? bal - parked : 0n;
-  const unparkedUsdc = Number(unparked) / 1e6;
-  if (unparked === 0n) {
-    log("distribute: router holds no unparked USDC, nothing to do");
-    return { called: false, unparkedUsdc, note: "no unparked USDC; nothing to do" };
-  }
-  if (ctx.dryRun) {
-    log(`distribute: would call feeRouter.distribute() for ${unparkedUsdc} USDC (dry-run)`);
-    return { called: false, unparkedUsdc, note: `dry-run: would distribute ${unparkedUsdc} USDC` };
-  }
-  try {
-    const hash2 = await sendCall(ctx, to, encodeFunctionData({ abi: feeRouterAbi, functionName: "distribute" }), "distribute");
-    log(`distribute: ${unparkedUsdc} USDC split; sent ${hash2}`);
-    return { called: true, txHash: hash2, unparkedUsdc, note: `distributed ${unparkedUsdc} USDC` };
-  } catch (err) {
-    if (revertSelector(err) === NOTHING_TO_DO) return { called: false, unparkedUsdc, note: "NothingToDo (flushed by someone else); skipped" };
-    throw err;
-  }
+// src/exec/spend.ts
+import { existsSync as existsSync2, mkdirSync as mkdirSync2, appendFileSync, readFileSync as readFileSync3 } from "node:fs";
+import { resolve as resolve3 } from "node:path";
+function spendPath(opsDir) {
+  return resolve3(opsDir, "spend.jsonl");
+}
+function readSpend(opsDir) {
+  const p = spendPath(opsDir);
+  if (!existsSync2(p)) return [];
+  return readFileSync3(p, "utf8").split("\n").filter((l) => l.trim().length).map((l) => JSON.parse(l));
+}
+function spentSince(lines, sinceTs) {
+  return lines.filter((l) => l.ts >= sinceTs).reduce((s, l) => s + l.costUsd, 0);
+}
+function recordSpend(opsDir, line) {
+  mkdirSync2(opsDir, { recursive: true });
+  appendFileSync(spendPath(opsDir), JSON.stringify(line) + "\n");
 }
 
 // src/data/orph.ts
-import { appendFileSync, existsSync as existsSync2, mkdirSync as mkdirSync2, readFileSync as readFileSync3, writeFileSync as writeFileSync2 } from "node:fs";
-import { resolve as resolve3 } from "node:path";
+import { appendFileSync as appendFileSync2, existsSync as existsSync3, mkdirSync as mkdirSync3, readFileSync as readFileSync4, writeFileSync as writeFileSync2 } from "node:fs";
+import { resolve as resolve4 } from "node:path";
 
 // src/abi/uniswapV4.ts
 var stateViewAbi = [
@@ -15526,13 +15360,13 @@ async function readSlot0(client, stateView, poolId) {
   return { sqrtPriceX96, tick: tick2 };
 }
 function samplesPath(opsDir) {
-  return resolve3(opsDir, "price-samples.jsonl");
+  return resolve4(opsDir, "price-samples.jsonl");
 }
 function readSamples(opsDir) {
   const path = samplesPath(opsDir);
-  if (!existsSync2(path)) return [];
+  if (!existsSync3(path)) return [];
   const out = [];
-  for (const line of readFileSync3(path, "utf8").split("\n")) {
+  for (const line of readFileSync4(path, "utf8").split("\n")) {
     const t = line.trim();
     if (!t) continue;
     try {
@@ -15543,12 +15377,12 @@ function readSamples(opsDir) {
   return out;
 }
 function appendSample(opsDir, sample) {
-  mkdirSync2(opsDir, { recursive: true });
-  appendFileSync(samplesPath(opsDir), `${JSON.stringify(sample)}
+  mkdirSync3(opsDir, { recursive: true });
+  appendFileSync2(samplesPath(opsDir), `${JSON.stringify(sample)}
 `);
 }
 function rewriteSamples(opsDir, samples) {
-  mkdirSync2(opsDir, { recursive: true });
+  mkdirSync3(opsDir, { recursive: true });
   writeFileSync2(samplesPath(opsDir), samples.map((s) => JSON.stringify(s)).join("\n") + (samples.length ? "\n" : ""));
 }
 async function sampleOrphPrice(ctx) {
@@ -15619,18 +15453,18 @@ async function checkSeniorDrift(cfg, client, log = console.log) {
 }
 
 // src/report.ts
-import { mkdirSync as mkdirSync3, writeFileSync as writeFileSync3 } from "node:fs";
-import { resolve as resolve4 } from "node:path";
+import { mkdirSync as mkdirSync4, writeFileSync as writeFileSync3 } from "node:fs";
+import { resolve as resolve5 } from "node:path";
 function toJson(value) {
   return JSON.stringify(value, (_k, v) => typeof v === "bigint" ? v.toString() : v, 2);
 }
 function writeReport(opsDir, report) {
-  const dir = resolve4(opsDir, "reports");
-  mkdirSync3(dir, { recursive: true });
+  const dir = resolve5(opsDir, "reports");
+  mkdirSync4(dir, { recursive: true });
   const stamp = report.runAt.replace(/[:.]/g, "-");
-  const path = resolve4(dir, `${stamp}.json`);
+  const path = resolve5(dir, `${stamp}.json`);
   writeFileSync3(path, toJson(report));
-  writeFileSync3(resolve4(dir, "latest.json"), toJson(report));
+  writeFileSync3(resolve5(dir, "latest.json"), toJson(report));
   return path;
 }
 function bookApy(proposal) {
@@ -15640,15 +15474,15 @@ function bookApy(proposal) {
   return { current, proposed };
 }
 function humanSummary(report) {
-  const pct2 = (x) => `${(x * 100).toFixed(2)}%`;
+  const pct3 = (x) => `${(x * 100).toFixed(2)}%`;
   const usd = (x) => `$${x.toLocaleString("en-US", { maximumFractionDigits: 0 })}`;
   const out = [];
   for (const a of report.alerts) out.push(`WARNING: ${a}`);
-  out.push(`[${report.mode}] vault ${usd(report.inputs.state.totalAssets)} (${report.inputs.state.source}), idle ${pct2(report.inputs.state.idle / (report.inputs.state.totalAssets || 1))}`);
-  out.push(`book APY now ${pct2(report.bookApy.current)}, proposed ${pct2(report.bookApy.proposed)}`);
+  out.push(`[${report.mode}] vault ${usd(report.inputs.state.totalAssets)} (${report.inputs.state.source}), idle ${pct3(report.inputs.state.idle / (report.inputs.state.totalAssets || 1))}`);
+  out.push(`book APY now ${pct3(report.bookApy.current)}, proposed ${pct3(report.bookApy.proposed)}`);
   for (const l of report.proposal.lines) {
     const arrow = Math.abs(l.delta) < 1 ? "=" : l.delta > 0 ? "+" : "-";
-    out.push(`  ${arrow} ${l.label.padEnd(20)} ${pct2(l.currentAmount / (report.proposal.totalAssets || 1)).padStart(7)} -> ${pct2(l.weight).padStart(7)}  rate ${pct2(l.currentRate)} -> ${pct2(l.projectedRate)}`);
+    out.push(`  ${arrow} ${l.label.padEnd(20)} ${pct3(l.currentAmount / (report.proposal.totalAssets || 1)).padStart(7)} -> ${pct3(l.weight).padStart(7)}  rate ${pct3(l.currentRate)} -> ${pct3(l.projectedRate)}`);
   }
   for (const e of report.proposal.excluded) out.push(`  x excluded ${e.key.slice(0, 12)}.. : ${e.reason}`);
   out.push(`decision: ${report.decision.move ? "MOVE" : "HOLD"}; ${report.decision.reason}`);
@@ -15659,14 +15493,9 @@ function humanSummary(report) {
   if (report.juniorStatus?.enabled && report.juniorStatus.coverInProgressUsdc !== void 0) out.push(report.juniorStatus.note);
   else if (report.juniorStatus) out.push(`junior: ${report.juniorStatus.note}`);
   if (report.juniorAccrue) out.push(`accrue: ${report.juniorAccrue.note}`);
-  if (report.feeDistribute) out.push(`distribute: ${report.feeDistribute.note}`);
-  if (report.juniorObserve) out.push(`observeSenior: ${report.juniorObserve.note}`);
-  if (report.juniorSnap) out.push(`snapFelixExposure: ${report.juniorSnap.note}`);
   if (report.juniorSync) out.push(`syncSenior: ${report.juniorSync.note}`);
-  if (report.juniorLiquidity?.short) out.push(`junior liquidity: ${report.juniorLiquidity.note}`);
   if (report.juniorWeekly?.warning) out.push(report.juniorWeekly.warning);
   if (report.juniorWeekly) out.push(`junior weekly: ${report.juniorWeekly.note}`);
-  for (const st of report.juniorWeekly?.steps ?? []) out.push(`  settle tick ${st}`);
   if (report.weeklyClose) out.push(`weekly close: ${report.weeklyClose.note}`);
   if (report.orphPrice) {
     out.push(`orph price: ${report.orphPrice.note}`);
@@ -15736,13 +15565,17 @@ async function run(opts, cfg = loadConfig(opts.configPath), deps = {}) {
   const proposal = proposeAllocation({ cfg, markets: morpho.markets, felix: morpho.felix, state });
   const { plan, notes: planNotes } = buildPlan(cfg, state, proposal);
   validatePlan(cfg, state, plan);
-  const decision = decide({ cfg, proposal, plan, hypePriceUsd: morpho.hypePriceUsd, gasPriceGwei });
+  const nowTs = Math.floor(opts.now.getTime() / 1e3);
+  const spentTodayUsd = spentSince(opts.opsDir ? readSpend(opts.opsDir) : [], nowTs - 24 * 3600);
+  const decision = decide({ cfg, proposal, plan, hypePriceUsd: morpho.hypePriceUsd, gasPriceGwei, spentTodayUsd });
   const ctx = { cfg, dryRun: opts.dryRun, opsDir: opts.opsDir, state, markets: morpho.markets, client, signer: deps.signer, agentPrivateKey: opts.agentPrivateKey, log };
   let execution = [];
   let error;
   try {
-    if (decision.move) execution = await executePlan(ctx, plan);
-    else {
+    if (decision.move) {
+      execution = await executePlan(ctx, plan);
+      if (!opts.dryRun && opts.opsDir) recordSpend(opts.opsDir, { ts: nowTs, what: "senior", costUsd: decision.totalCostUsd, note: decision.reason });
+    } else {
       log(`HOLD: ${decision.reason}`);
       if (plan.length) await executePlan({ ...ctx, dryRun: true }, plan).then(() => void 0);
     }
@@ -15758,54 +15591,22 @@ async function run(opts, cfg = loadConfig(opts.configPath), deps = {}) {
     agentPrivateKey: opts.agentPrivateKey,
     seniorTotalAssetsFallback: state.totalAssets,
     nowTs: BigInt(Math.floor(opts.now.getTime() / 1e3)),
-    log,
-    sleep: deps.sleep
+    log
   };
   let juniorSync;
   let juniorAccrue;
   let juniorStatus;
-  let juniorWeeklyResult;
-  try {
-    juniorWeeklyResult = await juniorWeeklyPrepare(jctx);
-  } catch (err) {
-    juniorWeeklyResult = { checked: false, settleDue: true, note: `junior weekly failed: ${err.message}` };
-    log(juniorWeeklyResult.note);
-    warnings.push(juniorWeeklyResult.note);
-  }
-  const settleTick = !!juniorWeeklyResult?.settleDue;
   try {
     juniorAccrue = await accrueSenior(jctx);
   } catch (err) {
     juniorAccrue = { called: false, note: `accrue failed: ${err.message}` };
     log(juniorAccrue.note);
   }
-  let feeDistribute;
-  let juniorSnap;
-  const flushAndSnap = async () => {
-    try {
-      feeDistribute = await distributeFees(jctx);
-    } catch (err) {
-      feeDistribute = { called: false, note: `distribute failed: ${err.message}` };
-      log(feeDistribute.note);
-    }
-    try {
-      juniorSnap = await snapFelix(jctx);
-    } catch (err) {
-      juniorSnap = { called: false, note: `snapFelixExposure failed: ${err.message}` };
-      log(juniorSnap.note);
-    }
-  };
-  if (!settleTick) await flushAndSnap();
-  else {
-    feeDistribute = { called: false, note: "settle tick: distribute waits until after settle()" };
-    juniorSnap = { called: false, note: "settle tick: snapshot waits until after settle()" };
-  }
-  let juniorObserve;
   try {
-    juniorObserve = await observeSenior(jctx);
+    const d = await distributeRouter(jctx);
+    if (d.called) log(`router: ${d.note}`);
   } catch (err) {
-    juniorObserve = { called: false, note: `observeSenior failed: ${err.message}` };
-    log(juniorObserve.note);
+    log(`distribute failed: ${err.message}`);
   }
   try {
     juniorSync = await syncSenior(jctx);
@@ -15819,33 +15620,27 @@ async function run(opts, cfg = loadConfig(opts.configPath), deps = {}) {
     juniorStatus = { enabled: true, note: `junior status read failed: ${err.message}` };
     warnings.push(juniorStatus.note);
   }
-  let juniorLiquidity;
+  let juniorWeeklyResult;
   try {
-    juniorLiquidity = await ensureLiquidity({ ...jctx, log });
-    for (const e of juniorLiquidity.recall?.errors ?? []) warnings.push(e);
+    juniorWeeklyResult = await juniorWeekly(jctx);
   } catch (err) {
-    juniorLiquidity = { checked: false, failed: true, note: `liquidity check failed: ${err.message}` };
-    warnings.push(juniorLiquidity.note);
-  }
-  if (settleTick) {
-    juniorWeeklyResult = await juniorWeeklyFinish(jctx, juniorWeeklyResult);
-    if (juniorWeeklyResult.settleTx || juniorWeeklyResult.alreadySettled) await flushAndSnap();
-  }
-  const settleAlerts = [];
-  if (juniorWeeklyResult?.error) {
-    settleAlerts.push(juniorWeeklyResult.error);
-    error = error ?? juniorWeeklyResult.error;
+    juniorWeeklyResult = { checked: false, note: `junior weekly failed: ${err.message}` };
+    log(juniorWeeklyResult.note);
   }
   let juniorIdle;
-  if (opts.weekly || settleTick) {
-    juniorIdle = { checked: false, action: "skipped", note: "settle tick: idle management deferred to the next hour" };
-  } else if (juniorLiquidity?.short || juniorLiquidity?.failed) {
-    juniorIdle = { checked: false, action: "skipped", note: "liquidity recall or unknown liquidity state this tick: idle management deferred to the next hour" };
+  if (opts.weekly || juniorWeeklyResult?.settleDue) {
+    juniorIdle = { checked: false, action: "skipped", note: "settle tick: rotation deferred to the next hour" };
   } else {
     try {
-      juniorIdle = await manageJuniorIdle({ ...jctx, log });
+      const gasCostUsdPerAction = 3e5 * gasPriceGwei * 1e-9 * morpho.hypePriceUsd;
+      const hlCfg = cfg.juniorVenues?.hyperlend;
+      const hl = hlCfg && hlCfg.junior.toLowerCase() === cfg.junior.toLowerCase() ? hlCfg : void 0;
+      const dailyCap = cfg.economics.dailyCostCapUsd ?? 0;
+      const spentNow = spentSince(opts.opsDir ? readSpend(opts.opsDir) : [], nowTs - 24 * 3600);
+      juniorIdle = await rotateJunior({ ...jctx, log, felixRate: morpho.felix.netApy, gasCostUsdPerAction, hyperlend: hl, marginFactor: cfg.economics.marginFactor, dailyCostLeftUsd: dailyCap > 0 ? Math.max(0, dailyCap - spentNow) : void 0 });
+      if (juniorIdle.action === "move" && juniorIdle.txHashes?.length && juniorIdle.plan && opts.opsDir) recordSpend(opts.opsDir, { ts: nowTs, what: "junior", costUsd: juniorIdle.plan.costUsd, note: juniorIdle.plan.reason });
     } catch (err) {
-      juniorIdle = { checked: false, action: "skipped", note: `junior idle management failed: ${err.message}` };
+      juniorIdle = { checked: false, action: "skipped", note: `junior rotation failed: ${err.message}` };
       warnings.push(juniorIdle.note);
     }
   }
@@ -15893,16 +15688,12 @@ async function run(opts, cfg = loadConfig(opts.configPath), deps = {}) {
     weeklyClose: weekly,
     juniorSync,
     juniorAccrue,
-    juniorSnap,
-    juniorObserve,
-    feeDistribute,
     juniorStatus,
     juniorIdle,
-    juniorLiquidity,
     juniorWeekly: juniorWeeklyResult,
     orphPrice,
     drift,
-    alerts: [...drift?.alerts ?? [], ...settleAlerts],
+    alerts: drift?.alerts ?? [],
     bookApy: bookApy(proposal),
     error
   };
@@ -15940,6 +15731,8 @@ var senior_default = {
   vault: "0x3F7382bd8BFC6C548CAa2D7B4dfCe628B12A9759",
   feeRouter: "0xC2d2C5e56798Bfd0EEc67EEC12ddC2b521b1aA37",
   junior: "0x20D5F4f78858D257eA047EB5F47773E361697F2E",
+  juniorNext: "0xF293D890De6755aB40B8cbD60872aa00351796CE",
+  juniorVenues: { hyperlend: { junior: "0xF293D890De6755aB40B8cbD60872aa00351796CE", pool: "0x00A89d7a5A02160f20150EbEA7a2b5E4879A1A8b", aToken: "0x744E4f26ee30213989216E1632D9BE3547C4885b", maxFraction: 0.2 } },
   orph: "0xTODO",
   poolId: "0xTODO",
   uniswapStateView: "0x1656326235cb9E34Cb58CaDe53AE30789AB32A1A",
@@ -15960,14 +15753,14 @@ var senior_default = {
     { key: "0x96c47d3797394dd25e33f814216793a89d2e6edcc54d1dac3ab4c2b2d82a73b9", label: "kHYPE/USDC 77%", weight: 0.1 },
     { key: "0xd7d38220652d19c87099c3b23de9a70a1893620a050c635d1a94bd947c9c59a8", label: "WHYPE/USDC 77%", weight: 0.2 },
     { key: "0x45af9c72aa97978e143a646498c8922058b7c6f18b6f7b05d7316c8cf7ab942f", label: "UBTC/USDC 77%", weight: 0.05 },
-    { key: "felix", label: "Felix USDC v1.1", weight: 0.15 },
-    { key: "idle", label: "Idle USDC", weight: 0.02 }
+    { key: "felix", label: "Felix USDC v1.1", weight: 0.17 },
+    { key: "idle", label: "Idle USDC", weight: 0 }
   ],
   excludedMarkets: [
     "0x8eecdd03f1e12e03c04abefdb3f536067e071ad2c3f63e7b04c9a034889d0ba5"
   ],
   constraints: {
-    minIdle: 0.02,
+    minIdle: 0,
     minFelix: 0.1,
     maxShareOfMarketSupply: 0.5,
     maxShareOfFelixAssets: 0.5,
@@ -15987,7 +15780,10 @@ var senior_default = {
     felix: { absoluteCap: 1e7, relativeCap: 1 }
   },
   economics: {
-    marginFactor: 3,
+    marginFactor: 1,
+    dailyCostCapUsd: 1,
+    maxConcentration: 0.9,
+    spreadCostCapUsd: 2,
     slippagePenalty: 2e-4,
     gasPerAction: 4e5,
     fallbackGasPriceGwei: 0.1,

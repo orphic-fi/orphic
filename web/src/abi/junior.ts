@@ -1,5 +1,7 @@
 // Orphic junior vault. Custom contract; surface used by the UI.
 export const juniorAbi = [
+  { type: 'function', name: 'owner', stateMutability: 'view', inputs: [], outputs: [{ name: '', type: 'address' }] },
+  { type: 'function', name: 'setDepositsPaused', stateMutability: 'nonpayable', inputs: [{ name: 'paused', type: 'bool' }], outputs: [] },
   { type: 'function', name: 'deposit', stateMutability: 'nonpayable', inputs: [{ name: 'assets', type: 'uint256' }, { name: 'receiver', type: 'address' }], outputs: [{ name: 'shares', type: 'uint256' }] },
   { type: 'function', name: 'requestExit', stateMutability: 'nonpayable', inputs: [{ name: 'shares', type: 'uint256' }], outputs: [] },
   { type: 'function', name: 'claimExit', stateMutability: 'nonpayable', inputs: [], outputs: [] },

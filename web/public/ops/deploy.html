@@ -3,7 +3,6 @@
 <title>orphic deploy</title>
 <script src="/ops/keccak.js"></script>
 <script src="/ops/hlsign.js"></script>
-<script src="/ops/plancheck.js"></script>
 <style>
 :root{--bg:#0b0c0e;--line:rgba(255,255,255,.1);--txt:#e4e6ea;--mut:#8a8f98;--acc:#8fc8ff;--ok:#9ad7b5;--warn:#f0c27a;--bad:#ff7a7a}
 body{margin:0;background:var(--bg);color:var(--txt);font:13px/1.5 "Commit Mono","SF Mono",Menlo,monospace}
@@ -38,7 +37,6 @@ input{font:inherit;background:transparent;color:var(--txt);border:1px solid var(
 
 <div class="box"><div class="m">plan url (change only if Cashout is told to)</div><input id="planUrl" value="/ops/plan1.json"><div style="margin-top:8px"><button id="reload">reload plan</button> <button id="verify">run verify read-backs</button></div></div>
 
-<div class="box" id="gate" style="display:none"></div>
 <div class="box" id="steps"></div>
 <div class="box"><div class="m">log</div><pre id="log"></pre></div>
 </div>
@@ -55,7 +53,6 @@ async function connect(){
   catch(e){if(e.code===4902){await window.ethereum.request({method:'wallet_addEthereumChain',params:[{chainId:'0x3e7',chainName:'HyperEVM',nativeCurrency:{name:'HYPE',symbol:'HYPE',decimals:18},rpcUrls:[RPC],blockExplorerUrls:['https://hyperevmscan.io']}]});}else throw e;}
   if(plan&&plan.deployer&&plan.deployer.toLowerCase()!==account.toLowerCase()){log(`connected ${account} but the plan expects ${plan.deployer}; switch accounts`,'bad');}
   else log(`connected ${account}`,'ok');
-  refreshGate();
 }
 // Hyperliquid L1 action: evmUserModify, signed as the phantom agent (same bytes as the official SDK's sign_l1_action).
 // The signer is a throwaway agent key approved by the wallet (approveAgent is a user-signed action, which MetaMask can sign on chain 999).
@@ -85,57 +82,27 @@ async function bigBlocks(enable){
   const res=await fetch('https://api.hyperliquid.xyz/exchange',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({action:{type:'evmUserModify',usingBigBlocks:enable},nonce,signature:splitSig(sig),vaultAddress:null})});
   const j=await res.json();$('bbStatus').textContent='big blocks '+(enable?'on':'off')+': '+JSON.stringify(j);log(`evmUserModify usingBigBlocks=${enable}: ${JSON.stringify(j)}`,j.status==='ok'?'ok':'bad');
 }
-// ---- plan checks (read-only: eth_call, eth_getCode, eth_getBlockByNumber, eth_getTransactionCount, eth_getTransactionReceipt, same RPC as above)
-const io={
-  call:async(to,data)=>rpc('eth_call',[{to,data},'latest']),
-  getCode:async a=>rpc('eth_getCode',[a,'latest']),
-  keccak:h=>{const b=new Uint8Array(h.length/2);for(let i=0;i<b.length;i++)b[i]=parseInt(h.substr(i*2,2),16);return keccak256(b);},
-  nonce:async a=>parseInt(await rpc('eth_getTransactionCount',[a,'latest']),16),
-  latestTimestamp:async()=>parseInt((await rpc('eth_getBlockByNumber',['latest',false])).timestamp,16),
-  txTimestamp:async h=>{const rc=await rpc('eth_getTransactionReceipt',[h]);if(!rc)throw new Error('reference tx not found');return parseInt((await rpc('eth_getBlockByNumber',[rc.blockNumber,false])).timestamp,16);}
-};
-let gateState={ok:false,items:[]},refused=null,refTx='';
-async function refreshGate(){
-  const el=$('gate');if(!plan){el.style.display='none';return;}
-  el.style.display='block';
-  try{gateState=await plancheck.gate(plan,io,account,refTx);}catch(e){gateState={ok:false,items:[{label:'gate check error',ok:false,got:e.message}]};}
-  const needRef=plan.waitBeforeSeconds!==undefined;
-  el.innerHTML='<div class="m">before step 1 (every line must pass; step 1 stays locked until then)</div>'+
-    (plan.bigBlocks?'<div class="warn">this phase needs big blocks ON for the deployer (button 2) while it runs, off afterwards</div>':'')+
-    (needRef?`<div style="margin:6px 0">reference tx of ${plan.waitFromPlan||'the previous phase'} (its last transaction): <input id="refTx" value="${refTx}" placeholder="0x..."> <button id="refSet">use</button></div>`:'')+
-    gateState.items.map(i=>`<div class="${i.ok?'ok':'bad'}">${i.ok?'ok':'NOT YET'} · ${i.label} <span class="m">${String(i.got).slice(0,66)}</span></div>`).join('')+
-    `<div style="margin-top:6px"><button id="gateRun">re-check</button></div>`;
-  $('gateRun').onclick=refreshGate;
-  if(needRef)$('refSet').onclick=()=>{refTx=$('refTx').value.trim();refreshGate();};
-  render();
-}
 async function loadPlan(){
-  let loaded;try{const r=await fetch($('planUrl').value+'?t='+Date.now());loaded=await r.json();}catch(e){log('plan load failed: '+e.message,'bad');return;}
-  const errs=plancheck.validatePlan(loaded);
-  if(errs.length){plan=null;refused=errs;$('planName').textContent='REFUSED';$('steps').innerHTML='<div class="bad">this page does not understand this plan and will not sign it (fail closed):</div><pre>'+errs.join('\n').replace(/</g,'&lt;')+'</pre><div class="m">Ask Claude for a plan this page supports, or use the cast commands in MIGRATION.md.</div>';$('gate').style.display='none';log('plan REFUSED: '+errs.join('; '),'bad');return;}
-  plan=loaded;refused=null;
-  $('planName').textContent=plan.name;$('deployer').textContent=plan.deployer;results={};render();log(`plan loaded: ${plan.name}, ${plan.steps.length} steps`);refreshGate();
+  try{const r=await fetch($('planUrl').value+'?t='+Date.now());plan=await r.json();}catch(e){log('plan load failed: '+e.message,'bad');return;}
+  $('planName').textContent=plan.name;$('deployer').textContent=plan.deployer;results={};render();log(`plan loaded: ${plan.name}, ${plan.steps.length} steps`);
 }
 function render(){
-  if(!plan)return;
   const el=$('steps');el.innerHTML='';
   plan.steps.forEach((st,i)=>{
     const r=results[i];const cls=r?(r.ok?'done':'fail'):(i===nextIndex()?'now':'');
     const d=document.createElement('div');d.className='step';
-    d.innerHTML=`<div class="sq ${cls}"></div><div><div>${i+1}. ${st.title}</div><div class="m">${st.what}</div>${parseInt(st.gas,16)>1900000||st.needsBigBlock?'<div class="warn">needs big blocks on (over 2M gas)</div>':''}${st.predictedAddress?`<div class="m">will create ${st.predictedAddress}</div>`:''}${st.calls?`<pre>${st.calls.map(c=>c.replace(/^call\s+/,'')).join('\n')}</pre>`:''}${st.to?`<pre>to ${st.to}${st.value&&st.value!=='0x0'?' · value '+st.value:''}\ndata ${st.data.slice(0,74)}${st.data.length>74?'… ('+((st.data.length-2)/2)+' bytes)':''}</pre>`:'<pre>contract creation</pre>'}<div id="r${i}" class="m">${r?(r.ok?'<span class=ok>'+r.msg+'</span>':'<span class=bad>'+r.msg+'</span>'):''}</div>${i===nextIndex()?`<button class="primary" onclick="run(${i})" ${i===0&&!gateState.ok?'disabled title="the checks above must all pass"':''}>sign step ${i+1}</button>`:''}</div>`;
+    d.innerHTML=`<div class="sq ${cls}"></div><div><div>${i+1}. ${st.title}</div><div class="m">${st.what}</div>${parseInt(st.gas,16)>1900000?'<div class="warn">needs big blocks on (over 2M gas)</div>':''}${st.predictedAddress?`<div class="m">will create ${st.predictedAddress}</div>`:''}${st.calls?`<pre>${st.calls.map(c=>c.replace(/^call\s+/,'')).join('\n')}</pre>`:''}${st.to?`<pre>to ${st.to}${st.value&&st.value!=='0x0'?' · value '+st.value:''}\ndata ${st.data.slice(0,74)}${st.data.length>74?'… ('+((st.data.length-2)/2)+' bytes)':''}</pre>`:'<pre>contract creation</pre>'}<div id="r${i}" class="m">${r?(r.ok?'<span class=ok>'+r.msg+'</span>':'<span class=bad>'+r.msg+'</span>'):''}</div>${i===nextIndex()?`<button class="primary" onclick="run(${i})">sign step ${i+1}</button>`:''}</div>`;
     el.appendChild(d);
   });
 }
 async function verifyAll(){
-  if(!plan||!plan.verify||!plan.verify.length)return;log('final verify: reading state back from HyperEVM');let bad=0;
-  for(const v of plan.verify){try{const {ok,got}=await plancheck.evalCheck(v,io);if(!ok)bad++;log(`  ${v.label}: ${ok?'ok':'MISMATCH got '+got}`,ok?'ok':'bad');}catch(e){bad++;log(`  ${v.label}: error ${e.message}`,'bad');}}
+  if(!plan.verify||!plan.verify.length)return;log('final verify: reading state back from HyperEVM');let bad=0;
+  for(const v of plan.verify){try{const out=await rpc('eth_call',[{to:v.to,data:v.data},'latest']);const ok=v.expect?out.toLowerCase()===v.expect.toLowerCase():(out.length>2&&/[^0]/.test(out.slice(2)));if(!ok)bad++;log(`  ${v.label}: ${ok?'ok':'MISMATCH got '+out}`,ok?'ok':'bad');}catch(e){bad++;log(`  ${v.label}: error ${e.message}`,'bad');}}
   log(bad?`verify finished with ${bad} mismatch(es), stop and tell Claude`:'verify: all read-backs match, this step is live',bad?'bad':'ok');
 }
-function nextIndex(){if(!plan)return -1;for(let i=0;i<plan.steps.length;i++){if(!results[i]||!results[i].ok)return i;}return -1;}
+function nextIndex(){for(let i=0;i<plan.steps.length;i++){if(!results[i]||!results[i].ok)return i;}return -1;}
 async function run(i){
-  if(!plan){log('no valid plan loaded, nothing to sign','bad');return;}
   const st=plan.steps[i];if(!account){log('connect first','bad');return;}
-  if(i===0){await refreshGate();if(!gateState.ok){log('step 1 refused: the checks above do not all pass','bad');return;}}
   try{
     const tx={from:account,data:st.data,value:st.value||'0x0',gas:st.gas||undefined};if(st.to)tx.to=st.to;
     log(`step ${i+1}: requesting signature`);
@@ -148,7 +115,9 @@ async function run(i){
     if(rec.contractAddress){msg+=` · deployed ${rec.contractAddress}`;}
     // read-backs
     for(const rb of (st.readbacks||[])){
-      const ck=await plancheck.evalCheck(rb,io,rec.contractAddress);const pass=ck.ok,out=ck.got;
+      const to=rb.to==='$created'?rec.contractAddress:rb.to;
+      const out=await rpc('eth_call',[{to,data:rb.data},'latest']);
+      const pass=rb.expect?out.toLowerCase()===rb.expect.toLowerCase():(out.length>2&&/[^0]/.test(out.slice(2)));
       msg+=`\n  readback ${rb.label}: ${pass?'ok':'MISMATCH'} ${out.slice(0,66)}`;
       if(!pass)throw new Error(msg);
     }
