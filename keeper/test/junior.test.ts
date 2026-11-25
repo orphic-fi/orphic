@@ -77,6 +77,7 @@ function fakeClient(values: { cover?: bigint; pending?: bigint; pps?: bigint; id
         case "maxRate": return values.maxRate ?? 0n;
         case "totalAssets": return values.total ?? 0n;
         // Felix position reads used by the settle-day recall: nothing parked in these tests
+        case "marketsLength": return 0n;
         case "maxWithdraw": return 0n;
         case "convertToAssets": return 0n;
         // HyperLend reads used by the same recall (junior v1.2): nothing parked, zero rate, no allowance

@@ -16,7 +16,7 @@ Chains
 
 ## 0. Saturday night: prerequisites you do (keys involved)
 
-0.1 Put the deployer on big blocks. HyperEVM small blocks are about 3M gas; the deploy needs up to 10M per transaction. This is a HyperCore exchange action, not an EVM transaction. With the official Python SDK (`pip install hyperliquid-python-sdk`):
+0.1 Put the deployer on big blocks. HyperEVM small blocks are 2M gas; the deploy needs up to 10M per transaction. This is a HyperCore exchange action, not an EVM transaction. With the official Python SDK (`pip install hyperliquid-python-sdk`):
 ```
 from hyperliquid.exchange import Exchange
 from eth_account import Account
@@ -88,17 +88,36 @@ I run `forge test --match-contract DeployTest` against the live addresses (env `
 
 Step 4, `04_DeployORPH.s.sol`: ORPH (1B, no owner), two OZ timelocks (treasury 15%, incentives 10%, 3-day delay, admin = TREASURY_ADMIN), TeamVesting (15%, 2 years, 6-month cliff, beneficiary TEAM), 60% to POOL_SEEDER (the Safe).
 ```
-export DEPLOYER=0x... POOL_SEEDER=0xSafe TREASURY_ADMIN=0xSafe TEAM=0x...
+export DEPLOYER=0x... POOL_SEEDER=0xSafe TREASURY_ADMIN=0xSafe TEAM=0x...   # optional DELAY in seconds: the script refuses anything under 1 day (86400)
 forge script script/04_DeployORPH.s.sol --rpc-url $HYPEREVM_RPC --broadcast --slow --sender $DEPLOYER --interactive -vvv
 ```
 Read-back: `totalSupply() 1e27`, `balanceOf(POOL_SEEDER) 6e26`, `balanceOf(TREASURY) 1.5e26`, `balanceOf(VESTING) 1.5e26`, `balanceOf(INCENTIVES) 1e26`, `balanceOf(DEPLOYER) 0`, vesting `cliff()`, timelock `getMinDelay() 259200`.
 
-Step 5, pool (`05_SeedPool.s.sol`, fork-tested against the live PoolManager): Uniswap v4 on HyperEVM, pool HYPE (native, currency0) / ORPH, 1% fee, tick spacing 200, no hook. Initialised at the price that makes 1B ORPH worth FDV_USD (default $5,000) using the live HYPE price. One single-sided position holding all 600M ORPH from the minimum tick up to just under the opening price; buyers walk into it. Minted from the hardware wallet (which holds the 600M from step 4, so POOL_SEEDER = the hardware wallet), position NFT owned by the Safe. No HYPE seed.
+Step 5, pool (`05_SeedPool.s.sol`, fork-tested against the live PoolManager): Uniswap v4 on HyperEVM, pool HYPE (native, currency0) / ORPH, 1% fee, tick spacing 200, no hook. Initialised at the price that makes 1B ORPH worth FDV_USD (default $5,000) using the live HYPE price. One single-sided position holding all 600M ORPH from the minimum tick up to just under the opening price; buyers walk into it. Minted from the hardware wallet (which holds the 600M from step 4, so POOL_SEEDER = the hardware wallet). No HYPE seed.
+
+The position NFT can pull the buyers' HYPE out of the pool (measured in the audit: 100% of the liquidity in one call), so it must not sit in a single key. `NFT_OWNER` (default `SENIOR_SAFE`) must be a contract: the script refuses before broadcasting anything if it has no code. **`SENIOR_SAFE` in `Addresses.sol` is a MetaMask account (an EOA) today, so 05 refuses until it is a Safe or `NFT_OWNER` points at a Safe or timelock.**
 ```
-export DEPLOYER=0x2DBE... ORPH=0x... HYPE_USD_E8=$(curl -s https://api.morpho.org/graphql -H 'content-type: application/json' -d '{"query":"{ assetByAddress(address:\"0x5555555555555555555555555555555555555555\", chainId:999){ priceUsd } }"}' | python3 -c 'import json,sys; print(int(float(json.load(sys.stdin)["data"]["assetByAddress"]["priceUsd"])*1e8))')
+export DEPLOYER=0x2DBE... ORPH=0x... NFT_OWNER=0xSafeOrTimelock
+export HYPE_USD_E8=$(curl -s https://api.morpho.org/graphql -H 'content-type: application/json' -d '{"query":"{ assetByAddress(address:\"0x5555555555555555555555555555555555555555\", chainId:999){ priceUsd } }"}' | python3 -c 'import json,sys; print(int(float(json.load(sys.stdin)["data"]["assetByAddress"]["priceUsd"])*1e8))')
+export HYPE_USD_REF_E8=...   # HYPE/USD x 1e8 from a DIFFERENT source than the Morpho API (an exchange or an oracle page), read by hand
+export SEED_CAP_ORPH=...     # ORPH wei, set deliberately on launch day (see below); unset = 0
 forge script script/05_SeedPool.s.sol --rpc-url $HYPEREVM_RPC --broadcast --slow --sender $DEPLOYER --interactive -vvv
 ```
-The script approves Permit2, approves PositionManager through Permit2 for exactly 600M ORPH with a one-hour expiry, then one `multicall` [initializePool, modifyLiquidities(MINT_POSITION, SETTLE_PAIR)]. Read-back (the script does these and prints `verify: ok`): `StateView.getSlot0(poolId)` sqrtPrice equals the plan and lpFee 10000, `PositionManager.ownerOf(tokenId) == Safe`, `getPositionLiquidity(tokenId)` equals the plan, ORPH `balanceOf(PoolManager)` within 1 ppm of 6e26. Then put `poolId` and `orph` into `keeper/config/senior.json` so the hourly price samples start. On the fork at $38 HYPE: 1 HYPE bought 7.40M ORPH against a 7.6M ideal (1% fee plus impact).
+The script refuses `HYPE_USD_E8` more than 20% away from `HYPE_USD_REF_E8` (a wrong input opens the pool at 1/f of the intended FDV) and prints both.
+
+It sends three transactions from the deployer: (1) deploy `SeedLauncher` (`src/SeedLauncher.sol`, constructor args PoolManager, PositionManager, Permit2), (2) `ORPH.approve(launcher, 600M)`, (3) `launcher.seed(...)`. The seed is one `PoolManager.unlock`: if the pool key is not initialised it initialises it at the planned price; if someone initialised it elsewhere (anyone can, with no ORPH and no HYPE) it re-prices the pool with a price-limited swap to the planned price (an empty pool moves no tokens); then it mints the position to NFT_OWNER with the ORPH left. Nothing can land between the re-price and the mint, so a pre-initialised key cannot block the launch. Unspent ORPH and any HYPE the re-price earned go back to the deployer. Read-back (the script does these and prints `verify: ok`): `StateView.getSlot0(poolId)` sqrtPrice equals the plan and lpFee 10000, `PositionManager.ownerOf(tokenId) == NFT_OWNER`, `getPositionLiquidity(tokenId)` equals the plan (when nothing was spent) or is positive and at most the plan, ORPH `balanceOf(PoolManager)` within 1 ppm of 6e26. It logs `ORPH spent re-pricing` and `HYPE received`. Then put `poolId` and `orph` into `keeper/config/senior.json` so the hourly price samples start. On the fork at $38 HYPE: 1 HYPE bought 7.40M ORPH against a 7.6M ideal (1% fee plus impact). Gas of `launcher.seed` on the fork: 462,000 with no interference; it grows with the initialised ticks the re-price crosses (see the curve below).
+
+**The seeder sets `SEED_CAP_ORPH` deliberately on launch day.** The cap is the only rule: the launcher reverts (`CapExceeded`, nothing minted, the ORPH stays with the deployer) if re-pricing needs to sell more than the cap. Read the cap as **the ORPH you accept selling, before any buyer, at about the launch price minus the 1% fee**; keep it small. Liquidity that straddles the opening tick buys at about the launch price (measured below); only a badly placed position pays more. With the default 0 any interference in the way forces a re-run: an attacker that initialises the key 2,000 ticks below the opening tick and parks **1 wei** of HYPE-only liquidity above its price makes the cap-0 run revert; a re-run with a cap seeds at the planned price (cost 27 wei of ORPH). Blocking costs the attacker only gas and locked capital: a blocked seed reverts, the attacker's position is untouched and withdrawable; its HYPE is spent only when the seed succeeds.
+
+**Before launch, read the gap** (`getSlot0` of the key: any non-zero price means someone initialised it). Do not stop at the price: count the initialised ticks between that price and the plan, because the re-price crosses every one.
+Measured on the fork (`test_O1_*`, $38 HYPE, cap 5% = 30M ORPH):
+- Position straddling the opening tick (HYPE-only `[hi, hi+200)`, liquidity 3e24): the launcher sold 18.57M ORPH for 2.424 HYPE at an average FDV of **$4,961** against the launch $5,000, i.e. about the launch price minus the 1% fee (the fee accrues to the attacker's own position). Seeds at the plan, 534,860 gas.
+- Position placed well below the opening tick (liquidity 1e24 in `[hi-1800, hi-1600)`, 3.96 HYPE): 25.52M ORPH sold at an average FDV of $5,893 (a badly placed position pays more), 572,000 gas.
+- A cap of 10M ORPH against that second position reverts and mints nothing (pool left at the attacker's price, deployer's ORPH intact).
+- Gas against dust positions (one tiny HYPE-only position per 200-tick range in the gap): 0 positions 462,438; 10 830,766; 25 1,291,113; 50 2,054,300; 100 3,581,024 (about 31k gas per initialised range). Small blocks carry 2M (step 0.1): the 50-range case (2,054,300) already exceeds it. Rule: if anything is initialised in the gap, check the measured curve (about 31k gas per range above the 462k base); at about 2M, i.e. more than about 45 initialised ranges, seed in a big block (`usingBigBlocks`). If the seed would exceed 30M gas, pre-cross the gap first with ordinary capped swaps (not atomic: the launcher has no multi-step re-price).
+Set `SEED_CAP_ORPH` (wei, e.g. 30M ORPH = `30000000000000000000000000`) from what the gap needs, with a margin you accept selling at about the launch price.
+
+**Read back on chain after the broadcast.** `_verify` runs only in forge's local simulation, not on chain. Check by hand with read-only calls: `StateView.getSlot0(poolId)` sqrtPrice equals the plan; `PositionManager.ownerOf(tokenId) == NFT_OWNER`; `getPositionLiquidity(tokenId)` is the plan (or positive and below it if ORPH was spent); the `Seeded(tokenId, nftOwner, orphSpent, hypeReceived)` event in the seed transaction's receipt (`cast receipt <tx>`) carries the spent ORPH and received HYPE; `ORPH.balanceOf(PoolManager)` within 1 ppm of 6e26.
 Then on junior: `setStakeToken(ORPH, stakePerAsset)` where stakePerAsset = ORPH wei per 1 USDC at the opening price times 20% (at $0.000005 per ORPH: 20% of 1 USDC = 40,000 ORPH, so `stakePerAsset = 40000e18`). Read back `stakeToken()`, `stakePerAsset()`.
 
 ## 6. Monday morning checklist (before anything opens)
@@ -133,7 +152,13 @@ The gate is 20% of the deposit in ORPH. `stakePerAsset` is ORPH wei per 1 USDC a
 Anyone can call `settle()`; the keeper's `--weekly` run does it after `accrueInterest()` on senior. Before it: Rotator ensures junior idle USDC covers `pendingExitShares * pricePerShare` for exits maturing that day. After it: read `pricePerShare()`, `reservedAssets()`, `pricedExitShares()`, `Settled` event, and the `Cover` event if any. Post the numbers on the agents page.
 
 ## 7a. Router sweeps
-`sweep(token, router, swapData, amountIn)` is capped at `maxSweepUsdc` of oracle value per call (25,000 USDC at launch, owner-settable). Floor = oracle value minus `maxSlippageBps` (set 100 to 300). Oracle staleness check ships in week one together with the permissionless `cover()`; until then the keeper sweeps only when the Morpho oracle for the token has been updated within the hour (keeper check, not contract).
+`sweep(token, router, swapData, amountIn)` is capped at `maxSweepUsdc` of USDC out per call (25,000 USDC at launch, owner-settable): the oracle value of `amountIn` and the measured USDC received. The cap bounds USDC out, not the value of the tokens sold. Positive slippage at the cap is refused (`SweepTooLarge`), so size sweeps below it. Floor = oracle value minus `maxSlippageBps` (set 100 to 300).
+
+**Before the first sweep of a token (owner, hardware wallet), in this order:** `setRouter(router, true)`, `setFloor(token, oracle, bps)`, then `seedPrice(token, price)` with the oracle price (1e36 scale) you checked against the market. Seeding before `setFloor` fails closed: a new oracle clears the seed and `sweep` reverts `PriceNotSeeded`. The oracle must not be movable by the keeper or by the swap venue (no spot price of the swap pool); ORPH's only market is the seeded v4 pool, which has no on-chain TWAP, so ORPH needs an oracle that does not read it. `setFloor` assumes an immutable oracle: after a proxy upgrade or feed change behind the same address, re-seed.
+
+**The band.** `sweep` reverts `PriceOutsideBand` when the oracle is more than `maxPriceMoveBps` (1,000 = 10%) from the last accepted price, or more than `maxCumulativeMoveBps` (3,000 = 30%) from the last seed (the error's second value says which anchor). The drift compounds up to the cumulative bound. A sweep moves the reference only when its oracle value is at least `maxSweepUsdc / 100` (250 USDC at launch): a dust sweep passes but changes nothing. After a real market move beyond the bound, the owner checks the market and calls `seedPrice` again; read `lastPrice(token)`, `seedRef(token)`, `maxPriceMoveBps()` and `maxCumulativeMoveBps()` first. A band refusal is the signal that the oracle is stale or the market moved, not a keeper bug. `setMaxPriceMoveBps` and `setMaxCumulativeMoveBps` (step <= cumulative <= 5,000) widen it. The keeper still sweeps only when the Morpho oracle for the token has been updated within the hour (keeper check).
+
+**Flushing.** `distribute()` is permissionless and the keeper calls it every tick: it is what bounds a junior-deposit fee snipe (LIMITATIONS L14). Anyone may call it; it only splits USDC already in the router, net of parked amounts, to the owner-set recipients.
 
 ## 8. Kill switch
 - Pause junior deposits: `cast send $JUNIOR "setDepositsPaused(bool)" true`. Exits, claims and settle keep working by construction.
@@ -142,6 +167,9 @@ Anyone can call `settle()`; the keeper's `--weekly` run does it after `accrueInt
 - Senior deposits: V2 has no pause; set `decreaseAbsoluteCap` on the Felix id to the current allocation (instant) and deposits revert.
 - Rotator: set repo variable `LIVE` to empty; the next run is dry-run only.
 - If the agent key leaks: the above, then rotate the GitHub secret. The key could only have moved funds between allowlisted venues and the contract.
+
+## 8a. Owner hardening (junior owner, hardware wallet, and senior curator)
+1. **Safe migration before raising caps.** The senior owner and curator are the deployer account until handed over (review M-5: a curator can route senior funds to a venue that loses, and junior pays). Before ANY `increaseAbsoluteCap` / `increaseRelativeCap` beyond the launch caps: (a) the Safe `0x9EDf...5F29` has code on HyperEVM and its owners are confirmed; (b) from the current owner, `senior.setCurator(Safe)` then `senior.setOwner(Safe)` (or step 3 with `OWNER_FINAL`); (c) read back `curator()` and `owner()`; (d) the junior owner stays the separate hardware wallet, so the curator and the junior owner are never the same key; (e) keep the 3-day timelocks on adapters and caps. Raise caps only from the Safe, through `submit` and the timelock.
 
 ## Signer page (how Cashout deploys without Foundry)
 

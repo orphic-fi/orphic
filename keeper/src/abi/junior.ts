@@ -13,4 +13,6 @@ export const juniorAbi = [
   { type: "function", name: "pendingExitShares", stateMutability: "view", inputs: [], outputs: [{ name: "", type: "uint256" }] },
   { type: "function", name: "pricePerShare", stateMutability: "view", inputs: [], outputs: [{ name: "", type: "uint256" }] },
   { type: "function", name: "lastSettle", stateMutability: "view", inputs: [], outputs: [{ name: "", type: "uint256" }] },
+  { type: "function", name: "marketsLength", stateMutability: "view", inputs: [], outputs: [{ name: "", type: "uint256" }] },
+  { type: "function", name: "marketAssets", stateMutability: "view", inputs: [{ name: "i", type: "uint256" }], outputs: [{ name: "", type: "uint256" }] },
 ] as const;

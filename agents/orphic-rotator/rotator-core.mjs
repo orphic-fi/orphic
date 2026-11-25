@@ -7590,13 +7590,13 @@ var init_getCallError = __esm({
 
 // node_modules/viem/_esm/utils/promise/withResolvers.js
 function withResolvers() {
-  let resolve5 = () => void 0;
+  let resolve6 = () => void 0;
   let reject = () => void 0;
   const promise = new Promise((resolve_, reject_) => {
-    resolve5 = resolve_;
+    resolve6 = resolve_;
     reject = reject_;
   });
-  return { promise, resolve: resolve5, reject };
+  return { promise, resolve: resolve6, reject };
 }
 var init_withResolvers = __esm({
   "node_modules/viem/_esm/utils/promise/withResolvers.js"() {
@@ -7615,8 +7615,8 @@ function createBatchScheduler({ fn, id, shouldSplitBatch, wait: wait2 = 0, sort 
       if (sort && Array.isArray(data))
         data.sort(sort);
       for (let i = 0; i < scheduler.length; i++) {
-        const { resolve: resolve5 } = scheduler[i];
-        resolve5?.([data[i], data]);
+        const { resolve: resolve6 } = scheduler[i];
+        resolve6?.([data[i], data]);
       }
     }).catch((err) => {
       for (let i = 0; i < scheduler.length; i++) {
@@ -7632,16 +7632,16 @@ function createBatchScheduler({ fn, id, shouldSplitBatch, wait: wait2 = 0, sort 
   return {
     flush,
     async schedule(args) {
-      const { promise, resolve: resolve5, reject } = withResolvers();
+      const { promise, resolve: resolve6, reject } = withResolvers();
       const split2 = shouldSplitBatch?.([...getBatchedArgs(), args]);
       if (split2)
         exec();
       const hasActiveScheduler = getScheduler().length > 0;
       if (hasActiveScheduler) {
-        setScheduler({ args, resolve: resolve5, reject });
+        setScheduler({ args, resolve: resolve6, reject });
         return promise;
       }
-      setScheduler({ args, resolve: resolve5, reject });
+      setScheduler({ args, resolve: resolve6, reject });
       setTimeout(exec, wait2);
       return promise;
     }
@@ -8288,8 +8288,8 @@ function getEncodableList(list) {
         else
           cursor.pushUint32(bodyLength);
       }
-      for (const { encode } of list) {
-        encode(cursor);
+      for (const { encode: encode2 } of list) {
+        encode2(cursor);
       }
     }
   };
@@ -10467,7 +10467,7 @@ function withDedupe(fn, { enabled = true, id }) {
 
 // node_modules/viem/_esm/utils/promise/withRetry.js
 function withRetry(fn, { delay: delay_ = 100, retryCount = 2, shouldRetry: shouldRetry2 = () => true } = {}) {
-  return new Promise((resolve5, reject) => {
+  return new Promise((resolve6, reject) => {
     const attemptRetry = async ({ count = 0 } = {}) => {
       const retry = async ({ error }) => {
         const delay = typeof delay_ === "function" ? delay_({ count, error }) : delay_;
@@ -10477,7 +10477,7 @@ function withRetry(fn, { delay: delay_ = 100, retryCount = 2, shouldRetry: shoul
       };
       try {
         const data = await fn();
-        resolve5(data);
+        resolve6(data);
       } catch (err) {
         if (count < retryCount && await shouldRetry2({ count, error: err }))
           return retry({ error: err });
@@ -10655,7 +10655,7 @@ init_request();
 
 // node_modules/viem/_esm/utils/promise/withTimeout.js
 function withTimeout(fn, { errorInstance = new Error("timed out"), timeout, signal }) {
-  return new Promise((resolve5, reject) => {
+  return new Promise((resolve6, reject) => {
     ;
     (async () => {
       let timeoutId;
@@ -10670,7 +10670,7 @@ function withTimeout(fn, { errorInstance = new Error("timed out"), timeout, sign
             }
           }, timeout);
         }
-        resolve5(await fn({ signal: controller?.signal || null }));
+        resolve6(await fn({ signal: controller?.signal || null }));
       } catch (err) {
         if (err?.name === "AbortError")
           reject(errorInstance);
@@ -11049,13 +11049,13 @@ async function isImageUri(uri) {
     }
     if (!globalThis.hasOwnProperty("Image"))
       return false;
-    return new Promise((resolve5) => {
+    return new Promise((resolve6) => {
       const img = new Image();
       img.onload = () => {
-        resolve5(true);
+        resolve6(true);
       };
       img.onerror = () => {
-        resolve5(false);
+        resolve6(false);
       };
       img.src = uri;
     });
@@ -12687,9 +12687,9 @@ async function waitForTransactionReceipt(client, {
   let replacedTransaction;
   let receipt;
   let retrying = false;
-  const { promise, resolve: resolve5, reject } = withResolvers();
+  const { promise, resolve: resolve6, reject } = withResolvers();
   const timer = timeout ? setTimeout(() => reject(new WaitForTransactionReceiptTimeoutError({ hash: hash2 })), timeout) : void 0;
-  const _unobserve = observe(observerId, { onReplaced, resolve: resolve5, reject }, (emit) => {
+  const _unobserve = observe(observerId, { onReplaced, resolve: resolve6, reject }, (emit) => {
     const _unwatch = getAction(client, watchBlockNumber, "watchBlockNumber")({
       emitMissed: true,
       emitOnBegin: true,
@@ -13524,6 +13524,7 @@ function validateConfig(cfg) {
   const mc = cfg.economics.maxConcentration ?? 0;
   if (mc < 0 || mc > 1) throw new Error("maxConcentration must be between 0 and 1");
   if ((cfg.economics.spreadCostCapUsd ?? 0) < 0) throw new Error("spreadCostCapUsd must be >= 0");
+  if ((cfg.economics.dailyCostCapUsd ?? 0) < 0) throw new Error("dailyCostCapUsd must be >= 0");
 }
 function loadDotEnv(path = resolve(keeperRoot, ".env")) {
   if (!existsSync(path)) return;
@@ -14008,6 +14009,13 @@ var vaultV2Abi = [
     stateMutability: "view",
     inputs: [],
     outputs: [{ name: "", type: "address" }]
+  },
+  {
+    type: "function",
+    name: "receiveSharesGate",
+    stateMutability: "view",
+    inputs: [],
+    outputs: [{ name: "", type: "address" }]
   }
 ];
 
@@ -14387,10 +14395,14 @@ function decide(input) {
   const concentration = total > 0 && biggest ? biggest.currentAmount / total : 0;
   const biggestReduced = !!biggest && movedKeys.has(biggest.key) && biggest.amount < biggest.currentAmount;
   const spreadApplies = actions > 0 && maxConc > 0 && concentration > maxConc && biggestReduced && totalCostUsd <= costCap && weeklyGainUsd > -costCap;
+  const dailyCap = e.dailyCostCapUsd ?? 0;
+  const spent = input.spentTodayUsd ?? 0;
+  const overDailyCap = dailyCap > 0 && spent + totalCostUsd > dailyCap;
   let move = false;
   let reason;
   let spread;
   if (actions === 0) reason = "no deltas above the dust threshold";
+  else if (overDailyCap) reason = `daily cost cap: ${fmt(spent)} spent in 24h, this move costs ${fmt(totalCostUsd)}, cap ${fmt(dailyCap)}`;
   else if (spreadApplies) {
     move = true;
     spread = { concentration, maxConcentration: maxConc, costCapUsd: costCap };
@@ -14788,13 +14800,96 @@ var juniorAbi = [
   { type: "function", name: "seniorSupplyBase", stateMutability: "view", inputs: [], outputs: [{ name: "", type: "uint256" }] },
   { type: "function", name: "pendingExitShares", stateMutability: "view", inputs: [], outputs: [{ name: "", type: "uint256" }] },
   { type: "function", name: "pricePerShare", stateMutability: "view", inputs: [], outputs: [{ name: "", type: "uint256" }] },
-  { type: "function", name: "lastSettle", stateMutability: "view", inputs: [], outputs: [{ name: "", type: "uint256" }] }
+  { type: "function", name: "lastSettle", stateMutability: "view", inputs: [], outputs: [{ name: "", type: "uint256" }] },
+  { type: "function", name: "marketsLength", stateMutability: "view", inputs: [], outputs: [{ name: "", type: "uint256" }] },
+  { type: "function", name: "marketAssets", stateMutability: "view", inputs: [{ name: "i", type: "uint256" }], outputs: [{ name: "", type: "uint256" }] }
 ];
+
+// src/engine/juniorAllocate.ts
+var fmt2 = (v) => `${(Number(v) / 1e6).toFixed(2)} USDC`;
+var pct2 = (r) => `${(r * 100).toFixed(2)}%`;
+function planJunior(i, p) {
+  const book = i.idle + i.felixAssets + i.hlAssets;
+  const hold = (reason2) => ({ actions: [], reason: reason2, weeklyGainUsd: 0, costUsd: 0, target: { felix: i.felixAssets, hyperlend: i.hlAssets, idle: i.idle } });
+  if (i.idle < i.reserve) {
+    let need = i.reserve - i.idle;
+    const actions2 = [];
+    const fromFelix = need < i.felixWithdrawable ? need : i.felixWithdrawable;
+    if (fromFelix > 0n) {
+      actions2.push({ kind: "withdraw", venue: "felix", amount: fromFelix });
+      need -= fromFelix;
+    }
+    const fromHl = need < i.hlWithdrawable ? need : i.hlWithdrawable;
+    if (need > 0n && fromHl > 0n) {
+      actions2.push({ kind: "withdraw", venue: "hyperlend", amount: fromHl });
+      need -= fromHl;
+    }
+    if (actions2.length === 0) return hold(`idle ${fmt2(i.idle)} below reserve ${fmt2(i.reserve)} and nothing withdrawable to pull back`);
+    const pulled = actions2.reduce((s, a) => s + a.amount, 0n);
+    return {
+      actions: actions2,
+      reason: `reserve: idle ${fmt2(i.idle)} below ${fmt2(i.reserve)}; pulling ${fmt2(pulled)} back${need > 0n ? `, still short ${fmt2(need)}` : ""}`,
+      weeklyGainUsd: 0,
+      costUsd: actions2.length * p.gasCostUsdPerAction,
+      target: { felix: i.felixAssets - (actions2.find((a) => a.venue === "felix")?.amount ?? 0n), hyperlend: i.hlAssets - (actions2.find((a) => a.venue === "hyperlend")?.amount ?? 0n), idle: i.idle + pulled }
+    };
+  }
+  const deployable = book - i.reserve;
+  const better = i.hlRate > i.felixRate ? "hyperlend" : "felix";
+  const hlCap = BigInt(Math.floor(Number(deployable) * p.hlMaxFraction));
+  const hlTarget = better === "hyperlend" ? deployable < hlCap ? deployable : hlCap : 0n;
+  const felixTarget = deployable - hlTarget;
+  const target = { felix: felixTarget, hyperlend: hlTarget, idle: i.reserve };
+  const dFelix = felixTarget - i.felixAssets;
+  const dHl = hlTarget - i.hlAssets;
+  const excessIdle = i.idle - i.reserve;
+  const outflow = (dFelix < 0n ? -dFelix : 0n) + (dHl < 0n ? -dHl : 0n);
+  const rateGap = Math.abs(i.hlRate - i.felixRate);
+  const weeklyGainUsd = Number(outflow) / 1e6 * (rateGap / 52);
+  const movesNeeded = (dFelix !== 0n ? 1 : 0) + (dHl !== 0n ? 1 : 0);
+  const costUsd = movesNeeded * p.gasCostUsdPerAction;
+  let planFelix = dFelix;
+  let planHl = dHl;
+  if (outflow > 0n && weeklyGainUsd <= p.marginFactor * costUsd) {
+    const room = better === "hyperlend" ? hlCap > i.hlAssets ? hlCap - i.hlAssets : 0n : excessIdle;
+    const toBetter = excessIdle < room ? excessIdle : room;
+    planHl = better === "hyperlend" ? toBetter : 0n;
+    planFelix = excessIdle - planHl;
+  }
+  const actions = [];
+  const push = (venue, delta, withdrawable, allowance) => {
+    if (delta < 0n) {
+      const amt = -delta < withdrawable ? -delta : withdrawable;
+      if (amt >= p.minMove) actions.push({ kind: "withdraw", venue, amount: amt });
+    }
+  };
+  push("felix", planFelix, i.felixWithdrawable, i.felixAllowance);
+  push("hyperlend", planHl, i.hlWithdrawable, i.hlAllowance);
+  const deposits = [];
+  const dep = (venue, delta, allowance) => {
+    if (delta >= p.minMove) {
+      if (allowance < delta) deposits.push({ kind: "approve", venue, amount: delta });
+      deposits.push({ kind: "deposit", venue, amount: delta });
+    }
+  };
+  dep("felix", planFelix, i.felixAllowance);
+  dep("hyperlend", planHl, i.hlAllowance);
+  actions.push(...deposits);
+  if (actions.length === 0) {
+    if (excessIdle >= p.minMove && outflow === 0n) return hold(`idle ${fmt2(i.idle)} above reserve but no venue can take ${fmt2(excessIdle)}`);
+    if (outflow > 0n && weeklyGainUsd <= p.marginFactor * costUsd) {
+      return hold(`hold: moving ${fmt2(outflow)} to ${better} (${pct2(i.hlRate)} vs ${pct2(i.felixRate)}) earns ${weeklyGainUsd.toFixed(3)}/week, below ${p.marginFactor}x cost ${costUsd.toFixed(3)}`);
+    }
+    return hold(`at target: Felix ${fmt2(i.felixAssets)} (${pct2(i.felixRate)}), HyperLend ${fmt2(i.hlAssets)} (${pct2(i.hlRate)}), idle ${fmt2(i.idle)} for a reserve of ${fmt2(i.reserve)}`);
+  }
+  const moved = actions.filter((a) => a.kind !== "approve").reduce((s, a) => s + a.amount, 0n);
+  const reason = outflow > 0n && weeklyGainUsd > p.marginFactor * costUsd ? `rebalance toward ${better}: ${pct2(i.hlRate)} HyperLend vs ${pct2(i.felixRate)} Felix, ${weeklyGainUsd.toFixed(3)}/week gain beats ${p.marginFactor}x cost ${costUsd.toFixed(3)}` : `put ${fmt2(moved)} of idle to work in ${better === "hyperlend" && planHl > 0n ? "HyperLend" : "Felix"} (${pct2(better === "hyperlend" ? i.hlRate : i.felixRate)}), reserve ${fmt2(i.reserve)} stays idle`;
+  return { actions, reason, weeklyGainUsd, costUsd: actions.filter((a) => a.kind !== "approve").length * p.gasCostUsdPerAction, target };
+}
 
 // src/exec/juniorDeploy.ts
 var COVER_BUFFER_BPS = 100n;
 var MIN_RESERVE = 5000000n;
-var MIN_MOVE = 20000000n;
 var erc20Full = parseAbi([
   "function balanceOf(address) view returns (uint256)",
   "function allowance(address owner, address spender) view returns (uint256)",
@@ -14814,22 +14909,6 @@ function reserveFor(i) {
   if (MIN_RESERVE > r) r = MIN_RESERVE;
   return r;
 }
-function planIdle(i) {
-  const reserve = reserveFor(i);
-  if (i.idle >= reserve) {
-    const excess = i.idle - reserve;
-    if (excess < MIN_MOVE) return { kind: "hold", reason: `idle ${fmt2(i.idle)} within ${fmt2(MIN_MOVE)} of reserve ${fmt2(reserve)}` };
-    return { kind: "deploy", amount: excess, approve: i.allowance < excess };
-  }
-  const need = reserve - i.idle;
-  if (i.felixAssets === 0n) return { kind: "hold", reason: `idle ${fmt2(i.idle)} below reserve ${fmt2(reserve)} but nothing deployed to pull back` };
-  const amount = need < i.felixWithdrawable ? need : i.felixWithdrawable;
-  if (amount === 0n) return { kind: "hold", reason: "Felix has no withdrawable liquidity right now" };
-  return { kind: "withdraw", amount };
-}
-function fmt2(v) {
-  return `${(Number(v) / 1e6).toFixed(2)} USDC`;
-}
 async function readIdleInputs(ctx) {
   const c = ctx.client;
   const junior = ctx.cfg.junior;
@@ -14848,81 +14927,133 @@ async function readIdleInputs(ctx) {
   const owedToMaturing = pending * pps / 10n ** 18n / 10n ** 12n;
   return { idle, reserved, owedToMaturing, seniorAssets, felixAssets, felixWithdrawable, allowance };
 }
-async function execute(ctx, target, data) {
-  const calldata = encodeFunctionData({ abi: juniorAbi, functionName: "execute", args: [target, data] });
-  return sendCall(ctx, ctx.cfg.junior, calldata, `junior.execute -> ${target}`);
-}
-async function manageJuniorIdle(ctx) {
-  const log = ctx.log ?? (() => void 0);
-  if (isPlaceholder(ctx.cfg.junior) || isPlaceholder(ctx.cfg.vault)) {
-    return { checked: false, action: "skipped", note: "junior or senior is a placeholder; idle management skipped" };
-  }
-  if (!ctx.client) return { checked: false, action: "skipped", note: "no RPC client; idle management skipped" };
-  const i = await readIdleInputs(ctx);
-  const reserve = reserveFor(i);
-  const action = planIdle(i);
-  const base = {
-    checked: true,
-    idleUsdc: Number(i.idle) / 1e6,
-    reserveUsdc: Number(reserve) / 1e6,
-    felixUsdc: Number(i.felixAssets) / 1e6,
-    action: action.kind,
-    note: ""
-  };
-  const junior = ctx.cfg.junior;
-  const felix = ctx.cfg.felix.address;
-  if (action.kind === "hold") {
-    log(`junior idle: hold (${action.reason})`);
-    return { ...base, note: action.reason };
-  }
-  const amountUsdc = Number(action.amount) / 1e6;
-  if (action.kind === "deploy") {
-    const verb2 = `deploy ${amountUsdc.toFixed(2)} USDC idle to Felix (reserve ${base.reserveUsdc.toFixed(2)})${action.approve ? ", approving first" : ""}`;
-    if (ctx.dryRun) {
-      log(`junior idle: would ${verb2} (dry-run)`);
-      return { ...base, amountUsdc, note: `dry-run: would ${verb2}` };
-    }
-    const hashes = [];
-    if (action.approve) {
-      hashes.push(await execute(ctx, ctx.cfg.usdc, encodeFunctionData({ abi: erc20Full, functionName: "approve", args: [felix, action.amount] })));
-    }
-    hashes.push(await execute(ctx, felix, encodeFunctionData({ abi: erc4626, functionName: "deposit", args: [action.amount, junior] })));
-    log(`junior idle: ${verb2}; sent ${hashes.join(", ")}`);
-    return { ...base, amountUsdc, txHashes: hashes, note: verb2 };
-  }
-  const verb = `withdraw ${amountUsdc.toFixed(2)} USDC from Felix back to idle (reserve ${base.reserveUsdc.toFixed(2)})`;
-  if (ctx.dryRun) {
-    log(`junior idle: would ${verb} (dry-run)`);
-    return { ...base, amountUsdc, note: `dry-run: would ${verb}` };
-  }
-  const hash2 = await execute(ctx, felix, encodeFunctionData({ abi: erc4626, functionName: "withdraw", args: [action.amount, junior, junior] }));
-  log(`junior idle: ${verb}; sent ${hash2}`);
-  return { ...base, amountUsdc, txHashes: [hash2], note: verb };
-}
-async function recallFromFelix(ctx) {
-  const log = ctx.log ?? (() => void 0);
-  if (!ctx.client) return { note: "no RPC client; recall skipped" };
-  const junior = ctx.cfg.junior;
-  const felix = ctx.cfg.felix.address;
-  const [shares, withdrawable] = await Promise.all([
-    ctx.client.readContract({ address: felix, abi: erc4626, functionName: "balanceOf", args: [junior] }),
-    ctx.client.readContract({ address: felix, abi: erc4626, functionName: "maxWithdraw", args: [junior] })
+
+// src/exec/juniorRotate.ts
+var erc20 = parseAbi([
+  "function balanceOf(address) view returns (uint256)",
+  "function allowance(address owner, address spender) view returns (uint256)",
+  "function approve(address spender, uint256 amount) returns (bool)"
+]);
+var erc46262 = parseAbi([
+  "function deposit(uint256 assets, address receiver) returns (uint256)",
+  "function withdraw(uint256 assets, address receiver, address owner) returns (uint256)"
+]);
+var aavePool = parseAbi([
+  "function supply(address asset, uint256 amount, address onBehalfOf, uint16 referralCode)",
+  "function withdraw(address asset, uint256 amount, address to) returns (uint256)",
+  "function getReserveData(address asset) view returns ((uint256 configuration, uint128 liquidityIndex, uint128 currentLiquidityRate, uint128 variableBorrowIndex, uint128 currentVariableBorrowRate, uint128 currentStableBorrowRate, uint40 lastUpdateTimestamp, uint16 id, address aTokenAddress, address stableDebtTokenAddress, address variableDebtTokenAddress, address interestRateStrategyAddress, uint128 accruedToTreasury, uint128 unbacked, uint128 isolationModeTotalDebt))"
+]);
+async function readHyperlend(ctx, junior) {
+  const hl = ctx.hyperlend;
+  if (!hl) return { hlAssets: 0n, hlWithdrawable: 0n, hlRate: 0, hlAllowance: 0n };
+  const c = ctx.client;
+  const usdc = ctx.cfg.usdc;
+  const [bal, poolCash, rd, allowance] = await Promise.all([
+    c.readContract({ address: hl.aToken, abi: erc20, functionName: "balanceOf", args: [junior] }),
+    c.readContract({ address: usdc, abi: erc20, functionName: "balanceOf", args: [hl.aToken] }),
+    // reserve cash sits on the aToken
+    c.readContract({ address: hl.pool, abi: aavePool, functionName: "getReserveData", args: [usdc] }),
+    c.readContract({ address: usdc, abi: erc20, functionName: "allowance", args: [junior, hl.pool] })
   ]);
-  if (shares === 0n) return { note: "nothing in Felix to recall" };
-  const assets = await ctx.client.readContract({ address: felix, abi: erc4626, functionName: "convertToAssets", args: [shares] });
-  const amount = assets < withdrawable ? assets : withdrawable;
-  const verb = `recall ${(Number(amount) / 1e6).toFixed(2)} of ${(Number(assets) / 1e6).toFixed(2)} USDC from Felix before settle`;
-  if (amount === 0n) {
-    log("junior recall: Felix has no withdrawable liquidity; settle proceeds with idle only");
-    return { note: "Felix illiquid; nothing recalled" };
+  const rate = Number(rd.currentLiquidityRate) / 1e27;
+  return { hlAssets: bal, hlWithdrawable: bal < poolCash ? bal : poolCash, hlRate: Math.expm1(rate), hlAllowance: allowance };
+}
+async function readJuniorInputs(ctx) {
+  const junior = ctx.cfg.junior;
+  const [idle, hl] = await Promise.all([readIdleInputs(ctx), readHyperlend(ctx, junior)]);
+  return {
+    idle: idle.idle,
+    reserve: reserveFor(idle),
+    felixAssets: idle.felixAssets,
+    felixWithdrawable: idle.felixWithdrawable,
+    felixRate: ctx.felixRate,
+    felixAllowance: idle.allowance,
+    ...hl
+  };
+}
+function encode(ctx, junior, a) {
+  const usdc = ctx.cfg.usdc;
+  const felix = ctx.cfg.felix.address;
+  const hl = ctx.hyperlend;
+  const amt = (Number(a.amount) / 1e6).toFixed(2);
+  if (a.kind === "approve") {
+    const spender = a.venue === "felix" ? felix : hl.pool;
+    return { target: usdc, data: encodeFunctionData({ abi: erc20, functionName: "approve", args: [spender, a.amount] }), label: `approve ${amt} USDC to ${a.venue}` };
   }
+  if (a.venue === "felix") {
+    return a.kind === "deposit" ? { target: felix, data: encodeFunctionData({ abi: erc46262, functionName: "deposit", args: [a.amount, junior] }), label: `deposit ${amt} USDC to Felix` } : { target: felix, data: encodeFunctionData({ abi: erc46262, functionName: "withdraw", args: [a.amount, junior, junior] }), label: `withdraw ${amt} USDC from Felix` };
+  }
+  return a.kind === "deposit" ? { target: hl.pool, data: encodeFunctionData({ abi: aavePool, functionName: "supply", args: [usdc, a.amount, junior, 0] }), label: `supply ${amt} USDC to HyperLend` } : { target: hl.pool, data: encodeFunctionData({ abi: aavePool, functionName: "withdraw", args: [usdc, a.amount, junior] }), label: `withdraw ${amt} USDC from HyperLend` };
+}
+async function rotateJunior(ctx) {
+  const log = ctx.log ?? (() => void 0);
+  if (isPlaceholder(ctx.cfg.junior) || isPlaceholder(ctx.cfg.vault)) return { checked: false, action: "skipped", note: "junior or senior is a placeholder; rotation skipped" };
+  if (!ctx.client) return { checked: false, action: "skipped", note: "no RPC client; rotation skipped" };
+  const junior = ctx.cfg.junior;
+  const i = await readJuniorInputs(ctx);
+  const plan = planJunior(i, {
+    hlMaxFraction: ctx.hyperlend?.maxFraction ?? 0,
+    minMove: BigInt(Math.round((ctx.minMoveUsdc ?? 20) * 1e6)),
+    marginFactor: ctx.marginFactor ?? 3,
+    gasCostUsdPerAction: ctx.gasCostUsdPerAction
+  });
+  const inputs = { idleUsdc: Number(i.idle) / 1e6, reserveUsdc: Number(i.reserve) / 1e6, felixUsdc: Number(i.felixAssets) / 1e6, hyperlendUsdc: Number(i.hlAssets) / 1e6, felixRate: i.felixRate, hlRate: i.hlRate };
+  if (plan.actions.length === 0) {
+    log(`junior: hold (${plan.reason})`);
+    return { checked: true, action: "hold", plan, inputs, note: plan.reason };
+  }
+  if (ctx.dailyCostLeftUsd !== void 0 && !plan.reason.startsWith("reserve") && plan.costUsd > ctx.dailyCostLeftUsd) {
+    const note = `daily cost cap: this move costs $${plan.costUsd.toFixed(2)}, $${ctx.dailyCostLeftUsd.toFixed(2)} left today`;
+    log(`junior: hold (${note})`);
+    return { checked: true, action: "hold", plan, inputs, note };
+  }
+  const steps = plan.actions.map((a) => encode(ctx, junior, a));
+  const verb = `${plan.reason}: ${steps.map((s) => s.label).join("; ")}`;
+  if (ctx.dryRun) {
+    log(`junior: would ${verb} (dry-run)`);
+    return { checked: true, action: "move", plan, inputs, note: `dry-run: would ${verb}` };
+  }
+  const hashes = [];
+  for (const s of steps) {
+    const calldata = encodeFunctionData({ abi: juniorAbi, functionName: "execute", args: [s.target, s.data] });
+    hashes.push(await sendCall(ctx, junior, calldata, `junior.execute: ${s.label}`));
+  }
+  log(`junior: ${verb}; sent ${hashes.join(", ")}`);
+  return { checked: true, action: "move", plan, inputs, txHashes: hashes, note: verb };
+}
+async function recallAll(ctx) {
+  const log = ctx.log ?? (() => void 0);
+  if (!ctx.client) return { txHashes: [], note: "no RPC client; recall skipped" };
+  const junior = ctx.cfg.junior;
+  const c = ctx.client;
+  const felix = ctx.cfg.felix.address;
+  const erc4626View = parseAbi(["function balanceOf(address) view returns (uint256)", "function maxWithdraw(address owner) view returns (uint256)", "function convertToAssets(uint256 shares) view returns (uint256)"]);
+  const [shares, withdrawable] = await Promise.all([
+    c.readContract({ address: felix, abi: erc4626View, functionName: "balanceOf", args: [junior] }),
+    c.readContract({ address: felix, abi: erc4626View, functionName: "maxWithdraw", args: [junior] })
+  ]);
+  const felixAssets = shares > 0n ? await c.readContract({ address: felix, abi: erc4626View, functionName: "convertToAssets", args: [shares] }) : 0n;
+  const actions = [];
+  const fx = felixAssets < withdrawable ? felixAssets : withdrawable;
+  if (fx > 0n) actions.push({ kind: "withdraw", venue: "felix", amount: fx });
+  if (ctx.hyperlend) {
+    const hl = await readHyperlend(ctx, junior);
+    if (hl.hlWithdrawable > 0n) actions.push({ kind: "withdraw", venue: "hyperlend", amount: hl.hlWithdrawable });
+  }
+  if (actions.length === 0) return { txHashes: [], note: "nothing deployed to recall" };
+  const steps = actions.map((a) => encode(ctx, junior, a));
+  const verb = `recall before settle: ${steps.map((s) => s.label).join("; ")}`;
   if (ctx.dryRun) {
     log(`junior recall: would ${verb} (dry-run)`);
-    return { note: `dry-run: would ${verb}` };
+    return { txHashes: [], note: `dry-run: would ${verb}` };
   }
-  const hash2 = await execute(ctx, felix, encodeFunctionData({ abi: erc4626, functionName: "withdraw", args: [amount, junior, junior] }));
-  log(`junior recall: ${verb}; sent ${hash2}`);
-  return { txHash: hash2, note: verb };
+  const hashes = [];
+  for (const s of steps) {
+    const calldata = encodeFunctionData({ abi: juniorAbi, functionName: "execute", args: [s.target, s.data] });
+    hashes.push(await sendCall(ctx, junior, calldata, `junior.execute: ${s.label}`));
+  }
+  log(`junior recall: ${verb}; sent ${hashes.join(", ")}`);
+  return { txHashes: hashes, note: verb };
 }
 
 // src/exec/junior.ts
@@ -15102,9 +15233,9 @@ async function juniorWeekly(ctx) {
     return result;
   }
   if (!isPlaceholder(ctx.cfg.vault)) {
-    const recall = await recallFromFelix({ cfg: ctx.cfg, dryRun: ctx.dryRun, client: ctx.client, signer: ctx.signer, agentPrivateKey: ctx.agentPrivateKey, log });
+    const recall = await recallAll({ cfg: ctx.cfg, dryRun: ctx.dryRun, client: ctx.client, signer: ctx.signer, agentPrivateKey: ctx.agentPrivateKey, log, felixRate: 0, gasCostUsdPerAction: 0, hyperlend: ctx.cfg.juniorVenues?.hyperlend && ctx.cfg.juniorVenues.hyperlend.junior.toLowerCase() === ctx.cfg.junior.toLowerCase() ? ctx.cfg.juniorVenues.hyperlend : void 0 });
     result.recall = recall.note;
-    if (recall.txHash) result.recallTx = recall.txHash;
+    if (recall.txHashes.length) result.recallTx = recall.txHashes[recall.txHashes.length - 1];
   }
   if (ctx.dryRun) {
     result.note = "dry-run: settle not sent";
@@ -15117,9 +15248,28 @@ async function juniorWeekly(ctx) {
   return result;
 }
 
-// src/data/orph.ts
-import { appendFileSync, existsSync as existsSync2, mkdirSync as mkdirSync2, readFileSync as readFileSync3, writeFileSync as writeFileSync2 } from "node:fs";
+// src/exec/spend.ts
+import { existsSync as existsSync2, mkdirSync as mkdirSync2, appendFileSync, readFileSync as readFileSync3 } from "node:fs";
 import { resolve as resolve3 } from "node:path";
+function spendPath(opsDir) {
+  return resolve3(opsDir, "spend.jsonl");
+}
+function readSpend(opsDir) {
+  const p = spendPath(opsDir);
+  if (!existsSync2(p)) return [];
+  return readFileSync3(p, "utf8").split("\n").filter((l) => l.trim().length).map((l) => JSON.parse(l));
+}
+function spentSince(lines, sinceTs) {
+  return lines.filter((l) => l.ts >= sinceTs).reduce((s, l) => s + l.costUsd, 0);
+}
+function recordSpend(opsDir, line) {
+  mkdirSync2(opsDir, { recursive: true });
+  appendFileSync(spendPath(opsDir), JSON.stringify(line) + "\n");
+}
+
+// src/data/orph.ts
+import { appendFileSync as appendFileSync2, existsSync as existsSync3, mkdirSync as mkdirSync3, readFileSync as readFileSync4, writeFileSync as writeFileSync2 } from "node:fs";
+import { resolve as resolve4 } from "node:path";
 
 // src/abi/uniswapV4.ts
 var stateViewAbi = [
@@ -15210,13 +15360,13 @@ async function readSlot0(client, stateView, poolId) {
   return { sqrtPriceX96, tick: tick2 };
 }
 function samplesPath(opsDir) {
-  return resolve3(opsDir, "price-samples.jsonl");
+  return resolve4(opsDir, "price-samples.jsonl");
 }
 function readSamples(opsDir) {
   const path = samplesPath(opsDir);
-  if (!existsSync2(path)) return [];
+  if (!existsSync3(path)) return [];
   const out = [];
-  for (const line of readFileSync3(path, "utf8").split("\n")) {
+  for (const line of readFileSync4(path, "utf8").split("\n")) {
     const t = line.trim();
     if (!t) continue;
     try {
@@ -15227,12 +15377,12 @@ function readSamples(opsDir) {
   return out;
 }
 function appendSample(opsDir, sample) {
-  mkdirSync2(opsDir, { recursive: true });
-  appendFileSync(samplesPath(opsDir), `${JSON.stringify(sample)}
+  mkdirSync3(opsDir, { recursive: true });
+  appendFileSync2(samplesPath(opsDir), `${JSON.stringify(sample)}
 `);
 }
 function rewriteSamples(opsDir, samples) {
-  mkdirSync2(opsDir, { recursive: true });
+  mkdirSync3(opsDir, { recursive: true });
   writeFileSync2(samplesPath(opsDir), samples.map((s) => JSON.stringify(s)).join("\n") + (samples.length ? "\n" : ""));
 }
 async function sampleOrphPrice(ctx) {
@@ -15303,18 +15453,18 @@ async function checkSeniorDrift(cfg, client, log = console.log) {
 }
 
 // src/report.ts
-import { mkdirSync as mkdirSync3, writeFileSync as writeFileSync3 } from "node:fs";
-import { resolve as resolve4 } from "node:path";
+import { mkdirSync as mkdirSync4, writeFileSync as writeFileSync3 } from "node:fs";
+import { resolve as resolve5 } from "node:path";
 function toJson(value) {
   return JSON.stringify(value, (_k, v) => typeof v === "bigint" ? v.toString() : v, 2);
 }
 function writeReport(opsDir, report) {
-  const dir = resolve4(opsDir, "reports");
-  mkdirSync3(dir, { recursive: true });
+  const dir = resolve5(opsDir, "reports");
+  mkdirSync4(dir, { recursive: true });
   const stamp = report.runAt.replace(/[:.]/g, "-");
-  const path = resolve4(dir, `${stamp}.json`);
+  const path = resolve5(dir, `${stamp}.json`);
   writeFileSync3(path, toJson(report));
-  writeFileSync3(resolve4(dir, "latest.json"), toJson(report));
+  writeFileSync3(resolve5(dir, "latest.json"), toJson(report));
   return path;
 }
 function bookApy(proposal) {
@@ -15324,15 +15474,15 @@ function bookApy(proposal) {
   return { current, proposed };
 }
 function humanSummary(report) {
-  const pct2 = (x) => `${(x * 100).toFixed(2)}%`;
+  const pct3 = (x) => `${(x * 100).toFixed(2)}%`;
   const usd = (x) => `$${x.toLocaleString("en-US", { maximumFractionDigits: 0 })}`;
   const out = [];
   for (const a of report.alerts) out.push(`WARNING: ${a}`);
-  out.push(`[${report.mode}] vault ${usd(report.inputs.state.totalAssets)} (${report.inputs.state.source}), idle ${pct2(report.inputs.state.idle / (report.inputs.state.totalAssets || 1))}`);
-  out.push(`book APY now ${pct2(report.bookApy.current)}, proposed ${pct2(report.bookApy.proposed)}`);
+  out.push(`[${report.mode}] vault ${usd(report.inputs.state.totalAssets)} (${report.inputs.state.source}), idle ${pct3(report.inputs.state.idle / (report.inputs.state.totalAssets || 1))}`);
+  out.push(`book APY now ${pct3(report.bookApy.current)}, proposed ${pct3(report.bookApy.proposed)}`);
   for (const l of report.proposal.lines) {
     const arrow = Math.abs(l.delta) < 1 ? "=" : l.delta > 0 ? "+" : "-";
-    out.push(`  ${arrow} ${l.label.padEnd(20)} ${pct2(l.currentAmount / (report.proposal.totalAssets || 1)).padStart(7)} -> ${pct2(l.weight).padStart(7)}  rate ${pct2(l.currentRate)} -> ${pct2(l.projectedRate)}`);
+    out.push(`  ${arrow} ${l.label.padEnd(20)} ${pct3(l.currentAmount / (report.proposal.totalAssets || 1)).padStart(7)} -> ${pct3(l.weight).padStart(7)}  rate ${pct3(l.currentRate)} -> ${pct3(l.projectedRate)}`);
   }
   for (const e of report.proposal.excluded) out.push(`  x excluded ${e.key.slice(0, 12)}.. : ${e.reason}`);
   out.push(`decision: ${report.decision.move ? "MOVE" : "HOLD"}; ${report.decision.reason}`);
@@ -15415,13 +15565,17 @@ async function run(opts, cfg = loadConfig(opts.configPath), deps = {}) {
   const proposal = proposeAllocation({ cfg, markets: morpho.markets, felix: morpho.felix, state });
   const { plan, notes: planNotes } = buildPlan(cfg, state, proposal);
   validatePlan(cfg, state, plan);
-  const decision = decide({ cfg, proposal, plan, hypePriceUsd: morpho.hypePriceUsd, gasPriceGwei });
+  const nowTs = Math.floor(opts.now.getTime() / 1e3);
+  const spentTodayUsd = spentSince(opts.opsDir ? readSpend(opts.opsDir) : [], nowTs - 24 * 3600);
+  const decision = decide({ cfg, proposal, plan, hypePriceUsd: morpho.hypePriceUsd, gasPriceGwei, spentTodayUsd });
   const ctx = { cfg, dryRun: opts.dryRun, opsDir: opts.opsDir, state, markets: morpho.markets, client, signer: deps.signer, agentPrivateKey: opts.agentPrivateKey, log };
   let execution = [];
   let error;
   try {
-    if (decision.move) execution = await executePlan(ctx, plan);
-    else {
+    if (decision.move) {
+      execution = await executePlan(ctx, plan);
+      if (!opts.dryRun && opts.opsDir) recordSpend(opts.opsDir, { ts: nowTs, what: "senior", costUsd: decision.totalCostUsd, note: decision.reason });
+    } else {
       log(`HOLD: ${decision.reason}`);
       if (plan.length) await executePlan({ ...ctx, dryRun: true }, plan).then(() => void 0);
     }
@@ -15475,12 +15629,18 @@ async function run(opts, cfg = loadConfig(opts.configPath), deps = {}) {
   }
   let juniorIdle;
   if (opts.weekly || juniorWeeklyResult?.settleDue) {
-    juniorIdle = { checked: false, action: "skipped", note: "settle tick: idle management deferred to the next hour" };
+    juniorIdle = { checked: false, action: "skipped", note: "settle tick: rotation deferred to the next hour" };
   } else {
     try {
-      juniorIdle = await manageJuniorIdle({ ...jctx, log });
+      const gasCostUsdPerAction = 3e5 * gasPriceGwei * 1e-9 * morpho.hypePriceUsd;
+      const hlCfg = cfg.juniorVenues?.hyperlend;
+      const hl = hlCfg && hlCfg.junior.toLowerCase() === cfg.junior.toLowerCase() ? hlCfg : void 0;
+      const dailyCap = cfg.economics.dailyCostCapUsd ?? 0;
+      const spentNow = spentSince(opts.opsDir ? readSpend(opts.opsDir) : [], nowTs - 24 * 3600);
+      juniorIdle = await rotateJunior({ ...jctx, log, felixRate: morpho.felix.netApy, gasCostUsdPerAction, hyperlend: hl, marginFactor: cfg.economics.marginFactor, dailyCostLeftUsd: dailyCap > 0 ? Math.max(0, dailyCap - spentNow) : void 0 });
+      if (juniorIdle.action === "move" && juniorIdle.txHashes?.length && juniorIdle.plan && opts.opsDir) recordSpend(opts.opsDir, { ts: nowTs, what: "junior", costUsd: juniorIdle.plan.costUsd, note: juniorIdle.plan.reason });
     } catch (err) {
-      juniorIdle = { checked: false, action: "skipped", note: `junior idle management failed: ${err.message}` };
+      juniorIdle = { checked: false, action: "skipped", note: `junior rotation failed: ${err.message}` };
       warnings.push(juniorIdle.note);
     }
   }
@@ -15571,6 +15731,8 @@ var senior_default = {
   vault: "0x3F7382bd8BFC6C548CAa2D7B4dfCe628B12A9759",
   feeRouter: "0xC2d2C5e56798Bfd0EEc67EEC12ddC2b521b1aA37",
   junior: "0x20D5F4f78858D257eA047EB5F47773E361697F2E",
+  juniorNext: "0xF293D890De6755aB40B8cbD60872aa00351796CE",
+  juniorVenues: { hyperlend: { junior: "0xF293D890De6755aB40B8cbD60872aa00351796CE", pool: "0x00A89d7a5A02160f20150EbEA7a2b5E4879A1A8b", aToken: "0x744E4f26ee30213989216E1632D9BE3547C4885b", maxFraction: 0.2 } },
   orph: "0xTODO",
   poolId: "0xTODO",
   uniswapStateView: "0x1656326235cb9E34Cb58CaDe53AE30789AB32A1A",
@@ -15618,7 +15780,8 @@ var senior_default = {
     felix: { absoluteCap: 1e7, relativeCap: 1 }
   },
   economics: {
-    marginFactor: 3,
+    marginFactor: 1,
+    dailyCostCapUsd: 1,
     maxConcentration: 0.9,
     spreadCostCapUsd: 2,
     slippagePenalty: 2e-4,

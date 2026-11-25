@@ -12,7 +12,7 @@ import {TeamVesting} from "../src/TeamVesting.sol";
 ///   15% treasury         -> TimelockController (3-day delay; proposer/executor = TREASURY_ADMIN)
 ///   15% team             -> TeamVesting: 2-year linear vest from launch, 6-month cliff, beneficiary TEAM
 ///   10% agent and school -> a second TimelockController (same delay), for incentives
-/// Env: DEPLOYER (the broadcaster), POOL_SEEDER, TREASURY_ADMIN, TEAM, DELAY (default 3 days).
+/// Env: DEPLOYER (the broadcaster), POOL_SEEDER, TREASURY_ADMIN, TEAM, DELAY (default 3 days, at least 1 day).
 contract DeployORPH is Script {
     uint256 constant SUPPLY = 1_000_000_000e18;
 
@@ -22,6 +22,7 @@ contract DeployORPH is Script {
         address treasuryAdmin = vm.envAddress("TREASURY_ADMIN");
         address team = vm.envAddress("TEAM");
         uint256 delay = vm.envOr("DELAY", uint256(3 days));
+        require(delay >= 1 days, "DELAY below 1 day: a stray 0 would let the admin move the treasury in one block");
 
         address[] memory admins = new address[](1);
         admins[0] = treasuryAdmin;

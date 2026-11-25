@@ -122,6 +122,8 @@ Weekly, before the senior close logic:
 
 Both steps are skipped while `junior` is `0xTODO`.
 
+The watchdog (`src/watchdog.ts`) additionally alerts on any junior Morpho-market position (the shipped keeper only uses Felix and HyperLend), an `agent()` change, and, when `expectedReceiveSharesGate` is set in the config, a senior `receiveSharesGate` that differs from it.
+
 ### ORPH price record (`src/data/orph.ts`, `src/engine/twap.ts`)
 
 Uniswap v4 has no on-chain TWAP, so the keeper is the price record for the ORPH stake rate.
