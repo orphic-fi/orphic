@@ -5,3 +5,4 @@
 2026-11-26T00:27:25.370Z withdraw: 9 USDC out of HLP FAILED: Vault deposits must be at least $5.
 2026-11-26T00:29:01.799Z withdraw: 9.00561 USDC out of HLP FAILED: Vault deposits must be at least $5.
 2026-11-26T00:30:52.441Z withdraw: 4 USDC out of HLP: {"status":"ok","response":{"type":"default"}}
+2026-11-26T00:32:13.378Z toevm: 5 USDC Core -> HyperEVM FAILED: Action disabled when unified account is active
