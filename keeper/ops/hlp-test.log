@@ -8,3 +8,4 @@
 2026-11-26T00:32:13.378Z toevm: 5 USDC Core -> HyperEVM FAILED: Action disabled when unified account is active
 2026-11-26T00:34:54.220Z toevm: 5 USDC Core -> HyperEVM FAILED: Insufficient USDC or HYPE balance for token transfer gas.
 2026-11-26T00:37:05.405Z toevm: 4.9 USDC Core -> HyperEVM FAILED: Insufficient USDC or HYPE balance for token transfer gas.
+2026-11-26T00:39:40.444Z toevm: 1 USDC Core -> HyperEVM: {"status":"ok","response":{"type":"default"}}; evm USDC 0.229863 -> 1.229863
