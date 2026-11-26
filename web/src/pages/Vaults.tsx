@@ -3,7 +3,6 @@ import { Link, useSearchParams } from "react-router-dom";
 import VaultArea from "../components/VaultArea";
 import { MGMT_FEE_APY, useVault, type VaultState } from "../hooks/useVault";
 import { fmtPct, fmtUsd } from "../lib/format";
-import { settleAtOrAfter } from "../lib/schedule";
 import {
   MORPHO_MARKETS,
   useFelixSpotRate,
@@ -43,18 +42,6 @@ interface Row {
   tvl: string;
   tvlLabel: string;
   tone?: "sen" | "jun" | "down" | "soon";
-}
-
-function nextSettle(lastSettle: number | undefined) {
-  const t = settleAtOrAfter(Math.floor(Date.now() / 1000) + 1, lastSettle);
-  return (
-    new Intl.DateTimeFormat("en-GB", {
-      weekday: "short",
-      hour: "2-digit",
-      minute: "2-digit",
-      timeZone: "UTC",
-    }).format(new Date(t * 1000)) + " UTC"
-  );
 }
 
 function realised(v: VaultState) {
@@ -307,16 +294,9 @@ export default function Vaults() {
     },
   ];
 
-  const total =
-    senior.tvl !== null && junior.tvl !== null ? senior.tvl + junior.tvl : null;
-
   return (
     <div className={`wrap ${s.page}`}>
       <section className={s.table}>
-        <div className={s.kicker}>
-          Orphic · next settle {nextSettle(junior.lastSettle)} · {fmtUsd(total)}{" "}
-          in the book
-        </div>
         <h1 className={s.h1}>Agentic USDC vaults</h1>
         <p className={s.lede}>
           One book, two ways in. Senior is first in line. Junior stands behind
