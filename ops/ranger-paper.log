@@ -438,3 +438,5 @@
 2026-11-26T23:03:15Z success | In range (-13.1331% to 6.3109%), worth $12.724550957402606452; holding.
 2026-11-26T23:18:34Z success | In range (-12.7675% to 6.7583%), worth $13.580325523367478861; holding.
 2026-11-26T23:33:52Z success | In range (-12.7937% to 6.7263%), worth $13.549364431254338984; holding.
+2026-11-26T23:49:11Z error | Run failed:
+Recording position marks ran past its database time limit (requestId=21b8d41a-3def-41c2-ad87-dfce1e8bb890)
