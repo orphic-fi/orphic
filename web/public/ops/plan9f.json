@@ -1,0 +1,22 @@
+{
+  "name": "Junior v1.2: first live test deposit, 10 USDC from 0x2DBE",
+  "deployer": "0x2DBE1Ba83084dAF698Acea79CBAfe0493f42FecC",
+  "chainId": 999,
+  "script": "manual",
+  "steps": [
+    {
+      "title": "approve 10 USDC to junior v1.2",
+      "what": "Lets junior v1.2 pull exactly 10 USDC from this wallet, nothing more.",
+      "to": "0xb88339CB7199b77E23DB6E890353E22632Ba630f", "data": "0x095ea7b3000000000000000000000000f293d890de6755ab40b8cbd60872aa00351796ce0000000000000000000000000000000000000000000000000000000000989680", "value": "0x0", "gas": "0x186a0",
+      "readbacks": [ { "label": "allowance == 10 USDC", "to": "0xb88339CB7199b77E23DB6E890353E22632Ba630f", "data": "0xdd62ed3e0000000000000000000000002dbe1ba83084daf698acea79cbafe0493f42fecc000000000000000000000000f293d890de6755ab40b8cbd60872aa00351796ce", "expect": "0x0000000000000000000000000000000000000000000000000000000000989680" } ]
+    },
+    {
+      "title": "deposit 10 USDC into junior v1.2",
+      "what": "Mints junior v1.2 shares to this wallet. Exits are requested ahead and paid at a weekly settle.",
+      "to": "0xF293D890De6755aB40B8cbD60872aa00351796CE", "data": "0x6e553f6500000000000000000000000000000000000000000000000000000000009896800000000000000000000000002dbe1ba83084daf698acea79cbafe0493f42fecc", "value": "0x0", "gas": "0x16e360",
+      "readbacks": [ { "label": "junior shares held by 0x2DBE > 0", "to": "0xF293D890De6755aB40B8cbD60872aa00351796CE", "data": "0x70a082310000000000000000000000002dbe1ba83084daf698acea79cbafe0493f42fecc" } ]
+    }
+  ],
+  "verify": [],
+  "logs": []
+}
