@@ -2,3 +2,4 @@
 2026-11-21T17:13:10.135Z bridge: 10 USDC HyperEVM -> Core perps, status success, gas 98210, tx 0x97101b456405c19967fe6358f6514d56bcf31f888f2548d2b09e4c8a62764d41,0x5770118532343411ae4f66040a996d61cc1451bb9a436283fc25ebdee91d1fb7 (landed on Core SPOT: the deposit wallet credits a new account on spot whatever destinationDex says)
 2026-11-21T17:17:01.459Z toperp: 10 USDC class transfer FAILED: Action disabled when unified account is active (new accounts are unified: spot USDC is usable for vault deposits directly)
 2026-11-21T17:18:30.919Z deposit: 9 USDC into HLP: {"status":"ok","response":{"type":"default"}}; userVaultEquities: equity 8.999999, lockedUntil 2026-11-25T17:18:30.612Z (4 days); Core spot left 1.0 USDC; no account creation fee observed
+2026-11-26T00:27:25.370Z withdraw: 9 USDC out of HLP FAILED: Vault deposits must be at least $5.
