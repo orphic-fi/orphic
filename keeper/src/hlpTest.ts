@@ -8,6 +8,8 @@
  *   status    what the wallet holds on Core and in HLP, plus the vault's own numbers
  *   withdraw  HLP -> HyperCore perps balance (vaultTransfer, isDeposit false; HLP has a 4-day lock from the last
  *             deposit, so this fails until then, and the failure text is part of what we are measuring)
+ *   toevm     HyperCore USDC -> HyperEVM (spotSend to the USDC system address 0x2000...0000; Circle's
+ *             CoreDepositWallet pays the same address on HyperEVM), then reads the EVM balance once it lands
  *
  * Every call appends one line to ops/hlp-test.log. Amounts are in whole USDC on the command line.
  * Needs AGENT_PRIVATE_KEY (the keeper's key) and sends real transactions: run only on purpose.
@@ -22,6 +24,8 @@ import { hyperEvm } from "./exec/chain.js";
 const USDC = "0xb88339CB7199b77E23DB6E890353E22632Ba630f" as Address;
 const CORE_DEPOSIT_WALLET = "0x6b9e773128f453f5c2c60935ee2de2cbc5390a24" as Address; // Circle, HyperEVM mainnet
 const HLP = "0xdfc24b077bc1425ad1dea75bcb6f8158e10df303" as Address;
+const USDC_SYSTEM = "0x2000000000000000000000000000000000000000"; // Core -> EVM bridge address for token index 0
+const USDC_CORE_TOKEN = "USDC:0x6d1e7cde53ba9467b783cb7c530ce054"; // spotMeta: USDC index 0, linked to the CoreDepositWallet
 const PERPS = 0; // destinationDex: 0 = perps balance (vault deposits come from perps), 4294967295 = spot
 
 const erc20 = parseAbi([
@@ -113,7 +117,24 @@ async function main() {
     }
     return;
   }
-  throw new Error("usage: hlpTest <bridge <usdc> | toperp <usdc> | deposit <usdc> | status | withdraw <usdc> | tospot <usdc>>");
+  if (cmd === "toevm") {
+    if (!(amount > 0)) throw new Error("toevm <usdc>");
+    const before = await pub.readContract({ address: USDC, abi: erc20, functionName: "balanceOf", args: [account.address] });
+    try {
+      const res = await exchange.spotSend({ destination: USDC_SYSTEM, token: USDC_CORE_TOKEN, amount: String(amount) });
+      let after = before;
+      for (let i = 0; i < 30 && after === before; i++) {
+        await new Promise((r) => setTimeout(r, 2000));
+        after = await pub.readContract({ address: USDC, abi: erc20, functionName: "balanceOf", args: [account.address] });
+      }
+      logLine("toevm", `${amount} USDC Core -> HyperEVM: ${JSON.stringify(res)}; evm USDC ${(Number(before) / 1e6).toFixed(6)} -> ${(Number(after) / 1e6).toFixed(6)}${after === before ? " (not landed within 60s)" : ""}`);
+    } catch (err) {
+      logLine("toevm", `${amount} USDC Core -> HyperEVM FAILED: ${(err as Error).message}`);
+      process.exitCode = 1;
+    }
+    return;
+  }
+  throw new Error("usage: hlpTest <bridge <usdc> | toperp <usdc> | deposit <usdc> | status | withdraw <usdc> | tospot <usdc> | toevm <usdc>>");
 }
 
 main().catch((e) => {
