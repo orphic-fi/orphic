@@ -65,6 +65,8 @@ export interface SeniorConfig {
   vault: Address | "0xTODO";
   /** JuniorVault. Skipped entirely while a placeholder. */
   junior: Address | "0xTODO";
+  /** Retired juniors that still hold queued exits: the keeper only sends their permissionless weekly settle(). */
+  juniorLegacy?: Address[];
   /** FeeRouter. The keeper splits any USDC sitting in it every tick (review M-5). Skipped while a placeholder. */
   feeRouter?: Address | "0xTODO";
   /** Senior `receiveSharesGate` the watchdog expects; while unset or a placeholder the gate is not checked. */

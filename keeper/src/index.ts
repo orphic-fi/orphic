@@ -169,6 +169,17 @@ export async function run(opts: RunOptions, cfg: SeniorConfig = loadConfig(opts.
     juniorWeeklyResult = { checked: false, note: `junior weekly failed: ${(err as Error).message}` };
     log(juniorWeeklyResult.note);
   }
+  // Retired juniors: settle only, so exits queued there are priced and can be claimed. No rotation, sync or recall
+  // beyond what juniorWeekly does before settling.
+  for (const legacy of cfg.juniorLegacy ?? []) {
+    try {
+      const r = await juniorWeekly({ ...jctx, cfg: { ...cfg, junior: legacy, juniorVenues: undefined } });
+      log(`legacy junior ${legacy}: ${r.note}`);
+      if (r.warning) warnings.push(`legacy junior ${legacy}: ${r.warning}`);
+    } catch (err) {
+      warnings.push(`legacy junior ${legacy} weekly failed: ${(err as Error).message}`);
+    }
+  }
   // Junior rotation: Felix vs HyperLend by rate net of gas, reserve kept idle. Skipped on a settle tick, where the
   // recall before settle takes precedence (the next hourly tick redeploys).
   let juniorIdle: RunReport["juniorIdle"];

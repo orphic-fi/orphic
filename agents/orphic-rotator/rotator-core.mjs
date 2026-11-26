@@ -15627,6 +15627,15 @@ async function run(opts, cfg = loadConfig(opts.configPath), deps = {}) {
     juniorWeeklyResult = { checked: false, note: `junior weekly failed: ${err.message}` };
     log(juniorWeeklyResult.note);
   }
+  for (const legacy of cfg.juniorLegacy ?? []) {
+    try {
+      const r = await juniorWeekly({ ...jctx, cfg: { ...cfg, junior: legacy, juniorVenues: void 0 } });
+      log(`legacy junior ${legacy}: ${r.note}`);
+      if (r.warning) warnings.push(`legacy junior ${legacy}: ${r.warning}`);
+    } catch (err) {
+      warnings.push(`legacy junior ${legacy} weekly failed: ${err.message}`);
+    }
+  }
   let juniorIdle;
   if (opts.weekly || juniorWeeklyResult?.settleDue) {
     juniorIdle = { checked: false, action: "skipped", note: "settle tick: rotation deferred to the next hour" };
@@ -15730,8 +15739,8 @@ var senior_default = {
   hyperlendApi: "https://api.hyperlend.finance/data/markets/rates?chain=hyperEvm",
   vault: "0x3F7382bd8BFC6C548CAa2D7B4dfCe628B12A9759",
   feeRouter: "0xC2d2C5e56798Bfd0EEc67EEC12ddC2b521b1aA37",
-  junior: "0x20D5F4f78858D257eA047EB5F47773E361697F2E",
-  juniorNext: "0xF293D890De6755aB40B8cbD60872aa00351796CE",
+  junior: "0xF293D890De6755aB40B8cbD60872aa00351796CE",
+  juniorLegacy: ["0x20D5F4f78858D257eA047EB5F47773E361697F2E"],
   juniorVenues: { hyperlend: { junior: "0xF293D890De6755aB40B8cbD60872aa00351796CE", pool: "0x00A89d7a5A02160f20150EbEA7a2b5E4879A1A8b", aToken: "0x744E4f26ee30213989216E1632D9BE3547C4885b", maxFraction: 0.2 } },
   orph: "0xTODO",
   poolId: "0xTODO",
