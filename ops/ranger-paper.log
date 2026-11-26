@@ -360,3 +360,4 @@
 2026-11-26T03:54:54Z success | In range (-12.3478% to 7.2719%), worth $14.564566820666776399; holding.
 2026-11-26T04:06:53Z success | In range (-12.5055% to 7.079%), worth $14.205817810020237029; holding.
 2026-11-26T04:22:09Z success | In range (-12.4179% to 7.1862%), worth $14.399156161738341044; holding.
+2026-11-26T04:29:36Z error | The local engine could not migrate its database
