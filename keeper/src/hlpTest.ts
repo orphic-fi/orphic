@@ -8,7 +8,7 @@
  *   status    what the wallet holds on Core and in HLP, plus the vault's own numbers
  *   withdraw  HLP -> HyperCore perps balance (vaultTransfer, isDeposit false; HLP has a 4-day lock from the last
  *             deposit, so this fails until then, and the failure text is part of what we are measuring)
- *   toevm     HyperCore USDC -> HyperEVM (spotSend to the USDC system address 0x2000...0000; Circle's
+ *   toevm     HyperCore USDC -> HyperEVM (sendAsset spot to spot to the USDC system address 0x2000...0000, since spotSend is refused on unified accounts; Circle's
  *             CoreDepositWallet pays the same address on HyperEVM), then reads the EVM balance once it lands
  *
  * Every call appends one line to ops/hlp-test.log. Amounts are in whole USDC on the command line.
@@ -121,7 +121,8 @@ async function main() {
     if (!(amount > 0)) throw new Error("toevm <usdc>");
     const before = await pub.readContract({ address: USDC, abi: erc20, functionName: "balanceOf", args: [account.address] });
     try {
-      const res = await exchange.spotSend({ destination: USDC_SYSTEM, token: USDC_CORE_TOKEN, amount: String(amount) });
+      // spotSend is refused on unified accounts ("Action disabled when unified account is active"); sendAsset spot to spot works in every mode
+      const res = await exchange.sendAsset({ destination: USDC_SYSTEM, sourceDex: "spot", destinationDex: "spot", token: USDC_CORE_TOKEN, amount: String(amount) });
       let after = before;
       for (let i = 0; i < 30 && after === before; i++) {
         await new Promise((r) => setTimeout(r, 2000));
