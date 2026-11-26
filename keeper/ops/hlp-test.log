@@ -4,3 +4,4 @@
 2026-11-21T17:18:30.919Z deposit: 9 USDC into HLP: {"status":"ok","response":{"type":"default"}}; userVaultEquities: equity 8.999999, lockedUntil 2026-11-25T17:18:30.612Z (4 days); Core spot left 1.0 USDC; no account creation fee observed
 2026-11-26T00:27:25.370Z withdraw: 9 USDC out of HLP FAILED: Vault deposits must be at least $5.
 2026-11-26T00:29:01.799Z withdraw: 9.00561 USDC out of HLP FAILED: Vault deposits must be at least $5.
+2026-11-26T00:30:52.441Z withdraw: 4 USDC out of HLP: {"status":"ok","response":{"type":"default"}}
