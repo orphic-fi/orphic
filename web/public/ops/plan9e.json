@@ -1,0 +1,26 @@
+{
+  "name": "Junior v1.2: pause deposits until the migration (owner 0x2DBE)",
+  "deployer": "0x2DBE1Ba83084dAF698Acea79CBAfe0493f42FecC",
+  "chainId": 999,
+  "script": "manual",
+  "steps": [
+    {
+      "title": "setDepositsPaused(true) on junior v1.2",
+      "what": "No new deposits into junior v1.2 until the 29 Nov migration unpauses it. Exits and the keeper are unaffected.",
+      "to": "0xF293D890De6755aB40B8cbD60872aa00351796CE",
+      "data": "0x1c481e2d0000000000000000000000000000000000000000000000000000000000000001",
+      "value": "0x0",
+      "gas": "0x186a0",
+      "readbacks": [
+        {
+          "label": "depositsPaused == true",
+          "to": "0xF293D890De6755aB40B8cbD60872aa00351796CE",
+          "data": "0x60da3e83",
+          "expect": "0x0000000000000000000000000000000000000000000000000000000000000001"
+        }
+      ]
+    }
+  ],
+  "verify": [],
+  "logs": []
+}
