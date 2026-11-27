@@ -456,3 +456,4 @@ Recording position marks ran past its database time limit (requestId=36a18c44-ac
 2026-11-27T03:03:07Z success | Price is within 2% of the range edge: closing it to recentre on the current price. ; Withdrew liquidity from Uniswap [ethereum:99901] ; Balancing: buying $16.3880962356085350098 of HYPE with USDC. ; Swapped 0xb47c…0b65 → 0xeeee…eeee [ethereum:99901] ; Opening a range 10% either side of 64.9 USDC per HYPE with 0.341775395085039933 HYPE and 22.293187 USDC. ; Supplied liquidity to Uniswap [ethereum:99901]
 2026-11-27T03:18:28Z success | In range (-10.747% to 9.122%), worth $18.393105131680509437; holding.
 2026-11-27T03:33:47Z success | In range (-11.6704% to 7.993%), worth $16.313750087728140849; holding.
+2026-11-27T03:49:05Z success | In range (-10.8897% to 8.9475%), worth $18.071962595462987832; holding.
