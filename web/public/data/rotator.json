@@ -1,8 +1,8 @@
 {
-  "runAt": "2026-11-26T23:45:17.689Z",
+  "runAt": "2026-11-27T03:12:31.852Z",
   "mode": "live",
-  "vaultUsd": 316.694723,
-  "bookApy": 0.04465314270830326,
+  "vaultUsd": 316.70021,
+  "bookApy": 0.04546952932256655,
   "decision": {
     "move": false,
     "reason": "no deltas above the dust threshold",
@@ -11,45 +11,45 @@
   },
   "juniorIdle": {
     "action": "hold",
-    "note": "at target: Felix 0.00 USDC (4.12%), HyperLend 0.00 USDC (3.96%), idle 11.00 USDC for a reserve of 5.00 USDC",
+    "note": "at target: Felix 0.00 USDC (4.20%), HyperLend 0.00 USDC (4.03%), idle 11.00 USDC for a reserve of 5.00 USDC",
     "idleUsdc": 11,
     "felixUsdc": 0,
     "hyperlendUsdc": 0
   },
   "juniorAccrue": {
-    "called": false,
-    "note": "senior accrued 21.8h ago"
+    "called": true,
+    "note": "accrueInterest sent: senior last accrued 25.3h ago, 4558039883320336 fee shares pending"
   },
   "juniorSync": {
-    "called": false,
-    "note": "senior supply unchanged; syncSenior not needed"
+    "called": true,
+    "note": "syncSenior sent"
   },
   "alerts": [],
   "allocation": [
     {
       "label": "kHYPE/USDC 62.5%",
-      "share": 0.49094068738240393,
-      "rate": 0.04644272602276669
+      "share": 0.4909410132692997,
+      "rate": 0.0472093926518803
     },
     {
       "label": "kHYPE/USDC 77%",
-      "share": 0.10163840336550224,
-      "rate": 0.04613097784666388
+      "share": 0.10163846433824594,
+      "rate": 0.04713411906802113
     },
     {
       "label": "WHYPE/USDC 77%",
-      "share": 0.20230192152586007,
-      "rate": 0.046127127696999164
+      "share": 0.20230204141639183,
+      "rate": 0.047137728094694874
     },
     {
       "label": "UBTC/USDC 77%",
-      "share": 0.03512723513236436,
-      "rate": 0.02359849466901225
+      "share": 0.03512694860543351,
+      "rate": 0.023293499792432868
     },
     {
       "label": "Felix USDC v1.1",
-      "share": 0.1699917525938694,
-      "rate": 0.041197783958972695
+      "share": 0.16999153237062897,
+      "rate": 0.04204665071960026
     }
   ]
 }
