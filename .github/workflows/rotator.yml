@@ -138,7 +138,7 @@ jobs:
           git config user.name "orphic-rotator"
           git config user.email "rotator@orphic.fi"
           git add keeper/ops/positions-state.json web/public/data/positions.json web/public/data/rotator.json
-          git diff --cached --quiet || (git commit -m "index: positions through block $(python3 -c "import json;print(json.load(open('keeper/ops/positions-state.json'))['lastBlock'])") [skip ci]" && git push)
+          git diff --cached --quiet || (git commit -m "index: positions through block $(python3 -c "import json;print(json.load(open('keeper/ops/positions-state.json'))['lastBlock'])") [skip ci]" && for i in 1 2 3; do git pull --rebase -q origin main && git push -q && break; sleep 5; done; git fetch -q origin main && git diff --quiet origin/main HEAD)
 
       - name: Upload report
         if: always()
