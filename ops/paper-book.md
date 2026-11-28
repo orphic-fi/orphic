@@ -1,17 +1,17 @@
 # Paper book, junior strategies
 
-Marked 2026-11-28T05:41:44Z, 6.54 days since 2026-11-21T16:51:00Z. $45 paper per line. All figures are estimates from onchain state; nothing is sent, nothing is promised. Annualised = simple, return × 365 / days, and means little this early.
+Marked 2026-11-28T05:57:02Z, 6.55 days since 2026-11-21T16:51:00Z. $45 paper per line. All figures are estimates from onchain state; nothing is sent, nothing is promised. Annualised = simple, return × 365 / days, and means little this early.
 
 | Strategy | Equity | Fees or yield | Total return | Annualised | Hold same tokens | Note |
 |---|---|---|---|---|---|---|
-| Nest ±10%, Circuit Ranger (live paper) | $44.52 | $0.6357 (1.408%, 78.6%/yr) | -1.427% | -79.7% | $46.27 (2.444%) | in range -235650..-233640, 4 ranges, HYPE 63.37 |
-| Nest ±20%, own rule | $46.32 | $0.3418 (0.759%, 42.4%/yr) | 2.927% | 163.5% | $46.10 (2.442%) | in range -237550..-233480, 1 range, HYPE 63.37 |
-| Project X 0.05% ±10%, own rule | $45.25 | $1.3441 (2.987%, 166.8%/yr) | 0.555% | 31.0% | $45.96 (2.134%) | in range -235680..-233660, 4 ranges, HYPE 63.24 |
-| Project X 0.05% ±20%, own rule | $46.53 | $0.6630 (1.473%, 82.3%/yr) | 3.397% | 189.7% | $45.96 (2.134%) | in range -237510..-233440, 1 range, HYPE 63.24 |
-| Project X 0.3% ±10%, own rule | $45.40 | $1.5063 (3.347%, 187.0%/yr) | 0.886% | 49.5% | $46.05 (2.328%) | in range -235620..-233580, 4 ranges, HYPE 63.34 |
-| Project X 0.05% ±20% + $HYPE short on Hypercore, own rule | $44.93 | $0.5423 (1.205%, 67.3%/yr) | -0.160% | -8.9% | $45.00 (0.000%) | LP fees $0.5525 + funding $0.0269 − hedge fees $0.0371 (47 trades); short 0.2361 vs LP 0.2532 HYPE; lowest margin 35% of short (maintenance 5.0%); 1 range; hold = $45 USDC |
-| Project X 0.3% ±10% + $HYPE short on Hypercore, own rule | $44.98 | $1.1875 (2.639%, 147.4%/yr) | -0.045% | -2.5% | $45.00 (0.000%) | LP fees $1.2488 + funding $0.0296 − hedge fees $0.0909 (84 trades); short 0.3163 vs LP 0.3679 HYPE; lowest margin 30% of short (maintenance 5.0%); 4 ranges; hold = $45 USDC |
-| HLP (Hypercore vault) | $45.00 | $0.0050 (0.011%, 0.6%/yr) | 0.011% | 0.6% | $45.00 (0.000%) | Hypercore reports 14.6% APR trailing; 4-day exit |
+| Nest ±10%, Circuit Ranger (live paper) | $44.41 | $0.6369 (1.410%, 78.6%/yr) | -1.669% | -93.0% | $46.18 (2.239%) | in range -235650..-233640, 4 ranges, HYPE 63.12 |
+| Nest ±20%, own rule | $46.24 | $0.3424 (0.761%, 42.4%/yr) | 2.766% | 154.3% | $46.01 (2.236%) | in range -237550..-233480, 1 range, HYPE 63.12 |
+| Project X 0.05% ±10%, own rule | $45.16 | $1.3463 (2.992%, 166.8%/yr) | 0.349% | 19.5% | $45.88 (1.955%) | in range -235680..-233660, 4 ranges, HYPE 63.02 |
+| Project X 0.05% ±20%, own rule | $46.46 | $0.6631 (1.474%, 82.2%/yr) | 3.252% | 181.3% | $45.88 (1.955%) | in range -237510..-233440, 1 range, HYPE 63.02 |
+| Project X 0.3% ±10%, own rule | $45.21 | $1.5098 (3.355%, 187.1%/yr) | 0.469% | 26.2% | $45.89 (1.984%) | in range -235620..-233580, 4 ranges, HYPE 62.92 |
+| Project X 0.05% ±20% + $HYPE short on Hypercore, own rule | $44.92 | $0.5424 (1.205%, 67.2%/yr) | -0.167% | -9.3% | $45.00 (0.000%) | LP fees $0.5526 + funding $0.0269 − hedge fees $0.0371 (47 trades); short 0.2361 vs LP 0.2581 HYPE; lowest margin 35% of short (maintenance 5.0%); 1 range; hold = $45 USDC |
+| Project X 0.3% ±10% + $HYPE short on Hypercore, own rule | $44.96 | $1.1904 (2.645%, 147.5%/yr) | -0.093% | -5.2% | $45.00 (0.000%) | LP fees $1.2517 + funding $0.0296 − hedge fees $0.0909 (84 trades); short 0.3163 vs LP 0.3866 HYPE; lowest margin 30% of short (maintenance 5.0%); 4 ranges; hold = $45 USDC |
+| HLP (Hypercore vault) | $45.01 | $0.0051 (0.011%, 0.6%/yr) | 0.011% | 0.6% | $45.00 (0.000%) | Hypercore reports 14.6% APR trailing; 4-day exit |
 | Felix USDC, hold | $45.03 | $0.0328 (0.073%, 4.1%/yr) | 0.073% | 4.1% | $45.00 (0.000%) | price per share, Morpho vault |
 | HyperLend USDC, hold | $45.03 | $0.0344 (0.076%, 4.3%/yr) | 0.076% | 4.3% | $45.00 (0.000%) | liquidity index; supply APY now 3.91% |
 | Lending rotation, Felix or HyperLend (0.5 pt rule, no gas) | $45.03 | $0.0342 (0.076%, 4.2%/yr) | 0.076% | 4.2% | $45.00 (0.000%) | in hyperlend, 1 move; Felix 4.25% realised 24h, HyperLend 3.91% posted |
